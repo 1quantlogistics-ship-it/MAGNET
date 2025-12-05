@@ -1,149 +1,170 @@
 # HANDOFF.md
 
-## Current Owner: ALPHA
-## Status: IN_PROGRESS
-## Last Updated: 2024-12-04T19:30:00Z
+## Current Owner: BRAVO
+## Status: READY_FOR_HANDOFF
+## Last Updated: 2024-12-04T19:35:00Z
 
 ---
 
 ## Session Summary
 
-Agent ALPHA completing Phase 1 Foundation work - Core schemas and physics modules.
+Agent BRAVO completed Phase 1 Foundation work - Agents, API, and Memory modules.
 
-## Completed This Session (ALPHA):
+## Completed This Session (BRAVO):
 
-- [x] Set git identity (Agent-ALPHA / alpha@magnet.dev)
-- [x] Created ALPHA directory structure:
-  - `schemas/` - Pydantic schemas for design data
-  - `physics/` - Physics simulation modules
-  - `physics/hydrostatics/` - Displacement, stability calculations
-  - `validation/` - Design validation (placeholder)
-  - `constraints/` - Physics-informed constraints
-  - `geometry/` - Hull geometry (placeholder)
-  - `spatial/` - Spatial indexing (placeholder)
-  - `databases/` - Data persistence (placeholder)
-  - `quantization/` - Optimization (placeholder)
-  - `config/alpha/` - ALPHA-specific config
+- [x] Cloned fresh repo from github.com/1quantlogistics-ship-it/MAGNET to `/Users/bengibson/MAGNETV1/`
+- [x] Set git identity (Agent-BRAVO / bravo@magnet.dev)
+- [x] Created BRAVO directory structure:
+  - `agents/` - Agent implementations
+  - `api/` - FastAPI control plane
+  - `orchestration/` - Agent coordination (placeholder)
+  - `spiral/` - Design spiral phases (placeholder)
+  - `memory/` - File-based protocol
+  - `checklists/` - Phase completeness (placeholder)
+  - `prompts/` - Agent prompts (placeholder)
+  - `dependencies/` - Cross-phase deps (placeholder)
+  - `config/bravo/` - BRAVO-specific config
+  - `tests/` - Test suite
 
-- [x] Implemented core schemas:
-  - `schemas/mission.py` - **MissionSchema** (READY FOR BRAVO)
-  - `schemas/hull_params.py` - **HullParamsSchema** (READY FOR BRAVO)
+- [x] Implemented memory module:
+  - `memory/__init__.py` - Module exports
+  - `memory/file_io.py` - **MemoryFileIO class** (atomic JSON read/write, JSONL logs)
+  - `memory/schemas.py` - BRAVO communication schemas (VoteType, DesignPhase, AgentVoteSchema, SystemStateSchema)
 
-- [x] Implemented physics/hydrostatics:
-  - `physics/hydrostatics/displacement.py` - Displacement, wetted surface, TPC, MCT
+- [x] Implemented agents module:
+  - `agents/__init__.py` - Module exports
+  - `agents/base.py` - **BaseAgent class** (vLLM interface, memory access, voting)
+  - `agents/director.py` - **DirectorAgent** (mission interpretation, NL parsing)
 
-- [x] Implemented constraints:
-  - `constraints/hull_form.py` - HullFormConstraints (prevents rectangle hulls, etc.)
+- [x] Implemented API control plane:
+  - `api/__init__.py` - Module exports
+  - `api/control_plane.py` - **FastAPI app on port 8002**
+    - `/chat` - User chat interface
+    - `/status` - System status
+    - `/design` - Current design state
+    - `/validate` - Trigger validation
+    - `/export` - Export design
+    - `/rollback` - Rollback to previous state
+    - `/phase/advance` - Advance design phase
+    - `/memory/files` - List memory files
+    - `/memory/{key}` - Get memory file
 
-## Ready for Partner (BRAVO):
+- [x] Created tests (56 tests, all passing):
+  - `tests/test_memory.py` - 19 tests for memory module
+  - `tests/test_agents.py` - 19 tests for agents
+  - `tests/test_api.py` - 18 tests for API endpoints
 
-### SCHEMAS ARE READY - USE THEM NOW
+- [x] Added `requirements.txt` with dependencies
 
-```python
-from schemas import MissionSchema, MissionType, HullParamsSchema
+## Ready for Partner (ALPHA):
 
-# Mission requirements
-mission = MissionSchema(
-    mission_id="M48-ISR-001",
-    mission_types=[MissionType.ISR, MissionType.COMMS_RELAY],
-    range_nm=15000,
-    speed_max_kts=30,
-    speed_cruise_kts=18,
-    endurance_days=60,
-    payload_kg=50000,
-    sea_state_operational=5
-)
-
-# Hull parameters (M48 example)
-hull = HullParamsSchema(
-    hull_type="semi_displacement",
-    length_overall=48.0,
-    length_waterline=45.0,
-    beam=12.8,
-    draft=2.1,
-    depth=4.5,
-    block_coefficient=0.45,
-    prismatic_coefficient=0.65,
-    midship_coefficient=0.85,
-    waterplane_coefficient=0.78
-)
-```
-
-### PHYSICS ARE READY
+### BRAVO MODULES ARE READY
 
 ```python
-from physics.hydrostatics import calculate_displacement, calculate_wetted_surface
+# Memory file I/O
+from memory import MemoryFileIO
 
-displacement = calculate_displacement(hull.length_waterline, hull.beam, hull.draft, hull.block_coefficient)
-wetted_surface = calculate_wetted_surface_from_hull(hull)
+memory = MemoryFileIO("memory")
+memory.write("mission", {...})
+data = memory.read("mission")
+memory.append_log("voting_history", {...})
+
+# Base agent (for extending)
+from agents import BaseAgent
+
+class MyAgent(BaseAgent):
+    @property
+    def system_prompt(self):
+        return "..."
+
+    def process(self, input_data):
+        # Use self.generate() for LLM calls
+        # Use self.memory for file access
+        # Use self.vote() for consensus
+        pass
+
+# Director agent
+from agents.director import DirectorAgent
+
+director = DirectorAgent()
+response = director.process({"user_input": "Design a 30m catamaran..."})
+
+# FastAPI control plane
+from api import app
+# Run with: uvicorn api:app --port 8002
 ```
 
-### CONSTRAINTS ARE READY
+### TESTS ARE PASSING
 
-```python
-from constraints import HullFormConstraints
-
-constraints = HullFormConstraints()
-if constraints.is_valid(hull):
-    print("Hull design is physically plausible")
-else:
-    print(constraints.validate_with_report(hull))
+```bash
+cd /Users/bengibson/MAGNETV1
+pytest tests/ -v
+# 56 passed
 ```
 
-## In Progress (ALPHA):
+## In Progress (BRAVO):
 
-- [ ] Stability calculations (GM, righting arm)
-- [ ] Resistance estimation (Holtrop-Mennen)
-- [ ] Semantic validation module
+- [ ] Integrate ALPHA's schemas (MissionSchema, HullParamsSchema) into Director
+- [ ] NavalArchitect agent (next agent in spiral)
+- [ ] Orchestrator module (agent coordination)
+- [ ] Consensus engine
 
-## Blockers/Dependencies on BRAVO:
+## Blockers/Dependencies on ALPHA:
 
-*None - ALPHA is not blocked*
+*None - BRAVO is not blocked*
+
+Note: BRAVO has its own `memory/schemas.py` for communication state (VoteType, DesignPhase, SystemStateSchema).
+ALPHA's `schemas/` are for design data. These are complementary, not duplicated.
 
 ## Interface Contracts:
 
-### ALPHA Provides (READY NOW):
-- `schemas/mission.py` - MissionSchema, MissionType, OperatingEnvironment
-- `schemas/hull_params.py` - HullParamsSchema, HullType
-- `physics/hydrostatics/displacement.py` - Displacement calculations
-- `constraints/hull_form.py` - HullFormConstraints, ConstraintResult
+### BRAVO Provides (READY NOW):
+- `memory/file_io.py` - MemoryFileIO class for all file operations
+- `memory/schemas.py` - VoteType, DesignPhase, AgentVoteSchema, SystemStateSchema
+- `agents/base.py` - BaseAgent, AgentMessage, AgentResponse, MockLLMAgent
+- `agents/director.py` - DirectorAgent, create_director
+- `api/control_plane.py` - FastAPI app with all endpoints
 
-### ALPHA Will Provide (Phase 1):
-- `physics/hydrostatics/stability.py` - GM, GZ calculations
-- `physics/resistance/` - Resistance prediction
-- `validation/semantic.py` - Semantic validation
-- `validation/bounds.py` - Domain bounds checking
+### BRAVO Will Provide (Phase 1):
+- `agents/naval_architect.py` - Hull form agent
+- `agents/structural_engineer.py` - Structural agent
+- `orchestration/coordinator.py` - Agent orchestration
+- `orchestration/consensus.py` - Consensus engine
 
-### BRAVO Provides (from previous handoff):
-- `agents/base.py` - BaseAgent class
-- `agents/director.py` - Director agent
-- `api/control_plane.py` - FastAPI endpoints
-- `memory/file_io.py` - Memory file operations
-
----
-
-## Notes for BRAVO:
-
-1. **SCHEMAS ARE READY** - No need to stub, use `from schemas import MissionSchema, HullParamsSchema`
-2. **PHYSICS ARE READY** - Use `from physics.hydrostatics import ...`
-3. **CONSTRAINTS ARE READY** - Use `from constraints import HullFormConstraints`
-4. All modules use Pydantic v2 syntax (`field_validator`, `computed_field`)
-5. HullParamsSchema has computed properties: `length_beam_ratio`, `beam_draft_ratio`, `slenderness_coefficient`
+### ALPHA Provides (from HANDOFF):
+- `schemas/mission.py` - MissionSchema, MissionType
+- `schemas/hull_params.py` - HullParamsSchema
+- `physics/hydrostatics/` - Displacement, stability
+- `constraints/hull_form.py` - HullFormConstraints
 
 ---
 
-## Commit Log (This Session - ALPHA):
+## Notes for ALPHA:
 
-1. `[ALPHA] Create ALPHA directory structure with __init__.py files`
-2. `[ALPHA] Add core schemas (MissionSchema, HullParamsSchema)`
-3. `[ALPHA] Add physics/hydrostatics displacement module`
-4. `[ALPHA] Add hull form constraints`
-5. `[ALPHA] Update HANDOFF.md - schemas ready for BRAVO`
+1. **MEMORY IS READY** - Use `from memory import MemoryFileIO` for all file operations
+2. **AGENTS ARE READY** - Extend `BaseAgent` for new agents
+3. **API IS READY** - Run with `uvicorn api:app --port 8002`
+4. Tests in `tests/` cover memory, agents, and API
+5. Director uses fallback mode when LLM unavailable (pattern matching)
 
 ---
 
-## Previous Session (BRAVO):
+## Commit Log (This Session - BRAVO):
 
-- [x] Cloned fresh repo from github.com/1quantlogistics-ship-it/MAGNET
-- [x] Set git identity (Agent-BRAVO / bravo@magnet.dev)
-- [x] Created BRAVO directory structure
+1. `[BRAVO] Create BRAVO directory structure`
+2. `[BRAVO] Add HANDOFF.md for agent coordination`
+3. `[BRAVO] Implement memory module (file_io.py, schemas.py)`
+4. `[BRAVO] Implement BaseAgent class with vLLM interface`
+5. `[BRAVO] Implement FastAPI control plane`
+6. `[BRAVO] Implement Director agent`
+7. `[BRAVO] Add comprehensive test suite (56 tests)`
+8. `[BRAVO] Add requirements.txt`
+
+---
+
+## Previous Session (ALPHA):
+
+- [x] Created ALPHA directory structure
+- [x] Implemented schemas (MissionSchema, HullParamsSchema)
+- [x] Implemented physics/hydrostatics
+- [x] Implemented constraints

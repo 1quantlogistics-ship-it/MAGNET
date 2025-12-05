@@ -1,0 +1,23 @@
+# MAGNET V1 Requirements
+# Core dependencies for all modules
+
+# API Framework
+fastapi>=0.104.0
+uvicorn>=0.24.0
+
+# Data Validation
+pydantic>=2.5.0
+
+# HTTP Client
+requests>=2.31.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+httpx>=0.25.0
+
+# Optional: vLLM client (if running inference locally)
+# openai>=1.0.0
+
+# Numerical computing (for physics)
+numpy>=1.24.0
