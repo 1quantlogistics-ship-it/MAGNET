@@ -8,6 +8,7 @@ All agents inherit from BaseAgent and communicate via file-based protocol.
 Agent Types:
 - Director: Interprets user requirements, manages design flow
 - NavalArchitect: Hull form design, hydrostatics
+- PropulsionEngineer: Propulsion system sizing and selection
 - StructuralEngineer: Scantlings, structural design
 - ProductionEngineer: Manufacturability review
 - ClassReviewer: Classification society compliance
@@ -20,6 +21,7 @@ Agent Types:
 from .base import BaseAgent, AgentMessage, AgentResponse, MockLLMAgent
 from .director import DirectorAgent, create_director
 from .naval_architect import NavalArchitectAgent, create_naval_architect
+from .propulsion_engineer import PropulsionEngineerAgent, create_propulsion_engineer
 
 __all__ = [
     "BaseAgent",
@@ -30,4 +32,6 @@ __all__ = [
     "create_director",
     "NavalArchitectAgent",
     "create_naval_architect",
+    "PropulsionEngineerAgent",
+    "create_propulsion_engineer",
 ]

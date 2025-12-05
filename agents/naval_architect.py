@@ -44,18 +44,29 @@ try:
         calculate_total_resistance,
         ResistanceResult,
     )
+    from physics.weight import (
+        calculate_lightship_weight,
+        LightshipResult,
+        VesselCategory,
+        PropulsionType,
+    )
     from constraints.hull_form import HullFormConstraints
     ALPHA_AVAILABLE = True
     ALPHA_STABILITY_AVAILABLE = True
     ALPHA_RESISTANCE_AVAILABLE = True
+    ALPHA_WEIGHT_AVAILABLE = True
 except ImportError:
     ALPHA_AVAILABLE = False
     ALPHA_STABILITY_AVAILABLE = False
     ALPHA_RESISTANCE_AVAILABLE = False
+    ALPHA_WEIGHT_AVAILABLE = False
     HullParamsSchema = None
     HullType = None
     StabilityResult = None
     ResistanceResult = None
+    LightshipResult = None
+    VesselCategory = None
+    PropulsionType = None
 
 
 class NavalArchitectAgent(BaseAgent):
@@ -349,6 +360,7 @@ Include your reasoning, then provide the hull parameters JSON with HULL_PARAMS_J
         concerns = []
         stability_data = None
         resistance_data = None
+        weight_data = None
 
         # Validate with ALPHA's schema if available
         if ALPHA_AVAILABLE and HullParamsSchema:
@@ -451,6 +463,62 @@ Include your reasoning, then provide the hull parameters JSON with HULL_PARAMS_J
                     except Exception as e:
                         concerns.append(f"Resistance calculation error: {e}")
 
+                # Calculate weight estimate using ALPHA's weight module
+                if ALPHA_WEIGHT_AVAILABLE and resistance_data:
+                    try:
+                        # Get installed power from resistance calculation (with margin)
+                        installed_power = resistance_data.get("delivered_power_kW", 0) * 1.15  # 15% margin
+
+                        # Map hull type to vessel category
+                        hull_type = hull_data.get("hull_type", "displacement")
+                        vessel_category = VesselCategory.PATROL_MILITARY  # Default for MAGNET use case
+
+                        # Get crew capacity from mission
+                        crew_capacity = mission_data.get("crew", 10) if mission_data else 10
+
+                        weight_result = calculate_lightship_weight(
+                            length_bp=hull.length_waterline,
+                            beam=hull.beam,
+                            depth=hull.depth,
+                            block_coefficient=hull.block_coefficient,
+                            installed_power=installed_power,
+                            vessel_category=vessel_category,
+                            propulsion_type=PropulsionType.DIESEL_MECHANICAL,
+                            crew_capacity=crew_capacity,
+                            design_margin=0.05,
+                            has_superstructure=True,
+                        )
+
+                        # Store weight results
+                        weight_data = {
+                            "lightship_weight_tonnes": round(weight_result.total_lightship, 1),
+                            "hull_steel_weight_tonnes": round(weight_result.hull_steel_weight, 1),
+                            "machinery_weight_tonnes": round(weight_result.machinery_weight, 1),
+                            "outfit_weight_tonnes": round(weight_result.outfit_weight, 1),
+                            "design_margin_tonnes": round(weight_result.margin_weight, 1),
+                            "kg_lightship_m": round(weight_result.kg_lightship, 2),
+                            "lcg_lightship_m": round(weight_result.lcg_lightship, 2),
+                            "installed_power_kW": round(installed_power, 0),
+                            "method": weight_result.method,
+                            "vessel_category": weight_result.vessel_category,
+                        }
+
+                        # Add to hull_data
+                        hull_data["weight"] = weight_data
+
+                        # Write weight estimate to memory
+                        self.memory.write("weight_estimate", weight_data, validate=False)
+
+                        # Check weight vs displacement
+                        displacement = hull_data.get("displacement_tonnes", 0)
+                        if displacement > 0:
+                            weight_ratio = weight_result.total_lightship / displacement
+                            if weight_ratio > 0.75:
+                                concerns.append(f"Warning: Lightship {weight_result.total_lightship:.0f}t is {weight_ratio*100:.0f}% of displacement - limited deadweight capacity")
+
+                    except Exception as e:
+                        concerns.append(f"Weight calculation error: {e}")
+
                 # Validate with constraints
                 if self.constraints:
                     validation = self.constraints.validate(hull)
@@ -490,6 +558,7 @@ Include your reasoning, then provide the hull parameters JSON with HULL_PARAMS_J
             "parameters": hull_data,
             "stability": stability_data,
             "resistance": resistance_data,
+            "weight": weight_data,
             "is_fallback": is_fallback,
         })
 
@@ -497,7 +566,7 @@ Include your reasoning, then provide the hull parameters JSON with HULL_PARAMS_J
         if concerns:
             confidence -= 0.1 * min(len(concerns), 3)
 
-        # Build response content with stability/resistance info
+        # Build response content with stability/resistance/weight info
         content_parts = [
             f"Hull parameters proposed: {hull_data.get('hull_type', 'unknown')} "
             f"{hull_data.get('length_overall', 0):.1f}m LOA"
@@ -506,6 +575,8 @@ Include your reasoning, then provide the hull parameters JSON with HULL_PARAMS_J
             content_parts.append(f"GM={stability_data['GM']:.3f}m, IMO {'✓' if stability_data['imo_criteria_passed'] else '✗'}")
         if resistance_data:
             content_parts.append(f"Power={resistance_data['delivered_power_kW']:.0f}kW @ {resistance_data['design_speed_kts']}kts")
+        if weight_data:
+            content_parts.append(f"Lightship={weight_data['lightship_weight_tonnes']:.0f}t")
 
         return AgentResponse(
             agent_id=self.agent_id,
@@ -519,6 +590,7 @@ Include your reasoning, then provide the hull parameters JSON with HULL_PARAMS_J
                 "wetted_surface_m2": hull_data.get("wetted_surface_m2"),
                 "stability": stability_data,
                 "resistance": resistance_data,
+                "weight": weight_data,
             },
         )
 

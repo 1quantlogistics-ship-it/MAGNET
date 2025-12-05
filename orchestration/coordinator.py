@@ -17,6 +17,7 @@ from datetime import datetime
 from agents.base import BaseAgent, AgentResponse
 from agents.director import DirectorAgent
 from agents.naval_architect import NavalArchitectAgent
+from agents.propulsion_engineer import PropulsionEngineerAgent
 from memory.file_io import MemoryFileIO
 from memory.schemas import DesignPhase, SystemStateSchema
 from .consensus import ConsensusEngine, ConsensusResult
@@ -51,10 +52,10 @@ DESIGN_WORKFLOW = [
     ),
     WorkflowStep(
         phase=DesignPhase.PROPULSION,
-        agent_type="propulsion_engineer",  # Not yet implemented
+        agent_type="propulsion_engineer",
         description="Design propulsion system",
         required_inputs=["mission", "hull_params"],
-        outputs=["propulsion_params"],
+        outputs=["propulsion_config"],
     ),
     WorkflowStep(
         phase=DesignPhase.STRUCTURE,
@@ -108,6 +109,11 @@ class Coordinator:
             elif agent_type == "naval_architect":
                 self._agents[agent_type] = NavalArchitectAgent(
                     agent_id="naval_architect_001",
+                    memory_path=self.memory_path,
+                )
+            elif agent_type == "propulsion_engineer":
+                self._agents[agent_type] = PropulsionEngineerAgent(
+                    agent_id="propulsion_engineer_001",
                     memory_path=self.memory_path,
                 )
             else:

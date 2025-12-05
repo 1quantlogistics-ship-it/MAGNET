@@ -61,6 +61,7 @@ class MemoryFileIO:
             "weight_estimate": self.memory_path / "weight_estimate.json",
             "stability_results": self.memory_path / "stability_results.json",
             "resistance_results": self.memory_path / "resistance_results.json",
+            "propulsion_config": self.memory_path / "propulsion_config.json",
             "system_state": self.memory_path / "system_state.json",
             "reviews": self.memory_path / "reviews.json",
             "constraints": self.memory_path / "constraints.json",

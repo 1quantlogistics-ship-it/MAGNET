@@ -7,6 +7,7 @@ Submodules:
 - hydrostatics: Displacement, stability, buoyancy
 - resistance: Resistance prediction, power estimation
 - weight: Weight estimation and distribution
+- structural: Scantling calculations (ABS HSNC 2023)
 """
 
 from .hydrostatics import (
@@ -36,6 +37,20 @@ from .weight import (
     WeightItem,
 )
 
+from .structural import (
+    AluminumAlloy,
+    ALLOWED_ALLOYS,
+    PROHIBITED_ALLOYS,
+    get_alloy_properties,
+    PressureZone,
+    calculate_design_pressure,
+    calculate_all_zone_pressures,
+    generate_plating_schedule,
+    PlatingSchedule,
+    calculate_all_stiffeners,
+    StiffenerResult,
+)
+
 __all__ = [
     # Hydrostatics
     'calculate_displacement',
@@ -58,4 +73,16 @@ __all__ = [
     'DisplacementBalance',
     'WeightDistribution',
     'WeightItem',
+    # Structural
+    'AluminumAlloy',
+    'ALLOWED_ALLOYS',
+    'PROHIBITED_ALLOYS',
+    'get_alloy_properties',
+    'PressureZone',
+    'calculate_design_pressure',
+    'calculate_all_zone_pressures',
+    'generate_plating_schedule',
+    'PlatingSchedule',
+    'calculate_all_stiffeners',
+    'StiffenerResult',
 ]
