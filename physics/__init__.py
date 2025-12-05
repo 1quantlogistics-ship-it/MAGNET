@@ -6,6 +6,7 @@ Physics simulation and calculations for naval vessel design.
 Submodules:
 - hydrostatics: Displacement, stability, buoyancy
 - resistance: Resistance prediction, power estimation
+- weight: Weight estimation and distribution
 """
 
 from .hydrostatics import (
@@ -23,6 +24,18 @@ from .resistance import (
     ResistanceResult,
 )
 
+from .weight import (
+    calculate_lightship_weight,
+    calculate_deadweight,
+    calculate_displacement_balance,
+    calculate_weight_distribution,
+    LightshipResult,
+    DeadweightResult,
+    DisplacementBalance,
+    WeightDistribution,
+    WeightItem,
+)
+
 __all__ = [
     # Hydrostatics
     'calculate_displacement',
@@ -35,4 +48,14 @@ __all__ = [
     'calculate_total_resistance',
     'estimate_speed_power_curve',
     'ResistanceResult',
+    # Weight
+    'calculate_lightship_weight',
+    'calculate_deadweight',
+    'calculate_displacement_balance',
+    'calculate_weight_distribution',
+    'LightshipResult',
+    'DeadweightResult',
+    'DisplacementBalance',
+    'WeightDistribution',
+    'WeightItem',
 ]
