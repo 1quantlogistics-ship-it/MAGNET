@@ -18,6 +18,7 @@ from agents.base import BaseAgent, AgentResponse
 from agents.director import DirectorAgent
 from agents.naval_architect import NavalArchitectAgent
 from agents.propulsion_engineer import PropulsionEngineerAgent
+from agents.structural_engineer import StructuralEngineerAgent
 from memory.file_io import MemoryFileIO
 from memory.schemas import DesignPhase, SystemStateSchema
 from .consensus import ConsensusEngine, ConsensusResult
@@ -59,10 +60,10 @@ DESIGN_WORKFLOW = [
     ),
     WorkflowStep(
         phase=DesignPhase.STRUCTURE,
-        agent_type="structural_engineer",  # Not yet implemented
+        agent_type="structural_engineer",
         description="Design structural elements and scantlings",
         required_inputs=["mission", "hull_params"],
-        outputs=["structural_params"],
+        outputs=["structural_design"],
     ),
     # Additional phases to be implemented...
 ]
@@ -114,6 +115,11 @@ class Coordinator:
             elif agent_type == "propulsion_engineer":
                 self._agents[agent_type] = PropulsionEngineerAgent(
                     agent_id="propulsion_engineer_001",
+                    memory_path=self.memory_path,
+                )
+            elif agent_type == "structural_engineer":
+                self._agents[agent_type] = StructuralEngineerAgent(
+                    agent_id="structural_engineer_001",
                     memory_path=self.memory_path,
                 )
             else:

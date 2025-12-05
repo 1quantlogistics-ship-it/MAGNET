@@ -22,6 +22,8 @@ from .base import BaseAgent, AgentMessage, AgentResponse, MockLLMAgent
 from .director import DirectorAgent, create_director
 from .naval_architect import NavalArchitectAgent, create_naval_architect
 from .propulsion_engineer import PropulsionEngineerAgent, create_propulsion_engineer
+from .structural_engineer import StructuralEngineerAgent, create_structural_engineer
+from .class_reviewer import ClassReviewerAgent, create_class_reviewer, ComplianceStandard
 
 __all__ = [
     "BaseAgent",
@@ -34,4 +36,9 @@ __all__ = [
     "create_naval_architect",
     "PropulsionEngineerAgent",
     "create_propulsion_engineer",
+    "StructuralEngineerAgent",
+    "create_structural_engineer",
+    "ClassReviewerAgent",
+    "create_class_reviewer",
+    "ComplianceStandard",
 ]
