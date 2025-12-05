@@ -17,10 +17,17 @@ Agent Types:
 - Executor: Output formatting
 """
 
-from .base import BaseAgent, AgentMessage, AgentResponse
+from .base import BaseAgent, AgentMessage, AgentResponse, MockLLMAgent
+from .director import DirectorAgent, create_director
+from .naval_architect import NavalArchitectAgent, create_naval_architect
 
 __all__ = [
     "BaseAgent",
     "AgentMessage",
     "AgentResponse",
+    "MockLLMAgent",
+    "DirectorAgent",
+    "create_director",
+    "NavalArchitectAgent",
+    "create_naval_architect",
 ]
