@@ -2,4 +2,37 @@
 MAGNET V1 Physics Module (ALPHA)
 
 Physics simulation and calculations for naval vessel design.
+
+Submodules:
+- hydrostatics: Displacement, stability, buoyancy
+- resistance: Resistance prediction, power estimation
 """
+
+from .hydrostatics import (
+    calculate_displacement,
+    calculate_wetted_surface_from_hull,
+    calculate_wetted_surface_holtrop,
+    calculate_stability,
+    calculate_stability_from_hull,
+    StabilityResult,
+)
+
+from .resistance import (
+    calculate_total_resistance,
+    estimate_speed_power_curve,
+    ResistanceResult,
+)
+
+__all__ = [
+    # Hydrostatics
+    'calculate_displacement',
+    'calculate_wetted_surface_from_hull',
+    'calculate_wetted_surface_holtrop',
+    'calculate_stability',
+    'calculate_stability_from_hull',
+    'StabilityResult',
+    # Resistance
+    'calculate_total_resistance',
+    'estimate_speed_power_curve',
+    'ResistanceResult',
+]
