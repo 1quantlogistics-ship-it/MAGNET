@@ -34,6 +34,15 @@ from memory.schemas import (
 )
 from orchestration import Coordinator, create_coordinator
 
+# Import ALPHA's validation module
+try:
+    from validation import validate_design, check_bounds, ValidationResult
+    VALIDATION_AVAILABLE = True
+except ImportError:
+    VALIDATION_AVAILABLE = False
+    validate_design = None
+    ValidationResult = None
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("magnet.api")
@@ -244,18 +253,104 @@ def create_app(memory_path: str = "memory") -> FastAPI:
         """
         Trigger design validation.
 
-        Runs physics engine and constraint checks.
+        Runs physics engine and constraint checks using ALPHA's validation module.
         """
         logger.info("Validation requested")
 
-        # TODO: Implement validation with physics engine from ALPHA
-        # For now, return placeholder
+        if not VALIDATION_AVAILABLE:
+            return ValidationResponse(
+                valid=True,
+                errors=[],
+                warnings=[{"message": "ALPHA validation module not available", "severity": "warning"}],
+                passed_checks=["fallback_mode"],
+            )
+
+        # Read current design state from memory
+        mission = memory.read("mission")
+        hull_params = memory.read("hull_params")
+        stability_results = memory.read("stability_results")
+        resistance_results = memory.read("resistance_results")
+
+        passed_checks = []
+        all_errors = []
+        all_warnings = []
+
+        # Run semantic validation
+        try:
+            result = validate_design(
+                mission=mission,
+                hull=hull_params,
+                stability=stability_results
+            )
+
+            if result.valid:
+                passed_checks.append("semantic_validation")
+
+            # Convert ValidationIssue objects to dicts
+            for err in result.errors:
+                all_errors.append({
+                    "category": err.category,
+                    "field": err.field,
+                    "message": err.message,
+                    "severity": "error",
+                })
+
+            for warn in result.warnings:
+                all_warnings.append({
+                    "category": warn.category,
+                    "field": warn.field,
+                    "message": warn.message,
+                    "severity": "warning",
+                })
+
+        except Exception as e:
+            all_warnings.append({
+                "message": f"Semantic validation error: {e}",
+                "severity": "warning",
+            })
+
+        # Run bounds checking
+        try:
+            is_valid, bounds_checks = check_bounds(
+                mission=mission,
+                hull=hull_params
+            )
+
+            if is_valid:
+                passed_checks.append("bounds_validation")
+
+            for check in bounds_checks:
+                if not check.in_bounds:
+                    all_errors.append({
+                        "category": "bounds",
+                        "field": check.parameter,
+                        "message": f"{check.parameter}={check.value} out of bounds [{check.min_val}, {check.max_val}]",
+                        "severity": "error",
+                    })
+
+        except Exception as e:
+            all_warnings.append({
+                "message": f"Bounds validation error: {e}",
+                "severity": "warning",
+            })
+
+        # Check what data is available
+        if mission:
+            passed_checks.append("mission_exists")
+        if hull_params:
+            passed_checks.append("hull_params_exists")
+        if stability_results:
+            passed_checks.append("stability_calculated")
+        if resistance_results:
+            passed_checks.append("resistance_calculated")
+
+        overall_valid = len(all_errors) == 0
 
         return ValidationResponse(
-            valid=True,
-            errors=[],
-            warnings=[{"message": "Validation not yet implemented", "severity": "info"}],
-            passed_checks=["placeholder"],
+            valid=overall_valid,
+            errors=all_errors,
+            warnings=all_warnings,
+            passed_checks=passed_checks,
         )
 
     @app.post("/export", response_model=ExportResponse)

@@ -35,12 +35,27 @@ try:
         calculate_wetted_surface_holtrop,
         calculate_waterplane_area,
     )
+    from physics.hydrostatics.stability import (
+        calculate_stability,
+        StabilityResult,
+        generate_stability_report,
+    )
+    from physics.resistance import (
+        calculate_total_resistance,
+        ResistanceResult,
+    )
     from constraints.hull_form import HullFormConstraints
     ALPHA_AVAILABLE = True
+    ALPHA_STABILITY_AVAILABLE = True
+    ALPHA_RESISTANCE_AVAILABLE = True
 except ImportError:
     ALPHA_AVAILABLE = False
+    ALPHA_STABILITY_AVAILABLE = False
+    ALPHA_RESISTANCE_AVAILABLE = False
     HullParamsSchema = None
     HullType = None
+    StabilityResult = None
+    ResistanceResult = None
 
 
 class NavalArchitectAgent(BaseAgent):
@@ -235,8 +250,8 @@ Include your reasoning, then provide the hull parameters JSON with HULL_PARAMS_J
                 concerns=["Could not extract structured hull data"],
             )
 
-        # Validate and enrich
-        return self._validate_and_save(hull_data, response_text)
+        # Validate and enrich (pass mission_data for resistance calculation)
+        return self._validate_and_save(hull_data, response_text, mission_data=mission_data)
 
     def _fallback_design(self, mission_data: Dict[str, Any]) -> AgentResponse:
         """
@@ -308,14 +323,16 @@ Include your reasoning, then provide the hull parameters JSON with HULL_PARAMS_J
         return self._validate_and_save(
             hull_data,
             "Fallback design using heuristics (LLM unavailable)",
-            is_fallback=True
+            is_fallback=True,
+            mission_data=mission_data
         )
 
     def _validate_and_save(
         self,
         hull_data: Dict[str, Any],
         reasoning: str,
-        is_fallback: bool = False
+        is_fallback: bool = False,
+        mission_data: Optional[Dict[str, Any]] = None
     ) -> AgentResponse:
         """
         Validate hull parameters and save to memory.
@@ -324,11 +341,14 @@ Include your reasoning, then provide the hull parameters JSON with HULL_PARAMS_J
             hull_data: Hull parameters dictionary
             reasoning: Reasoning text from LLM or fallback
             is_fallback: Whether this is a fallback design
+            mission_data: Optional mission data for resistance calculation
 
         Returns:
             AgentResponse with validation results
         """
         concerns = []
+        stability_data = None
+        resistance_data = None
 
         # Validate with ALPHA's schema if available
         if ALPHA_AVAILABLE and HullParamsSchema:
@@ -354,6 +374,82 @@ Include your reasoning, then provide the hull parameters JSON with HULL_PARAMS_J
                 # Add calculated values
                 hull_data["displacement_tonnes"] = round(displacement, 1)
                 hull_data["wetted_surface_m2"] = round(wetted_surface, 1)
+
+                # Calculate stability using ALPHA's stability module
+                if ALPHA_STABILITY_AVAILABLE:
+                    try:
+                        stability_result = calculate_stability(
+                            length_wl=hull.length_waterline,
+                            beam=hull.beam,
+                            draft=hull.draft,
+                            depth=hull.depth,
+                            block_coefficient=hull.block_coefficient,
+                            waterplane_coefficient=hull.waterplane_coefficient,
+                            hull_type=hull_data.get("hull_type", "displacement")
+                        )
+
+                        # Store stability results
+                        stability_data = {
+                            "GM": round(stability_result.GM, 3),
+                            "KB": round(stability_result.KB, 3),
+                            "KG": round(stability_result.KG, 3),
+                            "BM": round(stability_result.BM, 3),
+                            "KM": round(stability_result.KM, 3),
+                            "max_GZ": round(stability_result.max_gz, 3),
+                            "angle_max_GZ": round(stability_result.angle_max_gz, 1),
+                            "range_positive_stability": round(stability_result.range_positive_stability, 1),
+                            "imo_criteria_passed": stability_result.imo_criteria_passed,
+                            "is_stable": stability_result.is_stable(),
+                        }
+
+                        # Add stability to hull_data for convenience
+                        hull_data["stability"] = stability_data
+
+                        # Write stability results to memory
+                        self.memory.write("stability_results", stability_data, validate=False)
+
+                        # Check stability
+                        if not stability_result.is_stable():
+                            concerns.append(f"STABILITY WARNING: GM={stability_result.GM:.3f}m, IMO criteria {'PASSED' if stability_result.imo_criteria_passed else 'FAILED'}")
+                        elif stability_result.GM < 0.5:
+                            concerns.append(f"Warning: Low GM ({stability_result.GM:.3f}m) - consider increasing beam or reducing KG")
+
+                    except Exception as e:
+                        concerns.append(f"Stability calculation error: {e}")
+
+                # Calculate resistance at design speed using ALPHA's resistance module
+                if ALPHA_RESISTANCE_AVAILABLE and mission_data:
+                    try:
+                        design_speed = mission_data.get("design_speed_kts") or mission_data.get("speed_max_kts", 25)
+
+                        resistance_result = calculate_total_resistance(
+                            speed_kts=design_speed,
+                            length_wl=hull.length_waterline,
+                            beam=hull.beam,
+                            draft=hull.draft,
+                            block_coefficient=hull.block_coefficient,
+                            prismatic_coefficient=hull.prismatic_coefficient,
+                            waterplane_coefficient=hull.waterplane_coefficient,
+                            wetted_surface=wetted_surface
+                        )
+
+                        # Store resistance results
+                        resistance_data = {
+                            "design_speed_kts": design_speed,
+                            "total_resistance_kN": round(resistance_result.total_resistance / 1000, 1),
+                            "effective_power_kW": round(resistance_result.effective_power / 1000, 1),
+                            "delivered_power_kW": round(resistance_result.delivered_power / 1000, 1),
+                            "froude_number": round(resistance_result.froude_number, 3),
+                        }
+
+                        # Add to hull_data
+                        hull_data["resistance"] = resistance_data
+
+                        # Write resistance results to memory
+                        self.memory.write("resistance_results", resistance_data, validate=False)
+
+                    except Exception as e:
+                        concerns.append(f"Resistance calculation error: {e}")
 
                 # Validate with constraints
                 if self.constraints:
@@ -392,6 +488,8 @@ Include your reasoning, then provide the hull parameters JSON with HULL_PARAMS_J
             "action": "hull_proposed",
             "proposal_id": self._generate_proposal_id(),
             "parameters": hull_data,
+            "stability": stability_data,
+            "resistance": resistance_data,
             "is_fallback": is_fallback,
         })
 
@@ -399,10 +497,19 @@ Include your reasoning, then provide the hull parameters JSON with HULL_PARAMS_J
         if concerns:
             confidence -= 0.1 * min(len(concerns), 3)
 
+        # Build response content with stability/resistance info
+        content_parts = [
+            f"Hull parameters proposed: {hull_data.get('hull_type', 'unknown')} "
+            f"{hull_data.get('length_overall', 0):.1f}m LOA"
+        ]
+        if stability_data:
+            content_parts.append(f"GM={stability_data['GM']:.3f}m, IMO {'✓' if stability_data['imo_criteria_passed'] else '✗'}")
+        if resistance_data:
+            content_parts.append(f"Power={resistance_data['delivered_power_kW']:.0f}kW @ {resistance_data['design_speed_kts']}kts")
+
         return AgentResponse(
             agent_id=self.agent_id,
-            content=f"Hull parameters proposed: {hull_data.get('hull_type', 'unknown')} "
-                   f"{hull_data.get('length_overall', 0):.1f}m LOA",
+            content=" | ".join(content_parts),
             confidence=max(0.1, confidence),
             reasoning=reasoning,
             proposals=[hull_data],
@@ -410,6 +517,8 @@ Include your reasoning, then provide the hull parameters JSON with HULL_PARAMS_J
             metadata={
                 "displacement_tonnes": hull_data.get("displacement_tonnes"),
                 "wetted_surface_m2": hull_data.get("wetted_surface_m2"),
+                "stability": stability_data,
+                "resistance": resistance_data,
             },
         )
 
