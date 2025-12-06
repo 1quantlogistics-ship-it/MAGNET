@@ -24,6 +24,7 @@ from .naval_architect import NavalArchitectAgent, create_naval_architect
 from .propulsion_engineer import PropulsionEngineerAgent, create_propulsion_engineer
 from .structural_engineer import StructuralEngineerAgent, create_structural_engineer
 from .class_reviewer import ClassReviewerAgent, create_class_reviewer, ComplianceStandard
+from .supervisor import SupervisorAgent, create_supervisor, SupervisorDecision
 
 __all__ = [
     "BaseAgent",
@@ -41,4 +42,7 @@ __all__ = [
     "ClassReviewerAgent",
     "create_class_reviewer",
     "ComplianceStandard",
+    "SupervisorAgent",
+    "create_supervisor",
+    "SupervisorDecision",
 ]
