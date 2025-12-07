@@ -141,7 +141,7 @@ FIELD_ALIASES: Dict[str, str] = {
     "analysis.noise": "analysis.noise_level_db",
 
     # Safety aliases
-    "safety.lifejackets": "safety.lifejackets",
+    "safety.life_jacket_count": "safety.lifejackets",  # Backwards compat: old name -> canonical
     "safety.liferafts": "safety.num_liferafts",
 
     # Cost aliases
