@@ -37,8 +37,14 @@ class ValidatorCategory(Enum):
     BOUNDS = "bounds"
     CLASS_RULES = "class_rules"
     STABILITY = "stability"
+    WEIGHT = "weight"            # NEW v1.1: Weight estimation
+    ARRANGEMENT = "arrangement"  # NEW v1.1: General arrangement
+    LOADING = "loading"          # NEW v1.1: Loading computer
     REGULATORY = "regulatory"
     PRODUCTION = "production"
+    ECONOMICS = "economics"      # NEW v1.1: Cost estimation
+    OPTIMIZATION = "optimization"  # NEW v1.1: Design optimization
+    REPORTING = "reporting"      # NEW v1.1: Report generation
     CUSTOM = "custom"
 
 

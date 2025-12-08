@@ -1,11 +1,16 @@
 """
 MAGNET Built-in Validators
 
-Module 04 v1.1 - Production-Ready
+Module 04 v1.2 - Production-Ready
 
 Registry of built-in validator definitions.
 
 v1.1: FIX #2 - All parameter names normalized to Section 1 conventions.
+v1.2: Updated stability validators with:
+      - hull.bmt → hull.bm_m (hydrostatics v1.2 output)
+      - stability.kg_m for weight integration (KG sourcing priority)
+      - Explicit m-rad units for GZ area fields
+      - Extended validator outputs
 """
 
 from typing import Dict, List, Optional
@@ -27,24 +32,34 @@ PHYSICS_VALIDATORS = [
     ValidatorDefinition(
         validator_id="physics/hydrostatics",
         name="Hydrostatics Calculator",
-        description="Computes displacement, LCB, VCB, waterplane area, coefficients",
+        description="Computes displacement, centers, stability parameters (v1.2)",
         category=ValidatorCategory.PHYSICS,
         priority=ValidatorPriority.CRITICAL,
         phase="hull_form",
         is_gate_condition=True,
-        # FIX #2: Use Section 1 field names
+        # v1.2: Extended input parameters
         depends_on_parameters=[
-            "hull.loa", "hull.beam", "hull.depth", "hull.draft",
-            "hull.cb", "hull.cp", "hull.cwp"
+            "hull.loa", "hull.lwl", "hull.beam", "hull.depth", "hull.draft",
+            "hull.cb", "hull.cp", "hull.cm", "hull.cwp",
+            "hull.hull_type", "hull.deadrise_deg"
         ],
-        # FIX #3: Outputs for implicit dependency edges
+        # v1.2: Updated from 5 to 11 outputs
         produces_parameters=[
-            "hull.displacement_m3", "hull.lcb_from_ap_m", "hull.vcb_m",
-            "hull.waterplane_area_m2", "hull.wetted_surface_m2"
+            "hull.displacement_m3",      # Displaced volume
+            "hull.kb_m",                 # NEW v1.2: Center of buoyancy height
+            "hull.bm_m",                 # NEW v1.2: Metacentric radius
+            "hull.lcb_from_ap_m",        # Longitudinal center of buoyancy
+            "hull.vcb_m",                # Vertical center of buoyancy
+            "hull.tpc",                  # NEW v1.2: Tonnes per cm immersion
+            "hull.mct",                  # NEW v1.2: Moment to change trim 1cm
+            "hull.lcf_from_ap_m",        # NEW v1.2: Longitudinal center of flotation
+            "hull.waterplane_area_m2",   # Waterplane area
+            "hull.wetted_surface_m2",    # Wetted surface area
+            "hull.freeboard",            # NEW v1.2: Freeboard at midship
         ],
         timeout_seconds=120,
         resource_requirements=ResourceRequirements(cpu_cores=2, ram_gb=1.0),
-        tags=["core", "hull", "buoyancy"],
+        tags=["core", "hull", "buoyancy", "v1.2"],
     ),
 
     ValidatorDefinition(
@@ -203,71 +218,95 @@ BOUNDS_VALIDATORS = [
 
 
 # =============================================================================
-# STABILITY VALIDATORS (FIX #2: Normalized parameter names)
+# STABILITY VALIDATORS (v1.2: Updated parameter names and outputs)
 # =============================================================================
 
 STABILITY_VALIDATORS = [
     ValidatorDefinition(
         validator_id="stability/intact_gm",
         name="Intact GM Calculator",
-        description="Calculates metacentric height for intact stability",
+        description="Calculates metacentric height for intact stability (v1.2)",
         category=ValidatorCategory.STABILITY,
         priority=ValidatorPriority.CRITICAL,
         phase="stability",
         is_gate_condition=True,
         depends_on_validators=["physics/hydrostatics"],
+        # v1.2: hull.bmt → hull.bm_m, add stability.kg_m for weight integration
         depends_on_parameters=[
-            "weight.lightship_weight_mt", "weight.lightship_vcg_m",
-            "hull.bmt", "hull.vcb_m"
+            "hull.kb_m", "hull.bm_m", "hull.displacement_mt",
+            "stability.kg_m", "weight.lightship_vcg_m"  # KG sourcing priority
         ],
-        produces_parameters=["stability.gm_transverse_m"],
+        # v1.2: Extended outputs
+        produces_parameters=[
+            "stability.gm_m",           # GM with FSC
+            "stability.gm_solid_m",     # GM without FSC
+            "stability.km_m",           # KM from hydrostatics
+            "stability.fsc_m",          # Free surface correction
+            "stability.passes_gm_criterion",  # GM ≥ 0.15m
+        ],
         timeout_seconds=60,
-        tags=["stability", "intact"],
+        tags=["stability", "intact", "v1.2"],
     ),
 
     ValidatorDefinition(
         validator_id="stability/gz_curve",
         name="GZ Curve Generator",
-        description="Generates righting arm curve across heel angles",
+        description="Generates righting arm curve with IMO criteria (v1.2)",
         category=ValidatorCategory.STABILITY,
         priority=ValidatorPriority.HIGH,
         phase="stability",
         is_gate_condition=True,
         depends_on_validators=["stability/intact_gm", "physics/hydrostatics"],
         depends_on_parameters=[
-            "stability.gm_transverse_m", "hull.displacement_m3"
+            "stability.gm_m", "hull.bm_m", "hull.beam", "hull.freeboard"
         ],
+        # v1.2 FIX #2: Explicit m-rad units for area fields
         produces_parameters=[
-            "stability.gz_curve", "stability.gz_max_m",
-            "stability.angle_of_max_gz_deg"
+            "stability.gz_curve",           # List of GZPoint
+            "stability.gz_max_m",           # Maximum GZ
+            "stability.gz_30_m",            # GZ at 30°
+            "stability.angle_gz_max_deg",   # Angle of GZmax
+            "stability.angle_vanishing_deg",  # Vanishing angle
+            "stability.range_deg",          # Range of stability
+            "stability.area_0_30_m_rad",    # Area 0-30° (m-rad)
+            "stability.area_0_40_m_rad",    # Area 0-40° (m-rad)
+            "stability.area_30_40_m_rad",   # Area 30-40° (m-rad)
+            "stability.passes_gz_criteria",  # All 5 IMO criteria
         ],
         timeout_seconds=120,
         resource_requirements=ResourceRequirements(cpu_cores=2, ram_gb=1.5),
-        tags=["stability", "gz"],
+        tags=["stability", "gz", "imo", "v1.2"],
     ),
 
     ValidatorDefinition(
         validator_id="stability/damage",
         name="Damage Stability Analysis",
-        description="Evaluates stability under damaged conditions",
+        description="Evaluates stability under 4 standard damage cases (v1.2)",
         category=ValidatorCategory.STABILITY,
         priority=ValidatorPriority.HIGH,
         phase="stability",
         is_gate_condition=True,
-        depends_on_validators=["stability/gz_curve"],
+        depends_on_validators=["stability/intact_gm", "physics/hydrostatics"],
         depends_on_parameters=[
-            "stability.gz_curve", "arrangement.compartments"
+            "hull.lwl", "hull.beam", "hull.draft",
+            "hull.displacement_mt", "stability.gm_m"
         ],
-        produces_parameters=["stability.damage_cases"],
+        # v1.2: Extended damage outputs
+        produces_parameters=[
+            "stability.damage_cases_evaluated",  # Number of cases
+            "stability.damage_all_pass",         # All cases pass
+            "stability.damage_worst_case",       # ID of worst case
+            "stability.damage_results",          # Full results dict
+        ],
         timeout_seconds=300,
         resource_requirements=ResourceRequirements(cpu_cores=4, ram_gb=4.0),
-        tags=["stability", "damage", "compliance"],
+        tags=["stability", "damage", "compliance", "v1.2"],
     ),
 
     ValidatorDefinition(
         validator_id="stability/weather_criterion",
         name="Weather Criterion Check",
-        description="IMO weather criterion (wind heeling vs GZ)",
+        description="IMO severe wind and rolling criterion (v1.2)",
         category=ValidatorCategory.STABILITY,
         priority=ValidatorPriority.NORMAL,
         phase="stability",
@@ -275,10 +314,20 @@ STABILITY_VALIDATORS = [
         gate_severity=ResultSeverity.WARNING,  # Advisory
         depends_on_validators=["stability/gz_curve"],
         depends_on_parameters=[
-            "hull.loa", "environmental.design_wave_height_m"
+            "hull.beam", "hull.draft", "hull.displacement_mt",
+            "stability.gm_m", "stability.gz_curve",
+            "hull.projected_lateral_area_m2",
+            "hull.height_of_wind_pressure_m"
+        ],
+        # v1.2: Weather criterion outputs
+        produces_parameters=[
+            "stability.weather_area_a_m_rad",   # Heeling energy
+            "stability.weather_area_b_m_rad",   # Righting energy
+            "stability.weather_ratio",          # b/a ratio
+            "stability.weather_passes",         # Passes criterion
         ],
         timeout_seconds=60,
-        tags=["stability", "imo", "weather"],
+        tags=["stability", "imo", "weather", "v1.2"],
     ),
 ]
 
@@ -348,6 +397,29 @@ CLASS_VALIDATORS = [
 
 PRODUCTION_VALIDATORS = [
     ValidatorDefinition(
+        validator_id="production/planning",
+        name="Production Planning",
+        description="Generate material takeoff, assembly sequence, and build schedule (v1.1)",
+        category=ValidatorCategory.PRODUCTION,
+        priority=ValidatorPriority.LOW,
+        phase="production",
+        is_gate_condition=False,
+        depends_on_parameters=[
+            "hull.lwl", "hull.beam", "hull.depth",
+            "structure.material", "structure.frame_spacing_mm",
+        ],
+        produces_parameters=[
+            "production.material_takeoff",
+            "production.assembly_sequence",
+            "production.build_schedule",
+            "production.summary",
+        ],
+        timeout_seconds=120,
+        resource_requirements=ResourceRequirements(cpu_cores=1, ram_gb=0.5),
+        tags=["production", "planning", "material", "schedule", "v1.1"],
+    ),
+
+    ValidatorDefinition(
         validator_id="production/plate_nesting",
         name="Plate Nesting Feasibility",
         description="Checks if plates can be nested on standard sheets",
@@ -379,6 +451,298 @@ PRODUCTION_VALIDATORS = [
 
 
 # =============================================================================
+# WEIGHT VALIDATORS (v1.1)
+# =============================================================================
+
+WEIGHT_VALIDATORS = [
+    ValidatorDefinition(
+        validator_id="weight/estimation",
+        name="Parametric Weight Estimator",
+        description="SWBS parametric weight estimation (v1.1)",
+        category=ValidatorCategory.WEIGHT,
+        priority=ValidatorPriority.HIGH,
+        phase="weight",
+        is_gate_condition=True,
+        depends_on_validators=["physics/hydrostatics"],
+        depends_on_parameters=[
+            "hull.lwl", "hull.beam", "hull.depth", "hull.draft", "hull.cb",
+            "propulsion.installed_power_kw", "propulsion.number_of_engines",
+            "mission.crew_size", "mission.passengers", "mission.vessel_type",
+        ],
+        produces_parameters=[
+            "weight.lightship_mt", "weight.lightship_lcg_m",
+            "weight.lightship_vcg_m", "weight.lightship_tcg_m",
+            "weight.group_100_mt", "weight.group_200_mt",
+            "weight.group_300_mt", "weight.group_400_mt",
+            "weight.group_500_mt", "weight.group_600_mt",
+            "weight.margin_mt", "weight.average_confidence",
+            "weight.summary_data",
+        ],
+        timeout_seconds=120,
+        resource_requirements=ResourceRequirements(cpu_cores=1, ram_gb=0.5),
+        tags=["weight", "swbs", "parametric", "v1.1"],
+    ),
+
+    ValidatorDefinition(
+        validator_id="weight/stability_check",
+        name="Weight-Stability Compatibility",
+        description="Validates weight for stability and writes KG (v1.1)",
+        category=ValidatorCategory.WEIGHT,
+        priority=ValidatorPriority.HIGH,
+        phase="weight",
+        is_gate_condition=True,
+        depends_on_validators=["weight/estimation", "physics/hydrostatics"],
+        depends_on_parameters=[
+            "weight.lightship_vcg_m", "weight.lightship_mt",
+            "hull.displacement_mt", "hull.kb_m", "hull.bm_m",
+        ],
+        produces_parameters=[
+            "weight.estimated_gm_m",
+            "weight.stability_ready",
+            "stability.kg_m",  # NEW v1.1
+        ],
+        timeout_seconds=30,
+        resource_requirements=ResourceRequirements(cpu_cores=1, ram_gb=0.2),
+        tags=["weight", "stability", "v1.1"],
+    ),
+]
+
+
+# =============================================================================
+# ARRANGEMENT VALIDATORS (v1.1)
+# =============================================================================
+
+ARRANGEMENT_VALIDATORS = [
+    ValidatorDefinition(
+        validator_id="arrangement/generator",
+        name="General Arrangement Generator",
+        description="Generates parametric general arrangement with tanks and compartments (v1.1)",
+        category=ValidatorCategory.ARRANGEMENT,
+        priority=ValidatorPriority.HIGH,
+        phase="arrangement",
+        is_gate_condition=True,
+        depends_on_validators=["physics/hydrostatics"],
+        depends_on_parameters=[
+            "hull.lwl", "hull.beam", "hull.depth", "hull.draft",
+            "mission.range_nm", "mission.crew_size", "mission.vessel_type",
+            "mission.endurance_days", "propulsion.installed_power_kw",
+        ],
+        produces_parameters=[
+            "arrangement.data",
+            "arrangement.compartment_count",
+            "arrangement.collision_bulkhead_m",
+            "arrangement.tanks",
+            "arrangement.compartments",
+            "arrangement.tank_summary",
+        ],
+        timeout_seconds=60,
+        resource_requirements=ResourceRequirements(cpu_cores=1, ram_gb=0.5),
+        tags=["arrangement", "tanks", "compartments", "v1.1"],
+    ),
+]
+
+
+# =============================================================================
+# LOADING VALIDATORS (v1.1)
+# =============================================================================
+
+LOADING_VALIDATORS = [
+    ValidatorDefinition(
+        validator_id="loading/computer",
+        name="Loading Computer",
+        description="Calculates loading conditions with stability checks (v1.1)",
+        category=ValidatorCategory.LOADING,
+        priority=ValidatorPriority.HIGH,
+        phase="loading",
+        is_gate_condition=True,
+        depends_on_validators=["weight/estimation", "arrangement/generator", "physics/hydrostatics"],
+        depends_on_parameters=[
+            "weight.lightship_mt", "weight.lightship_lcg_m", "weight.lightship_vcg_m",
+            "hull.depth", "hull.lwl", "hull.draft", "hull.tpc", "hull.mct",
+            "hull.kb_m", "hull.bm_m", "hull.displacement_mt",
+            "arrangement.tanks", "mission.crew_size",
+        ],
+        produces_parameters=[
+            "loading.full_load_departure",
+            "loading.full_load_arrival",
+            "loading.minimum_operating",
+            "loading.lightship",
+            "loading.all_conditions_pass",
+            "loading.worst_case_gm_m",
+            "loading.worst_case_condition",
+            "stability.kg_m",  # Updated from worst loading condition
+        ],
+        timeout_seconds=120,
+        resource_requirements=ResourceRequirements(cpu_cores=1, ram_gb=0.5),
+        tags=["loading", "stability", "deadweight", "v1.1"],
+    ),
+]
+
+
+# =============================================================================
+# COMPLIANCE VALIDATORS (v1.1)
+# =============================================================================
+
+COMPLIANCE_VALIDATORS = [
+    ValidatorDefinition(
+        validator_id="compliance/regulatory",
+        name="Regulatory Compliance Engine",
+        description="Evaluates design against ABS HSNC, HSC Code, USCG rules (v1.1)",
+        category=ValidatorCategory.REGULATORY,
+        priority=ValidatorPriority.HIGH,
+        phase="compliance",
+        is_gate_condition=True,
+        depends_on_validators=["stability/intact_gm", "stability/gz_curve"],
+        depends_on_parameters=[
+            "hull.lwl", "hull.beam", "mission.vessel_type",
+            "stability.gm_m", "stability.gz_max_m", "stability.angle_of_max_gz_deg",
+            "stability.area_0_30_m_rad", "stability.area_0_40_m_rad", "stability.area_30_40_m_rad",
+        ],
+        produces_parameters=[
+            "compliance.status",
+            "compliance.pass_count",
+            "compliance.fail_count",
+            "compliance.incomplete_count",
+            "compliance.findings",
+            "compliance.report",
+            "compliance.frameworks_checked",
+            "compliance.pass_rate",
+        ],
+        timeout_seconds=120,
+        resource_requirements=ResourceRequirements(cpu_cores=1, ram_gb=0.5),
+        tags=["compliance", "regulatory", "abs", "hsc", "uscg", "v1.1"],
+    ),
+
+    ValidatorDefinition(
+        validator_id="compliance/stability",
+        name="Stability Compliance Check",
+        description="Focused stability rules compliance check (v1.1)",
+        category=ValidatorCategory.REGULATORY,
+        priority=ValidatorPriority.NORMAL,
+        phase="compliance",
+        is_gate_condition=False,
+        depends_on_validators=["stability/gz_curve"],
+        depends_on_parameters=[
+            "stability.gm_m", "stability.gz_max_m",
+        ],
+        produces_parameters=[
+            "compliance.stability_status",
+            "compliance.stability_pass_count",
+            "compliance.stability_fail_count",
+        ],
+        timeout_seconds=60,
+        resource_requirements=ResourceRequirements(cpu_cores=1, ram_gb=0.2),
+        tags=["compliance", "stability", "v1.1"],
+    ),
+]
+
+
+# =============================================================================
+# COST VALIDATORS (v1.1)
+# =============================================================================
+
+COST_VALIDATORS = [
+    ValidatorDefinition(
+        validator_id="cost/estimation",
+        name="Cost Estimation Engine",
+        description="Generates comprehensive cost estimate for vessel design (v1.1)",
+        category=ValidatorCategory.ECONOMICS,
+        priority=ValidatorPriority.NORMAL,
+        phase="cost",
+        is_gate_condition=False,
+        depends_on_validators=["production/planning", "weight/estimation"],
+        depends_on_parameters=[
+            "hull.lwl", "hull.beam", "hull.depth",
+            "propulsion.installed_power_kw",
+            "structure.material",
+            "mission.vessel_type", "mission.crew_size",
+        ],
+        produces_parameters=[
+            "cost.estimate",
+            "cost.total_price",
+            "cost.acquisition_cost",
+            "cost.lifecycle_npv",
+            "cost.subtotal_material",
+            "cost.subtotal_labor",
+            "cost.subtotal_equipment",
+            "cost.summary",
+            "cost.confidence",
+        ],
+        timeout_seconds=60,
+        resource_requirements=ResourceRequirements(cpu_cores=1, ram_gb=0.25),
+        tags=["cost", "economics", "estimation", "v1.1"],
+    ),
+]
+
+
+# =============================================================================
+# OPTIMIZATION VALIDATORS (v1.1)
+# =============================================================================
+
+OPTIMIZATION_VALIDATORS = [
+    ValidatorDefinition(
+        validator_id="optimization/design",
+        name="Design Optimization",
+        description="Multi-objective design optimization using NSGA-II (v1.1)",
+        category=ValidatorCategory.OPTIMIZATION,
+        priority=ValidatorPriority.LOW,
+        phase="optimization",
+        is_gate_condition=False,
+        depends_on_validators=["cost/estimation"],
+        depends_on_parameters=[
+            "hull.lwl", "hull.beam", "hull.depth",
+            "cost.total_price", "weight.lightship_mt",
+        ],
+        produces_parameters=[
+            "optimization.problem",
+            "optimization.result",
+            "optimization.pareto_front",
+            "optimization.selected_solution",
+            "optimization.status",
+            "optimization.iterations",
+            "optimization.evaluations",
+            "optimization.metrics",
+        ],
+        timeout_seconds=600,
+        resource_requirements=ResourceRequirements(cpu_cores=2, ram_gb=1.0),
+        tags=["optimization", "nsga-ii", "pareto", "multi-objective", "v1.1"],
+    ),
+]
+
+
+# =============================================================================
+# REPORTING VALIDATORS (v1.1)
+# =============================================================================
+
+REPORTING_VALIDATORS = [
+    ValidatorDefinition(
+        validator_id="reporting/generator",
+        name="Report Generator",
+        description="Generates design, compliance, cost, and full reports (v1.1)",
+        category=ValidatorCategory.REPORTING,
+        priority=ValidatorPriority.LOW,
+        phase="reporting",
+        is_gate_condition=False,
+        depends_on_validators=["compliance/regulatory", "cost/estimation"],
+        depends_on_parameters=[
+            "hull.lwl", "hull.beam", "hull.depth", "hull.draft",
+            "mission.vessel_type", "mission.max_speed_kts",
+            "compliance.status", "cost.total_price",
+        ],
+        produces_parameters=[
+            "reporting.available_types",
+            "reporting.generated_reports",
+            "reporting.last_report_type",
+            "reporting.design_summary",
+        ],
+        timeout_seconds=60,
+        resource_requirements=ResourceRequirements(cpu_cores=1, ram_gb=0.25),
+        tags=["reporting", "export", "documentation", "v1.1"],
+    ),
+]
+
+
+# =============================================================================
 # VALIDATOR REGISTRY
 # =============================================================================
 
@@ -387,7 +751,14 @@ ALL_VALIDATORS = (
     BOUNDS_VALIDATORS +
     STABILITY_VALIDATORS +
     CLASS_VALIDATORS +
-    PRODUCTION_VALIDATORS
+    PRODUCTION_VALIDATORS +
+    WEIGHT_VALIDATORS +
+    ARRANGEMENT_VALIDATORS +
+    LOADING_VALIDATORS +
+    COMPLIANCE_VALIDATORS +
+    COST_VALIDATORS +
+    OPTIMIZATION_VALIDATORS +
+    REPORTING_VALIDATORS
 )
 
 
