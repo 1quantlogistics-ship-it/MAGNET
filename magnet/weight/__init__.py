@@ -1,14 +1,16 @@
 """
 MAGNET Weight Estimation Framework
 
-Module 07 v1.1 - Production-Ready
+Modules 07 + 36 v1.1 - Production-Ready
 
 Performs parametric weight estimation using SWBS (Ship Work Breakdown Structure).
+Module 36 adds weight summary and loading conditions for stability analysis.
 
 v1.1 Changes:
 - Propulsion field fallbacks for schema compatibility
 - determinize_dict() for hash-stable summary_data
 - Writes stability.kg_m for stability integration
+- Module 36: Loading conditions and weight summary
 """
 
 from .groups import (
@@ -41,6 +43,12 @@ from .validators import (
     get_weight_stability_definition,
     register_weight_validators,
 )
+
+# Module 36: Loading Conditions and Weight Summary
+from .loading import LoadingCondition, STANDARD_CONDITIONS
+from .summary import WeightGroup, WeightMargins, WeightSummary, SWBS_DEFINITIONS
+from .summary_generator import WeightSummaryGenerator
+from .summary_validator import WeightSummaryValidator
 
 
 # Weight estimation constants
@@ -77,12 +85,21 @@ __all__ = [
     "CommandSurveillanceEstimator",
     "AuxiliarySystemsEstimator",
     "OutfitFurnishingsEstimator",
-    # Validators
+    # Validators (Module 07)
     "WeightEstimationValidator",
     "WeightStabilityValidator",
     "get_weight_estimation_definition",
     "get_weight_stability_definition",
     "register_weight_validators",
+    # Module 36: Loading & Summary
+    "LoadingCondition",
+    "STANDARD_CONDITIONS",
+    "WeightGroup",
+    "WeightMargins",
+    "WeightSummary",
+    "SWBS_DEFINITIONS",
+    "WeightSummaryGenerator",
+    "WeightSummaryValidator",
     # Constants
     "HULL_WEIGHT_K",
     "ALUMINUM_FACTOR",

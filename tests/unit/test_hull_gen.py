@@ -26,6 +26,9 @@ from magnet.hull_gen import (
     Waterline,
     HullGeometry,
     ParentHullLibrary,
+)
+# Generator classes imported from submodule (ALPHA owns __init__.py exports)
+from magnet.hull_gen.generator import (
     HullGenerator,
     GeneratorConfig,
     generate_hull_from_parameters,
