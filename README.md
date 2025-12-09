@@ -31,7 +31,7 @@ This repository contains the full implementation of MAGNET V1.1, including:
 
 ---
 
-## 🌊 Why MAGNET Exists
+## Why MAGNET Exists
 
 Traditional marine design workflows require:
 
@@ -57,7 +57,7 @@ Traditional marine design workflows require:
 
 ---
 
-## 🚀 What MAGNET Can Do
+## What MAGNET Can Do
 
 ### V1.1 — Production Release (Current)
 
@@ -112,7 +112,7 @@ Traditional marine design workflows require:
 
 ---
 
-## 🧠 How MAGNET Works
+## How MAGNET Works
 
 MAGNET uses a **multi-agent architecture** where each agent is responsible for a domain:
 
@@ -156,7 +156,7 @@ All agents read from and write to the **Unified Design State**, ensuring the ent
 
 ---
 
-## 🧩 Architecture
+## Architecture
 
 ```
 magnet/
@@ -188,7 +188,7 @@ tests/
 
 ---
 
-## ⚙️ The Math Inside MAGNET
+## The Math Inside MAGNET
 
 MAGNET integrates **12 mathematical engines**, each a domain in itself:
 
@@ -212,7 +212,7 @@ MAGNET integrates **12 mathematical engines**, each a domain in itself:
 
 ---
 
-## 📊 By The Numbers
+## By The Numbers
 
 | Metric | Value |
 |--------|-------|
@@ -228,7 +228,7 @@ MAGNET integrates **12 mathematical engines**, each a domain in itself:
 
 ---
 
-## 🎯 The 9-Phase Design Workflow
+## The 9-Phase Design Workflow
 
 MAGNET enforces a **gated design process** ensuring engineering integrity:
 
@@ -253,7 +253,7 @@ Each phase has:
 
 ---
 
-## 🖥️ Real-Time 3D Visualization
+## Real-Time 3D Visualization
 
 MAGNET includes a **production-grade WebGL engine** built for naval architecture:
 
@@ -286,7 +286,7 @@ print(f"Schema: {result.metadata.schema_version}")
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
@@ -339,7 +339,7 @@ pytest --cov=magnet --cov-report=html
 
 ---
 
-## ✨ Where MAGNET Is Going
+## Where MAGNET Is Going
 
 MAGNET aims to become the **first AI-native engineering design OS**, capable of:
 
@@ -356,7 +356,7 @@ MAGNET aims to become the **first AI-native engineering design OS**, capable of:
 
 ---
 
-## 🔥 Founder's Note
+## Founder's Note
 
 MAGNET began as a challenge:
 
@@ -376,12 +376,12 @@ MAGNET is the foundation for AI-driven design across **ships, buildings, aircraf
 
 ---
 
-## 📫 Contact
 
-**1Quant Logistics** — Bringing computational intelligence to maritime engineering.
 
-For licensing, partnerships, or enterprise inquiries:
-[contact@1quantlogistics.com](mailto:contact@1quantlogistics.com)
+
+
+
+
 
 ---
 
