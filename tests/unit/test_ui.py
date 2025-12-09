@@ -581,6 +581,621 @@ class TestPhaseNavigator:
 
 
 # =============================================================================
+# HULL FORMS TESTS
+# =============================================================================
+
+class TestHullForms:
+    """Test hull form generation."""
+
+    def test_hull_type_enum(self):
+        from magnet.vision.hull_forms import HullType
+        assert HullType.PLANING.value == "planing"
+        assert HullType.DEEP_V.value == "deep_v"
+        assert HullType.STEPPED.value == "stepped"
+
+    def test_hull_parameters_defaults(self):
+        from magnet.vision.hull_forms import HullParameters
+        params = HullParameters()
+        assert params.loa == 25.0
+        assert params.beam == 5.5
+        assert params.draft == 1.4
+
+    def test_hull_parameters_from_state(self):
+        from magnet.vision.hull_forms import HullParameters
+        state = {
+            "hull": {
+                "loa": 30.0,
+                "beam": 6.0,
+                "draft": 1.8,
+            }
+        }
+        params = HullParameters.from_state(state)
+        assert params.loa == 30.0
+        assert params.beam == 6.0
+
+    def test_hull_parameters_from_empty_state(self):
+        from magnet.vision.hull_forms import HullParameters
+        params = HullParameters.from_state({})
+        assert params.loa == 25.0  # Default
+
+    def test_hull_parameters_validate(self):
+        from magnet.vision.hull_forms import HullParameters
+        params = HullParameters(loa=25.0, beam=5.5, draft=1.4)
+        params.validate()
+        assert params.loa == 25.0
+
+    def test_planing_hull_generator(self):
+        from magnet.vision.hull_forms import PlaningHullGenerator, HullParameters
+        gen = PlaningHullGenerator()
+        params = HullParameters()
+        mesh = gen.generate(params)
+        assert len(mesh.vertices) > 0
+        assert len(mesh.faces) > 0
+
+    def test_deep_v_hull_generator(self):
+        from magnet.vision.hull_forms import DeepVHullGenerator, HullParameters
+        gen = DeepVHullGenerator()
+        params = HullParameters(deadrise_deg=22.0)
+        mesh = gen.generate(params)
+        assert len(mesh.vertices) > 0
+
+    def test_stepped_hull_generator(self):
+        from magnet.vision.hull_forms import SteppedHullGenerator, HullParameters
+        gen = SteppedHullGenerator()
+        params = HullParameters()
+        mesh = gen.generate(params)
+        assert len(mesh.vertices) > 0
+
+    def test_displacement_hull_generator(self):
+        from magnet.vision.hull_forms import DisplacementHullGenerator, HullParameters
+        gen = DisplacementHullGenerator()
+        params = HullParameters(cb=0.60)
+        mesh = gen.generate(params)
+        assert len(mesh.vertices) > 0
+
+    def test_hull_form_factory(self):
+        from magnet.vision.hull_forms import HullFormFactory, HullType
+        gen = HullFormFactory.get_generator(HullType.PLANING)
+        assert gen is not None
+
+    def test_hull_form_factory_from_state(self):
+        from magnet.vision.hull_forms import HullFormFactory
+        state = {"hull": {"loa": 25.0}}
+        mesh = HullFormFactory.generate_from_state(state)
+        assert len(mesh.vertices) > 0
+
+
+# =============================================================================
+# SNAPSHOTS TESTS
+# =============================================================================
+
+class TestSnapshots:
+    """Test snapshot manager."""
+
+    def test_snapshot_format_enum(self):
+        from magnet.vision.snapshots import SnapshotFormat
+        assert SnapshotFormat.PNG.value == "png"
+        assert SnapshotFormat.JPEG.value == "jpeg"
+
+    def test_snapshot_quality_enum(self):
+        from magnet.vision.snapshots import SnapshotQuality
+        assert SnapshotQuality.STANDARD.value == "standard"
+        assert SnapshotQuality.HIGH.value == "high"
+
+    def test_snapshot_config_creation(self):
+        from magnet.vision.snapshots import SnapshotConfig, SnapshotQuality
+        config = SnapshotConfig()
+        assert config.width == 1024
+        assert config.height == 768
+        assert config.quality == SnapshotQuality.STANDARD
+
+    def test_snapshot_config_from_quality(self):
+        from magnet.vision.snapshots import SnapshotConfig, SnapshotQuality
+        config = SnapshotConfig.from_quality(SnapshotQuality.HIGH)
+        assert config.width == 2048
+        assert config.height == 1536
+
+    def test_snapshot_config_for_report(self):
+        from magnet.vision.snapshots import SnapshotConfig
+        config = SnapshotConfig.for_report()
+        assert config.dpi == 300
+
+    def test_snapshot_metadata_creation(self):
+        from magnet.vision.snapshots import SnapshotMetadata
+        meta = SnapshotMetadata(
+            snapshot_id="test_001",
+            section_id="hull_render",
+            phase="hull_form",
+        )
+        assert meta.snapshot_id == "test_001"
+        assert meta.section_id == "hull_render"
+
+    def test_snapshot_metadata_to_dict(self):
+        from magnet.vision.snapshots import SnapshotMetadata
+        meta = SnapshotMetadata(
+            snapshot_id="test_001",
+            section_id="hull_render",
+        )
+        d = meta.to_dict()
+        assert d["snapshot_id"] == "test_001"
+
+    def test_snapshot_manager_creation(self):
+        import tempfile
+        from magnet.vision.snapshots import SnapshotManager
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = SnapshotManager(output_dir=tmpdir)
+            assert manager is not None
+            assert manager.output_dir is not None
+
+    def test_snapshot_manager_get_snapshot(self):
+        import tempfile
+        from magnet.vision.snapshots import SnapshotManager
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = SnapshotManager(output_dir=tmpdir)
+            result = manager.get_snapshot("nonexistent")
+            assert result is None
+
+    def test_get_snapshot_manager(self):
+        from magnet.vision.snapshots import get_snapshot_manager
+        manager = get_snapshot_manager()
+        assert manager is not None
+
+
+# =============================================================================
+# MATERIALS TESTS
+# =============================================================================
+
+class TestMaterials:
+    """Test material library."""
+
+    def test_material_type_enum(self):
+        from magnet.vision.materials import MaterialType
+        assert MaterialType.METAL.value == "metal"
+        assert MaterialType.PAINT.value == "paint"
+        assert MaterialType.GLASS.value == "glass"
+
+    def test_color_creation(self):
+        from magnet.vision.materials import Color
+        c = Color(0.5, 0.6, 0.7)
+        assert c.r == 0.5
+        assert c.g == 0.6
+        assert c.b == 0.7
+        assert c.a == 1.0
+
+    def test_color_to_tuple(self):
+        from magnet.vision.materials import Color
+        c = Color(0.5, 0.6, 0.7)
+        assert c.to_tuple() == (0.5, 0.6, 0.7)
+        assert c.to_rgba() == (0.5, 0.6, 0.7, 1.0)
+
+    def test_color_to_hex(self):
+        from magnet.vision.materials import Color
+        c = Color(1.0, 0.0, 0.0)
+        assert c.to_hex() == "#ff0000"
+
+    def test_color_from_hex(self):
+        from magnet.vision.materials import Color
+        c = Color.from_hex("#ff0000")
+        assert c.r == 1.0
+        assert c.g == 0.0
+        assert c.b == 0.0
+
+    def test_color_presets(self):
+        from magnet.vision.materials import Color
+        assert Color.white().r == 1.0
+        assert Color.black().r == 0.0
+        assert Color.aluminum().r > 0.7
+
+    def test_material_creation(self):
+        from magnet.vision.materials import Material, MaterialType, Color
+        m = Material(
+            name="Test Material",
+            material_type=MaterialType.METAL,
+            diffuse=Color.aluminum(),
+        )
+        assert m.name == "Test Material"
+        assert m.material_type == MaterialType.METAL
+
+    def test_material_to_dict(self):
+        from magnet.vision.materials import Material, MaterialType
+        m = Material(name="Test", material_type=MaterialType.METAL)
+        d = m.to_dict()
+        assert d["name"] == "Test"
+        assert d["type"] == "metal"
+
+    def test_marine_materials(self):
+        from magnet.vision.materials import MarineMaterials
+        hull = MarineMaterials.aluminum_hull()
+        assert hull.name == "Aluminum Hull"
+        assert hull.metallic == 1.0
+
+    def test_marine_materials_painted(self):
+        from magnet.vision.materials import MarineMaterials, Color
+        hull = MarineMaterials.painted_hull(Color.navy_blue())
+        assert hull.name == "Painted Hull"
+        assert hull.metallic == 0.0
+
+    def test_environment_materials(self):
+        from magnet.vision.materials import EnvironmentMaterials
+        water = EnvironmentMaterials.ocean_water()
+        assert water.name == "Ocean Water"
+        assert water.transparency > 0
+
+    def test_material_library(self):
+        from magnet.vision.materials import MaterialLibrary
+        lib = MaterialLibrary()
+        assert lib.get("aluminum_hull") is not None
+        assert lib.get("steel") is not None
+        assert lib.get("glass") is not None
+
+    def test_material_library_get_hull_material(self):
+        from magnet.vision.materials import MaterialLibrary
+        lib = MaterialLibrary()
+        hull = lib.get_hull_material("aluminum")
+        assert hull.name == "Aluminum Hull"
+
+        steel = lib.get_hull_material("steel")
+        assert steel.name == "Steel Structure"
+
+    def test_material_library_create_custom(self):
+        from magnet.vision.materials import MaterialLibrary
+        lib = MaterialLibrary()
+        custom = lib.create_custom("Custom Red", "#ff0000", metallic=0.3)
+        assert custom.name == "Custom Red"
+
+    def test_get_material_library(self):
+        from magnet.vision.materials import get_material_library
+        lib1 = get_material_library()
+        lib2 = get_material_library()
+        assert lib1 is lib2  # Singleton
+
+
+# =============================================================================
+# VALIDATION PANEL TESTS
+# =============================================================================
+
+class TestValidationPanel:
+    """Test validation panel components."""
+
+    def test_severity_enum(self):
+        from magnet.ui.validation_panel import ValidationSeverity
+        assert ValidationSeverity.ERROR.value == "error"
+        assert ValidationSeverity.WARNING.value == "warning"
+
+    def test_category_enum(self):
+        from magnet.ui.validation_panel import ValidationCategory
+        assert ValidationCategory.STRUCTURAL.value == "structural"
+        assert ValidationCategory.STABILITY.value == "stability"
+
+    def test_validation_message_creation(self):
+        from magnet.ui.validation_panel import ValidationMessage, ValidationSeverity
+        msg = ValidationMessage(
+            message_id="err_001",
+            severity=ValidationSeverity.ERROR,
+            code="GM-001",
+            message="GM is below minimum",
+        )
+        assert msg.message_id == "err_001"
+        assert msg.severity == ValidationSeverity.ERROR
+
+    def test_validation_message_from_dict(self):
+        from magnet.ui.validation_panel import ValidationMessage
+        data = {
+            "message_id": "err_001",
+            "severity": "error",
+            "code": "GM-001",
+            "message": "GM is below minimum",
+        }
+        msg = ValidationMessage.from_dict(data)
+        assert msg.code == "GM-001"
+
+    def test_validation_summary(self):
+        from magnet.ui.validation_panel import ValidationSummary
+        summary = ValidationSummary(
+            total_checks=10,
+            passed_checks=8,
+            failed_checks=2,
+            error_count=2,
+        )
+        assert summary.total_checks == 10
+        assert summary.overall_passed is True
+
+    def test_validation_result(self):
+        from magnet.ui.validation_panel import (
+            ValidationResult, ValidationMessage, ValidationSeverity
+        )
+        result = ValidationResult()
+        result.add_message(ValidationMessage(
+            message_id="err_001",
+            severity=ValidationSeverity.ERROR,
+            message="Test error",
+        ))
+        assert result.summary.error_count == 1
+        assert result.summary.overall_passed is False
+
+    def test_validation_result_get_errors(self):
+        from magnet.ui.validation_panel import (
+            ValidationResult, ValidationMessage, ValidationSeverity
+        )
+        result = ValidationResult()
+        result.add_message(ValidationMessage(
+            message_id="err_001",
+            severity=ValidationSeverity.ERROR,
+            message="Error",
+        ))
+        result.add_message(ValidationMessage(
+            message_id="warn_001",
+            severity=ValidationSeverity.WARNING,
+            message="Warning",
+        ))
+        errors = result.get_errors()
+        assert len(errors) == 1
+
+    def test_validation_panel_load_from_state(self):
+        from magnet.ui.validation_panel import ValidationPanel
+        state = {
+            "compliance": {
+                "errors": [{"message": "Error 1"}],
+                "warnings": [{"message": "Warning 1"}],
+                "overall_passed": False,
+            }
+        }
+        panel = ValidationPanel(state)
+        result = panel.load_from_state()
+        assert result.summary.error_count == 1
+        assert result.summary.warning_count == 1
+
+    def test_validation_panel_render_ascii(self):
+        from magnet.ui.validation_panel import ValidationPanel
+        state = {
+            "compliance": {
+                "errors": [{"code": "ERR-001", "message": "Test error"}],
+                "overall_passed": False,
+            }
+        }
+        panel = ValidationPanel(state)
+        output = panel.render_ascii()
+        assert "FAILED" in output
+        assert "Errors: 1" in output
+
+    def test_validation_history(self):
+        from magnet.ui.validation_panel import ValidationHistory, ValidationResult
+        history = ValidationHistory()
+        result = ValidationResult()
+        history.record(result, "hull_form")
+        assert history.get_latest() == result
+        assert history.get_for_phase("hull_form") == result
+
+    def test_compliance_matrix(self):
+        from magnet.ui.validation_panel import ComplianceMatrix
+        state = {
+            "compliance": {
+                "checks": [
+                    {"regulation": "ISO", "passed": True},
+                    {"regulation": "ISO", "passed": False},
+                    {"regulation": "ABS", "passed": True},
+                ]
+            }
+        }
+        matrix = ComplianceMatrix(state)
+        result = matrix.load_matrix()
+        assert result["summary"]["total"] == 3
+        assert result["summary"]["failed"] == 1
+
+
+# =============================================================================
+# UI COMPONENTS TESTS
+# =============================================================================
+
+class TestUIComponents:
+    """Test UI components."""
+
+    def test_component_style(self):
+        from magnet.ui.components import ComponentStyle
+        style = ComponentStyle(width="100px", padding="10px")
+        css = style.to_css()
+        assert "width: 100px" in css
+        assert "padding: 10px" in css
+
+    def test_component_base(self):
+        from magnet.ui.components import Component, ComponentType
+        c = Component(
+            component_id="test",
+            component_type=ComponentType.DISPLAY,
+            label="Test",
+        )
+        assert c.component_id == "test"
+        d = c.to_dict()
+        assert d["id"] == "test"
+
+    def test_parameter_input(self):
+        from magnet.ui.components import ParameterInput, InputType
+        inp = ParameterInput(
+            component_id="loa",
+            label="Length",
+            path="hull.loa",
+            input_type=InputType.DECIMAL,
+            value=25.0,
+            min_value=5.0,
+            max_value=200.0,
+            unit="m",
+        )
+        assert inp.value == 25.0
+        valid, msg = inp.validate()
+        assert valid is True
+
+    def test_parameter_input_validation_required(self):
+        from magnet.ui.components import ParameterInput, InputType
+        inp = ParameterInput(
+            component_id="loa",
+            label="Length",
+            path="hull.loa",
+            input_type=InputType.DECIMAL,
+            value=None,
+            required=True,
+        )
+        valid, msg = inp.validate()
+        assert valid is False
+        assert "required" in msg
+
+    def test_parameter_input_validation_range(self):
+        from magnet.ui.components import ParameterInput, InputType
+        inp = ParameterInput(
+            component_id="loa",
+            label="Length",
+            path="hull.loa",
+            input_type=InputType.DECIMAL,
+            value=3.0,
+            min_value=5.0,
+        )
+        valid, msg = inp.validate()
+        assert valid is False
+        assert ">=" in msg
+
+    def test_parameter_group(self):
+        from magnet.ui.components import ParameterGroup, ParameterInput, InputType
+        group = ParameterGroup(
+            group_id="hull",
+            title="Hull Parameters",
+        )
+        group.add_parameter(ParameterInput(
+            component_id="loa",
+            label="LOA",
+            path="hull.loa",
+            input_type=InputType.DECIMAL,
+            value=25.0,
+        ))
+        values = group.get_values()
+        assert "hull.loa" in values
+
+    def test_value_display(self):
+        from magnet.ui.components import ValueDisplay
+        display = ValueDisplay(
+            component_id="loa_display",
+            label="LOA",
+            value=25.123,
+            unit="m",
+            precision=2,
+        )
+        assert display.format_value() == "25.12"
+
+    def test_alert_component(self):
+        from magnet.ui.components import AlertComponent
+        alert = AlertComponent(
+            component_id="alert1",
+            message="Test alert",
+            severity="warning",
+        )
+        assert alert.icon == "\u26a0"
+        output = alert.render_ascii()
+        assert "WARNING" in output
+
+    def test_button_component(self):
+        from magnet.ui.components import ButtonComponent
+        btn = ButtonComponent(
+            component_id="save_btn",
+            text="Save",
+            action="save",
+            variant="primary",
+        )
+        output = btn.render_ascii()
+        assert "[Save]" in output
+
+    def test_data_table(self):
+        from magnet.ui.components import DataTable, Column
+        table = DataTable(
+            component_id="params_table",
+            columns=[
+                Column(key="name", header="Name"),
+                Column(key="value", header="Value", align="right"),
+            ],
+            rows=[
+                {"name": "LOA", "value": 25.0},
+                {"name": "Beam", "value": 5.5},
+            ],
+        )
+        output = table.render_ascii()
+        assert "LOA" in output
+        assert "Name" in output
+
+    def test_data_table_pagination(self):
+        from magnet.ui.components import DataTable, Column
+        rows = [{"id": i} for i in range(25)]
+        table = DataTable(
+            component_id="test",
+            columns=[Column(key="id", header="ID")],
+            rows=rows,
+            page_size=10,
+        )
+        assert table.total_pages() == 3
+        assert len(table.get_page_rows()) == 10
+
+    def test_progress_bar(self):
+        from magnet.ui.components import ProgressBar
+        bar = ProgressBar(
+            component_id="progress",
+            label="Loading",
+            current=30,
+            total=100,
+        )
+        assert bar.percent == 30.0
+        output = bar.render_ascii()
+        assert "30%" in output
+
+    def test_step_progress(self):
+        from magnet.ui.components import StepProgress
+        steps = StepProgress(
+            component_id="wizard",
+            steps=["Step 1", "Step 2", "Step 3"],
+            current_step=1,
+            completed_steps=[0],
+        )
+        output = steps.render_ascii()
+        assert "Step 1" in output
+
+    def test_panel(self):
+        from magnet.ui.components import Panel
+        panel = Panel(
+            component_id="info_panel",
+            title="Information",
+            content="This is some content",
+        )
+        output = panel.render_ascii()
+        assert "Information" in output
+
+    def test_tab_container(self):
+        from magnet.ui.components import TabContainer, Tab
+        container = TabContainer(
+            component_id="tabs",
+            tabs=[
+                Tab(tab_id="hull", title="Hull", content="Hull content"),
+                Tab(tab_id="propulsion", title="Propulsion", content="Prop content"),
+            ],
+            active_tab=0,
+        )
+        output = container.render_ascii()
+        assert "Hull" in output
+
+    def test_form_builder(self):
+        from magnet.ui.components import FormBuilder
+        state = {"hull": {"loa": 25.0, "beam": 5.5}}
+        builder = FormBuilder(state)
+        hull_form = builder.build_hull_form()
+        assert len(hull_form.parameters) > 0
+
+    def test_component_registry(self):
+        from magnet.ui.components import ComponentRegistry, Component, ComponentType
+        registry = ComponentRegistry()
+        registry.register(Component(
+            component_id="test_comp",
+            component_type=ComponentType.DISPLAY,
+        ))
+        comp = registry.get("test_comp")
+        assert comp is not None
+        assert comp.component_id == "test_comp"
+
+
+# =============================================================================
 # INTEGRATION TESTS
 # =============================================================================
 

@@ -38,8 +38,6 @@ from .router import (
 from .hull_forms import (
     HullType,
     HullParameters,
-    HullSection,
-    HullMesh,
     PlaningHullGenerator,
     DeepVHullGenerator,
     SteppedHullGenerator,
@@ -48,10 +46,12 @@ from .hull_forms import (
 )
 
 from .snapshots import (
+    SnapshotFormat,
+    SnapshotQuality,
+    SnapshotConfig,
     SnapshotMetadata,
     SnapshotManager,
-    PhaseSnapshotTrigger,
-    create_phase_snapshot,
+    get_snapshot_manager,
 )
 
 from .materials import (
@@ -86,18 +86,18 @@ __all__ = [
     # Hull Forms
     "HullType",
     "HullParameters",
-    "HullSection",
-    "HullMesh",
     "PlaningHullGenerator",
     "DeepVHullGenerator",
     "SteppedHullGenerator",
     "DisplacementHullGenerator",
     "HullFormFactory",
     # Snapshots
+    "SnapshotFormat",
+    "SnapshotQuality",
+    "SnapshotConfig",
     "SnapshotMetadata",
     "SnapshotManager",
-    "PhaseSnapshotTrigger",
-    "create_phase_snapshot",
+    "get_snapshot_manager",
     # Materials
     "MaterialType",
     "Color",

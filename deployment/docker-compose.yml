@@ -1,0 +1,158 @@
+# MAGNET Ship Design Validation System
+# Docker Compose Configuration
+# BRAVO OWNS THIS FILE.
+
+version: '3.8'
+
+services:
+  # ==========================================================================
+  # API Server
+  # ==========================================================================
+  api:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile
+      target: production
+    ports:
+      - "8000:8000"
+    environment:
+      - MAGNET_ENVIRONMENT=production
+      - MAGNET_API_HOST=0.0.0.0
+      - MAGNET_API_PORT=8000
+      - MAGNET_API_WORKERS=4
+      - MAGNET_LLM_PROVIDER=${LLM_PROVIDER:-anthropic}
+      - MAGNET_LLM_MODEL=${LLM_MODEL:-claude-sonnet-4-20250514}
+      - MAGNET_LLM_API_KEY=${ANTHROPIC_API_KEY}
+      - MAGNET_DB_HOST=postgres
+      - MAGNET_STORAGE_DIR=/app/data
+    volumes:
+      - designs:/app/data/designs
+      - reports:/app/data/reports
+      - snapshots:/app/data/snapshots
+      - exports:/app/data/exports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - magnet-net
+
+  # ==========================================================================
+  # Background Worker
+  # ==========================================================================
+  worker:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile
+      target: worker
+    environment:
+      - MAGNET_ENVIRONMENT=production
+      - MAGNET_WORKER_CONCURRENCY=4
+      - MAGNET_LLM_PROVIDER=${LLM_PROVIDER:-anthropic}
+      - MAGNET_LLM_MODEL=${LLM_MODEL:-claude-sonnet-4-20250514}
+      - MAGNET_LLM_API_KEY=${ANTHROPIC_API_KEY}
+      - MAGNET_DB_HOST=postgres
+      - MAGNET_REDIS_HOST=redis
+      - MAGNET_STORAGE_DIR=/app/data
+    volumes:
+      - designs:/app/data/designs
+      - reports:/app/data/reports
+      - snapshots:/app/data/snapshots
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+    networks:
+      - magnet-net
+
+  # ==========================================================================
+  # PostgreSQL Database
+  # ==========================================================================
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=${DB_USER:-magnet}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-magnet_secret}
+      - POSTGRES_DB=${DB_NAME:-magnet}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-magnet}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - magnet-net
+
+  # ==========================================================================
+  # Redis (Job Queue)
+  # ==========================================================================
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - magnet-net
+
+  # ==========================================================================
+  # Nginx Reverse Proxy (Optional)
+  # ==========================================================================
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - magnet-net
+    profiles:
+      - with-proxy
+
+# ==========================================================================
+# Volumes
+# ==========================================================================
+volumes:
+  designs:
+    driver: local
+  reports:
+    driver: local
+  snapshots:
+    driver: local
+  exports:
+    driver: local
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+# ==========================================================================
+# Networks
+# ==========================================================================
+networks:
+  magnet-net:
+    driver: bridge
