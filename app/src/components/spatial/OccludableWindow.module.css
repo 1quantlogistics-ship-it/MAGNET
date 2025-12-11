@@ -1,0 +1,33 @@
+/**
+ * OccludableWindow Styles
+ * Spatial occlusion effects for window management
+ */
+
+.window {
+  /* Preserve 3D for Z transforms */
+  transform-style: preserve-3d;
+  will-change: transform, opacity, filter;
+
+  /* Smooth transitions handled by Framer Motion */
+  transition: var(--clarification-occlusion-transition, 0.4s cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+/* Occluded state indicator for debugging */
+.window[data-occluded="true"] {
+  pointer-events: none;
+}
+
+/* =============================================================================
+   Reduced Motion
+   ============================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .window {
+    transition: opacity 0.2s ease;
+  }
+
+  .window[data-occluded="true"] {
+    filter: none !important;
+    transform: none !important;
+  }
+}

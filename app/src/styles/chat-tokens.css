@@ -1,0 +1,232 @@
+/**
+ * MAGNET UI Module 03: Chat Design Tokens
+ *
+ * VisionOS-aligned frameless window system tokens.
+ * Spatial chat interface with glass materials and lighting.
+ */
+
+:root {
+  /* ═══════════════════════════════════════════════════════
+   * FRAMELESS WINDOW SYSTEM
+   * ═══════════════════════════════════════════════════════ */
+
+  /* Glass material — NO borders, only inset glow */
+  --chat-glass-bg: rgba(255, 255, 255, 0.04);
+  --chat-glass-blur: blur(32px) saturate(180%);
+  --chat-glass-inset: inset 0 0 0 0.6px rgba(255, 255, 255, 0.12);
+  --chat-glass-shadow:
+    0 40px 80px rgba(0, 0, 0, 0.35),
+    0 16px 32px rgba(0, 0, 0, 0.25);
+
+  /* Window occlusion shadow (cast onto workspace) */
+  --chat-occlusion-shadow: 0 0 120px 40px rgba(0, 0, 0, 0.15);
+
+  /* Edge highlight (replaces borders) */
+  --chat-edge-highlight: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.10) 0%,
+    rgba(255, 255, 255, 0) 30%
+  );
+
+  /* ═══════════════════════════════════════════════════════
+   * AI PRESENCE ORB — 3-layer system
+   * ═══════════════════════════════════════════════════════ */
+
+  --orb-core-size: 8px;
+  --orb-field-1-size: 20px;
+  --orb-field-2-size: 36px;
+
+  --orb-core-color: rgba(126, 184, 231, 0.9);
+  --orb-field-1-color: rgba(126, 184, 231, 0.12);
+  --orb-field-2-color: rgba(126, 184, 231, 0.04);
+
+  /* Orb glow for active states */
+  --orb-glow:
+    0 0 8px rgba(126, 184, 231, 0.6),
+    0 0 16px rgba(126, 184, 231, 0.3);
+
+  /* ═══════════════════════════════════════════════════════
+   * CHAT BUBBLES — Glass with lighting
+   * ═══════════════════════════════════════════════════════ */
+
+  --bubble-user-bg: linear-gradient(
+    to bottom,
+    rgba(126, 184, 231, 0.14),
+    rgba(126, 184, 231, 0.06)
+  );
+  --bubble-ai-bg: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.08),
+    rgba(255, 255, 255, 0.02)
+  );
+  --bubble-blur: blur(20px) saturate(160%);
+  --bubble-radius: 20px;
+  --bubble-padding: 16px 20px;
+
+  /* Bubble inset glow (no borders) */
+  --bubble-inset: inset 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+  --bubble-user-inset: inset 0 0 0 0.5px rgba(126, 184, 231, 0.15);
+
+  /* Streaming state glow */
+  --bubble-streaming-glow:
+    inset 0 0 0 0.5px rgba(126, 184, 231, 0.2),
+    0 0 20px rgba(126, 184, 231, 0.08);
+
+  /* ═══════════════════════════════════════════════════════
+   * INPUT AREA — Soft, floating
+   * ═══════════════════════════════════════════════════════ */
+
+  --input-bg: rgba(255, 255, 255, 0.025);
+  --input-radius: 100px;
+  --input-glow-focus: 0 0 0 2px rgba(126, 184, 231, 0.12);
+  --input-inset: inset 0 0 0 0.5px rgba(255, 255, 255, 0.04);
+  --input-inset-focus: inset 0 0 0 0.5px rgba(126, 184, 231, 0.2);
+
+  /* Send button */
+  --send-button-bg: rgba(126, 184, 231, 0.1);
+  --send-button-bg-hover: rgba(126, 184, 231, 0.18);
+  --send-button-size: 34px;
+
+  /* ═══════════════════════════════════════════════════════
+   * DOCKING — Magnetic with breathing room
+   * ═══════════════════════════════════════════════════════ */
+
+  --dock-edge-gap: 24px;
+  --dock-corner-radius: 20px;
+  --dock-tilt: rotateY(-1deg);
+  --dock-magnetic-threshold: 60px;
+
+  /* Docked shadow (one-sided) */
+  --dock-shadow:
+    var(--chat-glass-inset),
+    -20px 0 60px rgba(0, 0, 0, 0.3);
+
+  /* Magnetic indicator */
+  --magnetic-indicator-color: rgba(126, 184, 231, 0.4);
+
+  /* ═══════════════════════════════════════════════════════
+   * MINIMIZED PILL — Floating hologram
+   * ═══════════════════════════════════════════════════════ */
+
+  --pill-bg: rgba(255, 255, 255, 0.03);
+  --pill-blur: blur(24px) saturate(170%);
+  --pill-radius: 100px;
+  --pill-glow:
+    0 0 40px rgba(126, 184, 231, 0.08),
+    inset 0 0 0 0.6px rgba(255, 255, 255, 0.08);
+
+  /* Pill hover glow */
+  --pill-glow-hover:
+    0 20px 50px rgba(0, 0, 0, 0.3),
+    0 0 60px rgba(126, 184, 231, 0.12);
+
+  /* ═══════════════════════════════════════════════════════
+   * STREAMING CARET — Soft, not terminal
+   * ═══════════════════════════════════════════════════════ */
+
+  --caret-width: 2px;
+  --caret-height: 16px;
+  --caret-color: rgba(126, 184, 231, 0.6);
+  --caret-blink-opacity-min: 0.15;
+  --caret-blink-opacity-max: 0.6;
+
+  /* ═══════════════════════════════════════════════════════
+   * HEADER
+   * ═══════════════════════════════════════════════════════ */
+
+  --header-height: 56px;
+  --header-padding: 0 20px;
+  --header-title-size: 11px;
+  --header-title-weight: 600;
+  --header-title-spacing: 0.08em;
+
+  /* Header button */
+  --header-button-size: 30px;
+  --header-button-radius: 10px;
+  --header-button-bg-hover: rgba(255, 255, 255, 0.06);
+
+  /* ═══════════════════════════════════════════════════════
+   * SUGGESTIONS — Floating spatial chips
+   * ═══════════════════════════════════════════════════════ */
+
+  --suggestion-chip-bg: rgba(255, 255, 255, 0.025);
+  --suggestion-chip-blur: blur(16px) saturate(150%);
+  --suggestion-chip-inset: inset 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+  --suggestion-chip-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  --suggestion-chip-shadow-hover: 0 12px 24px rgba(0, 0, 0, 0.2);
+  --suggestion-chip-radius: 100px;
+  --suggestion-chip-padding: 9px 16px;
+
+  /* ═══════════════════════════════════════════════════════
+   * TYPING INDICATOR
+   * ═══════════════════════════════════════════════════════ */
+
+  --typing-dot-size: 6px;
+  --typing-dot-gap: 5px;
+  --typing-dot-color: var(--prs-neutral-500, rgba(167, 180, 199, 0.5));
+
+  /* ═══════════════════════════════════════════════════════
+   * CONTEXT INDICATOR
+   * ═══════════════════════════════════════════════════════ */
+
+  --context-bg: rgba(126, 184, 231, 0.06);
+  --context-radius: 12px;
+  --context-padding: 10px 14px;
+
+  /* ═══════════════════════════════════════════════════════
+   * SCROLLBAR
+   * ═══════════════════════════════════════════════════════ */
+
+  --scrollbar-width: 6px;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.1);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.15);
+
+  /* ═══════════════════════════════════════════════════════
+   * WINDOW DIMENSIONS
+   * ═══════════════════════════════════════════════════════ */
+
+  --chat-window-radius: 24px;
+  --chat-window-radius-docked: var(--dock-corner-radius) 0 0 var(--dock-corner-radius);
+  --chat-window-radius-fullscreen: 28px;
+
+  --chat-window-min-width: 360px;
+  --chat-window-max-width: 560px;
+  --chat-window-default-width: 420px;
+
+  --chat-window-min-height: 400px;
+  --chat-window-max-height: 800px;
+  --chat-window-default-height: 580px;
+
+  /* Fullscreen constraints */
+  --chat-fullscreen-width: min(720px, calc(100vw - 80px));
+  --chat-fullscreen-height: calc(100vh - 80px);
+
+  /* ═══════════════════════════════════════════════════════
+   * EDGE RESIZE
+   * ═══════════════════════════════════════════════════════ */
+
+  --edge-threshold: 12px;
+  --edge-glow-color: rgba(255, 255, 255, 0.1);
+
+  /* ═══════════════════════════════════════════════════════
+   * Z-INDEX LAYERS
+   * ═══════════════════════════════════════════════════════ */
+
+  --chat-z-occlusion: 899;
+  --chat-z-window: 900;
+  --chat-z-minimized: 900;
+
+  /* ═══════════════════════════════════════════════════════
+   * MOTION TIMINGS
+   * ═══════════════════════════════════════════════════════ */
+
+  --chat-spring-stiffness: 160;
+  --chat-spring-damping: 26;
+  --chat-spring-mass: 0.7;
+
+  --chat-orb-breathe-duration: 6s;
+  --chat-orb-streaming-duration: 1.5s;
+
+  --chat-bubble-enter-duration: 400ms;
+  --chat-unfocus-duration: 400ms;
+}

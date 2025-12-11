@@ -1,0 +1,155 @@
+/**
+ * MAGNET UI PhasePanel Styles
+ * BRAVO OWNS THIS FILE.
+ *
+ * Main PRS panel layout and styling.
+ */
+
+/* Container */
+.container {
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  background-color: var(--color-surface, #1a1a1a);
+  border: 1px solid var(--color-border, #333);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  position: relative;
+}
+
+.containerCollapsed {
+  width: 48px;
+  background-color: var(--color-surface, #1a1a1a);
+  border: 1px solid var(--color-border, #333);
+  border-radius: var(--radius-md, 8px);
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm, 8px);
+  padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+  border-bottom: 1px solid var(--color-border, #333);
+  background-color: var(--color-surface-elevated, #222);
+}
+
+.collapseButton {
+  padding: 4px;
+  background: none;
+  border: none;
+  color: var(--color-text-muted, #888);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.collapseButton:hover {
+  color: var(--color-text, #fff);
+}
+
+.collapseIcon {
+  font-size: 10px;
+}
+
+.title {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text, #fff);
+}
+
+.designId {
+  font-size: 10px;
+  color: var(--color-text-muted, #888);
+  font-family: var(--font-mono, monospace);
+}
+
+/* Collapsed state */
+.expandButton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-xs, 4px);
+  padding: var(--spacing-sm, 8px);
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--color-text, #fff);
+  cursor: pointer;
+}
+
+.expandButton:hover {
+  background-color: var(--color-surface-hover, rgba(255, 255, 255, 0.05));
+}
+
+.expandIcon {
+  font-size: 10px;
+  color: var(--color-text-muted, #888);
+}
+
+.collapsedLabel {
+  font-size: 10px;
+  font-weight: 600;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+.collapsedProgress {
+  font-size: 9px;
+  color: var(--color-primary, #4a9eff);
+  font-weight: 500;
+}
+
+/* Phase list */
+.phaseList {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-xs, 4px);
+}
+
+/* Loading overlay */
+.loadingOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 10;
+}
+
+.spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--color-border, #333);
+  border-top-color: var(--color-primary, #4a9eff);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Error message */
+.error {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs, 4px);
+  padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+  background-color: rgba(255, 74, 74, 0.1);
+  border-top: 1px solid var(--color-error, #ff4a4a);
+}
+
+.errorIcon {
+  color: var(--color-error, #ff4a4a);
+  font-size: 14px;
+}
+
+.errorText {
+  font-size: 11px;
+  color: var(--color-error, #ff4a4a);
+}

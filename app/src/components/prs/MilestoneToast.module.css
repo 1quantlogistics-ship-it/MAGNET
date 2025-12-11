@@ -1,0 +1,212 @@
+/**
+ * MAGNET UI MilestoneToast Styles
+ * BRAVO OWNS THIS FILE.
+ *
+ * Toast notification styling for milestones.
+ */
+
+/* Toast Container */
+.toastContainer {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm, 8px);
+  pointer-events: none;
+}
+
+.toastContainer > * {
+  pointer-events: auto;
+}
+
+.top-right {
+  top: var(--spacing-lg, 16px);
+  right: var(--spacing-lg, 16px);
+}
+
+.top-left {
+  top: var(--spacing-lg, 16px);
+  left: var(--spacing-lg, 16px);
+}
+
+.bottom-right {
+  bottom: var(--spacing-lg, 16px);
+  right: var(--spacing-lg, 16px);
+}
+
+.bottom-left {
+  bottom: var(--spacing-lg, 16px);
+  left: var(--spacing-lg, 16px);
+}
+
+/* Individual Toast */
+.container {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm, 8px);
+  min-width: 280px;
+  max-width: 400px;
+  padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+  background-color: var(--color-surface-elevated, #222);
+  border: 1px solid var(--color-border, #333);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.container:focus {
+  outline: none;
+  border-color: var(--color-focus, #4a9eff);
+}
+
+/* Animation states */
+.entering {
+  animation: slideIn 0.2s ease-out forwards;
+}
+
+.exiting {
+  animation: slideOut 0.2s ease-in forwards;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideOut {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+/* Milestone type variants */
+.type-phase_started {
+  border-left: 3px solid var(--color-primary, #4a9eff);
+}
+
+.type-phase_completed {
+  border-left: 3px solid var(--color-success, #4aff7a);
+}
+
+.type-phase_approved {
+  border-left: 3px solid var(--color-warning, #ffaa4a);
+}
+
+.type-design_complete {
+  border-left: 3px solid var(--color-accent, #ff4aff);
+  background: linear-gradient(
+    135deg,
+    var(--color-surface-elevated, #222) 0%,
+    rgba(255, 74, 255, 0.1) 100%
+  );
+}
+
+/* Icon */
+.icon {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.type-phase_started .icon {
+  color: var(--color-primary, #4a9eff);
+}
+
+.type-phase_completed .icon {
+  color: var(--color-success, #4aff7a);
+}
+
+.type-phase_approved .icon {
+  color: var(--color-warning, #ffaa4a);
+}
+
+.type-design_complete .icon {
+  color: var(--color-accent, #ff4aff);
+}
+
+/* Content */
+.content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.message {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text, #fff);
+}
+
+.timestamp {
+  font-size: 10px;
+  color: var(--color-text-muted, #888);
+}
+
+/* Dismiss button */
+.dismissButton {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--color-text-muted, #888);
+  font-size: 16px;
+  cursor: pointer;
+  border-radius: var(--radius-sm, 4px);
+  transition: all 0.15s ease;
+}
+
+.dismissButton:hover {
+  color: var(--color-text, #fff);
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.dismissButton:focus {
+  outline: none;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Progress bar */
+.progressBar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background-color: var(--color-primary, #4a9eff);
+  animation: shrink linear forwards;
+  transform-origin: left;
+}
+
+@keyframes shrink {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}

@@ -1,0 +1,64 @@
+/**
+ * AIPresenceOrb Styles
+ * 3-layer concentric field system for AI presence
+ */
+
+.orbContainer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Core — bright center */
+.core {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--orb-core-color, rgba(126, 184, 231, 0.9));
+  box-shadow: var(--orb-glow,
+    0 0 8px rgba(126, 184, 231, 0.6),
+    0 0 16px rgba(126, 184, 231, 0.3)
+  );
+}
+
+/* Field 1 — middle ring */
+.field1 {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    var(--orb-field-1-color, rgba(126, 184, 231, 0.12)) 0%,
+    transparent 70%
+  );
+}
+
+/* Field 2 — outer aura */
+.field2 {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    var(--orb-field-2-color, rgba(126, 184, 231, 0.04)) 0%,
+    transparent 60%
+  );
+}
+
+/* Inner blur for soft diffusion */
+.diffusion {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(126, 184, 231, 0.15);
+  filter: blur(6px);
+}
+
+/* =============================================================================
+   Reduced Motion
+   ============================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .core,
+  .field1,
+  .field2 {
+    animation: none !important;
+  }
+}

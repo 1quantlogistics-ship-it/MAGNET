@@ -1,0 +1,369 @@
+/**
+ * MAGNET UI Animation System
+ * VisionOS Spring Curves and Motion
+ *
+ * Key principles:
+ * - Slow springs (stiffness: 200, damping: 28)
+ * - Deliberate, graceful motion
+ * - Physics-based interactions
+ */
+
+:root {
+  /* ═══════════════════════════════════════════════════════
+   * MOTION CURVES
+   * VisionOS uses spring-like easing
+   * ═══════════════════════════════════════════════════════ */
+  --spring-bounce: cubic-bezier(0.16, 1, 0.3, 1);     /* THE Apple curve */
+  --ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);    /* Dramatic deceleration */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);    /* Smooth deceleration */
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);        /* Standard ease */
+  --ease-in-out-back: cubic-bezier(0.68, -0.55, 0.27, 1.55); /* Overshoot */
+
+  /* ═══════════════════════════════════════════════════════
+   * DURATIONS
+   * VisionOS favors longer, more deliberate animations
+   * ═══════════════════════════════════════════════════════ */
+  --duration-instant: 100ms;
+  --duration-fast: 200ms;
+  --duration-normal: 400ms;
+  --duration-slow: 600ms;
+  --duration-slower: 800ms;
+
+  /* Component-specific durations */
+  --duration-panel-enter: 600ms;
+  --duration-card-expand: 400ms;
+  --duration-tooltip: 300ms;
+  --duration-micro-bounce: 200ms;
+  --duration-focus-transition: 400ms;
+}
+
+/* ═══════════════════════════════════════════════════════
+ * KEYFRAME ANIMATIONS
+ * ═══════════════════════════════════════════════════════ */
+
+/* Panel entrance - deliberate, graceful */
+@keyframes panelEnter {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Panel exit */
+@keyframes panelExit {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+/* Slide in from bottom */
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Slide in from top */
+@keyframes slideInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Fade in with scale */
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Menu/dropdown appear */
+@keyframes menuAppear {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Toast appear */
+@keyframes toastAppear {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(30px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+/* Message bubble */
+@keyframes messageIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+ * ORB/INDICATOR ANIMATIONS
+ * ═══════════════════════════════════════════════════════ */
+
+/* Orb breathing (idle state) */
+@keyframes orbBreathe {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 20px var(--blue-dark), 0 0 40px var(--blue-subtle);
+  }
+  50% {
+    transform: scale(1.15);
+    box-shadow: 0 0 30px var(--blue-dark), 0 0 60px var(--blue-subtle);
+  }
+}
+
+/* Orb thinking (processing state) */
+@keyframes orbThinking {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.25); }
+}
+
+/* Orb ring rotation */
+@keyframes orbRingRotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Orb ring pulse */
+@keyframes orbRingPulse {
+  0%, 100% { opacity: 0.2; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.08); }
+}
+
+/* Marker pulse (3D workspace) */
+@keyframes markerPulse {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.15);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.25);
+    transform: scale(1.05);
+  }
+}
+
+/* Thinking dot */
+@keyframes thinkingDot {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+/* ═══════════════════════════════════════════════════════
+ * ERROR/FEEDBACK ANIMATIONS
+ * ═══════════════════════════════════════════════════════ */
+
+/* Error shake - physical jitter feel */
+@keyframes errorShake {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-2px) rotate(-0.5deg); }
+  30% { transform: translateX(2px) rotate(0.5deg); }
+  45% { transform: translateX(-2px) rotate(-0.3deg); }
+  60% { transform: translateX(1.5px) rotate(0.3deg); }
+  75% { transform: translateX(-1px); }
+}
+
+/* Orb error */
+@keyframes orbError {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+
+/* Success pulse */
+@keyframes successPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(52, 199, 89, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(52, 199, 89, 0);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+ * LOADING/PROGRESS ANIMATIONS
+ * ═══════════════════════════════════════════════════════ */
+
+/* Spinner */
+@keyframes spinner {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Progress shimmer */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Skeleton loading */
+@keyframes skeleton {
+  0% { opacity: 0.6; }
+  50% { opacity: 0.8; }
+  100% { opacity: 0.6; }
+}
+
+/* ═══════════════════════════════════════════════════════
+ * UTILITY CLASSES
+ * ═══════════════════════════════════════════════════════ */
+
+/* Animation timing classes */
+.animate-instant { animation-duration: var(--duration-instant); }
+.animate-fast { animation-duration: var(--duration-fast); }
+.animate-normal { animation-duration: var(--duration-normal); }
+.animate-slow { animation-duration: var(--duration-slow); }
+
+/* Animation curves */
+.animate-spring { animation-timing-function: var(--spring-bounce); }
+.animate-ease-out { animation-timing-function: var(--ease-out-expo); }
+.animate-ease-in-out { animation-timing-function: var(--ease-in-out); }
+
+/* Common animations */
+.animate-panel-enter {
+  animation: panelEnter var(--duration-panel-enter) var(--spring-bounce) forwards;
+}
+
+.animate-panel-exit {
+  animation: panelExit var(--duration-normal) var(--ease-out-quart) forwards;
+}
+
+.animate-fade-in-scale {
+  animation: fadeInScale var(--duration-normal) var(--spring-bounce) forwards;
+}
+
+.animate-slide-up {
+  animation: slideInUp var(--duration-normal) var(--spring-bounce) forwards;
+}
+
+.animate-menu {
+  animation: menuAppear 0.3s var(--spring-bounce) forwards;
+}
+
+.animate-toast {
+  animation: toastAppear 0.5s var(--spring-bounce) forwards;
+}
+
+.animate-message {
+  animation: messageIn 0.35s var(--spring-bounce) forwards;
+}
+
+.animate-error-shake {
+  animation: errorShake 0.5s ease-out;
+}
+
+.animate-success-pulse {
+  animation: successPulse 0.6s ease-out;
+}
+
+.animate-spinner {
+  animation: spinner 1s linear infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.05) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+.animate-skeleton {
+  animation: skeleton 1.5s ease-in-out infinite;
+}
+
+/* ═══════════════════════════════════════════════════════
+ * MICRO-INTERACTIONS
+ * ═══════════════════════════════════════════════════════ */
+
+/* Interactive elements */
+.interactive {
+  transition: transform var(--duration-micro-bounce) var(--spring-bounce);
+}
+
+.interactive:hover {
+  transform: scale(1.012); /* 1.2% — barely perceptible */
+}
+
+.interactive:active {
+  transform: scale(0.985); /* Sink into surface */
+}
+
+/* Button press */
+.button-press {
+  transition: transform 0.1s ease;
+}
+
+.button-press:active {
+  transform: scale(0.95);
+}
+
+/* Tab switch */
+.tab-transition {
+  transition:
+    opacity var(--duration-fast) ease,
+    transform var(--duration-fast) var(--spring-bounce);
+}
+
+/* ═══════════════════════════════════════════════════════
+ * REDUCED MOTION
+ * Respect user preferences
+ * ═══════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .interactive:hover,
+  .interactive:active {
+    transform: none;
+  }
+}

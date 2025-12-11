@@ -1,0 +1,133 @@
+/**
+ * MAGNET UI PhaseProgress Styles
+ * BRAVO OWNS THIS FILE.
+ *
+ * Progress indicator styling.
+ */
+
+/* Linear Progress Container */
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs, 4px);
+  padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+}
+
+/* Size variants */
+.small .progressBar {
+  height: 3px;
+}
+
+.medium .progressBar {
+  height: 4px;
+}
+
+.large .progressBar {
+  height: 6px;
+}
+
+/* Progress bar */
+.progressBar {
+  width: 100%;
+  background-color: var(--color-surface, #1a1a1a);
+  border-radius: var(--radius-full, 9999px);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: var(--radius-full, 9999px);
+  transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+/* Stats row */
+.stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm, 8px);
+}
+
+.count {
+  font-size: 11px;
+  color: var(--color-text-muted, #888);
+}
+
+.activePhase {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--color-text, #fff);
+}
+
+.activeIndicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--color-primary, #4a9eff);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.percentage {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Circular Progress */
+.circularContainer {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.circularSvg {
+  transform: rotate(-90deg);
+}
+
+.circularBg {
+  fill: none;
+  stroke: var(--color-surface, #1a1a1a);
+}
+
+.circularProgress {
+  fill: none;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.3s ease, stroke 0.3s ease;
+}
+
+.circularLabel {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.circularPercentage {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.circularPhase {
+  font-size: 8px;
+  color: var(--color-text-muted, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 2px;
+}
+
+/* Pulse animation */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}

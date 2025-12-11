@@ -1,0 +1,196 @@
+/**
+ * GlassCard Styles
+ * VisionOS-style glass morphism card
+ */
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-card, 20px);
+  overflow: hidden;
+  transition:
+    transform var(--duration-standard, 400ms) var(--ease-spring),
+    opacity var(--duration-standard, 400ms) ease,
+    box-shadow var(--duration-micro, 150ms) ease;
+  will-change: transform, opacity;
+  isolation: isolate;
+}
+
+/* Glass background */
+.glassBackground {
+  position: absolute;
+  inset: 0;
+  background: var(--glass-background, rgba(255, 255, 255, 0.05));
+  backdrop-filter: blur(var(--glass-blur, 24px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 24px));
+  z-index: -1;
+}
+
+/* Border highlight */
+.borderHighlight {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.04));
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Content */
+.content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* =============================================================================
+   Variants
+   ============================================================================= */
+
+.variantDefault {
+  /* Base styling */
+}
+
+.variantEmphasis {
+  border: 1px solid var(--primary-emphasis, rgba(10, 132, 255, 0.15));
+}
+
+.variantEmphasis .glassBackground {
+  background: var(--glass-emphasis, rgba(10, 132, 255, 0.08));
+}
+
+.variantCritical {
+  border: 1px solid var(--semantic-error-subtle, rgba(255, 69, 58, 0.15));
+}
+
+.variantCritical .glassBackground {
+  background: rgba(255, 69, 58, 0.05);
+}
+
+/* =============================================================================
+   Sizes (Padding)
+   ============================================================================= */
+
+.sizeXs {
+  padding: var(--spacing-xs, 6px);
+}
+
+.sizeSm {
+  padding: var(--spacing-sm, 10px);
+}
+
+.sizeMd {
+  padding: var(--spacing-md, 16px);
+}
+
+.sizeLg {
+  padding: var(--spacing-lg, 20px);
+}
+
+.sizeXl {
+  padding: var(--spacing-xl, 24px);
+}
+
+/* =============================================================================
+   Interactive States
+   ============================================================================= */
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover {
+  transform: translateY(-2px);
+}
+
+.clickable:active {
+  transform: translateY(0) scale(0.99);
+}
+
+.clickable:focus-visible {
+  outline: 2px solid var(--primary-base, rgba(10, 132, 255, 0.8));
+  outline-offset: 2px;
+}
+
+/* Selected state */
+.selected {
+  border: 1px solid var(--primary-emphasis, rgba(10, 132, 255, 0.3));
+}
+
+.selected .borderHighlight {
+  border-color: var(--primary-emphasis, rgba(10, 132, 255, 0.2));
+}
+
+/* =============================================================================
+   Header/Body/Footer Layout
+   ============================================================================= */
+
+.header {
+  padding-bottom: var(--spacing-md, 16px);
+  border-bottom: 1px solid var(--glass-border, rgba(255, 255, 255, 0.04));
+  margin-bottom: var(--spacing-md, 16px);
+}
+
+.title {
+  margin: 0 0 var(--spacing-xs, 4px) 0;
+  font-size: var(--font-size-lg, 17px);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--text-primary, rgba(255, 255, 255, 0.95));
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: var(--font-size-sm, 13px);
+  color: var(--text-secondary, rgba(255, 255, 255, 0.65));
+  line-height: 1.4;
+}
+
+.body {
+  flex: 1;
+}
+
+.footer {
+  padding-top: var(--spacing-md, 16px);
+  border-top: 1px solid var(--glass-border, rgba(255, 255, 255, 0.04));
+  margin-top: var(--spacing-md, 16px);
+}
+
+/* =============================================================================
+   Responsive
+   ============================================================================= */
+
+@media (max-width: 768px) {
+  .card {
+    border-radius: var(--radius-card-mobile, 16px);
+  }
+
+  .sizeMd {
+    padding: var(--spacing-sm, 12px);
+  }
+
+  .sizeLg {
+    padding: var(--spacing-md, 16px);
+  }
+}
+
+/* =============================================================================
+   Reduced Motion
+   ============================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    transition: opacity 0.2s ease;
+  }
+
+  .clickable:hover {
+    transform: none;
+  }
+
+  .clickable:active {
+    transform: none;
+  }
+}

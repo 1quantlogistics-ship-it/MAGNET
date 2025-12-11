@@ -1,0 +1,246 @@
+/**
+ * MAGNET UI Glass Material System
+ * VisionOS unified glass material
+ *
+ * IMPORTANT: VisionOS uses ONE unified glass material.
+ * Glass edges should feel ETCHED, not drawn.
+ * Border opacity NEVER exceeds 0.04.
+ */
+
+:root {
+  /* ═══════════════════════════════════════════════════════
+   * SINGLE GLASS TOKEN — All windows use this
+   * ═══════════════════════════════════════════════════════ */
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-blur: blur(24px) saturate(180%);
+  --glass-border: rgba(255, 255, 255, 0.04);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  --glass-radius: 20px;
+
+  /* Light variants for subtle differentiation */
+  --glass-bg-light: rgba(255, 255, 255, 0.03);
+  --glass-bg-medium: rgba(255, 255, 255, 0.05);
+  --glass-bg-heavy: rgba(255, 255, 255, 0.08);
+}
+
+/* ═══════════════════════════════════════════════════════
+ * BASE GLASS CLASS
+ * ═══════════════════════════════════════════════════════ */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--glass-radius);
+  box-shadow: var(--glass-highlight);
+
+  /* Frostrum depth — subtle 3D tilt */
+  transform: perspective(1200px) translateZ(0);
+}
+
+/* ═══════════════════════════════════════════════════════
+ * GLASS VARIANTS
+ * All maintain the unified look with subtle differences
+ * ═══════════════════════════════════════════════════════ */
+
+/* Lighter glass for nested elements */
+.glass-light {
+  background: var(--glass-bg-light);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+}
+
+/* Heavier glass for emphasis */
+.glass-heavy {
+  background: var(--glass-bg-heavy);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--glass-radius);
+  box-shadow: var(--glass-highlight);
+}
+
+/* Glass with subtle semantic tint */
+.glass-emphasis {
+  background:
+    linear-gradient(135deg, rgba(41, 151, 255, 0.04), transparent 60%),
+    var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid rgba(41, 151, 255, 0.08);
+  border-radius: var(--glass-radius);
+  box-shadow:
+    var(--glass-highlight),
+    inset 0 0 0 1px rgba(41, 151, 255, 0.06);
+}
+
+.glass-critical {
+  background:
+    linear-gradient(135deg, rgba(255, 59, 48, 0.03), transparent 60%),
+    var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid rgba(255, 59, 48, 0.06);
+  border-radius: var(--glass-radius);
+  box-shadow:
+    var(--glass-highlight),
+    inset 0 0 0 1px rgba(255, 59, 48, 0.04);
+}
+
+.glass-success {
+  background:
+    linear-gradient(135deg, rgba(52, 199, 89, 0.03), transparent 60%),
+    var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid rgba(52, 199, 89, 0.06);
+  border-radius: var(--glass-radius);
+  box-shadow:
+    var(--glass-highlight),
+    inset 0 0 0 1px rgba(52, 199, 89, 0.04);
+}
+
+/* ═══════════════════════════════════════════════════════
+ * TOP EDGE HIGHLIGHT
+ * Apple-style light catch at top edge
+ * ═══════════════════════════════════════════════════════ */
+.glass-edge-highlight {
+  position: relative;
+}
+
+.glass-edge-highlight::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.15) 30%,
+    rgba(255, 255, 255, 0.15) 70%,
+    transparent
+  );
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════════════
+ * SCENE LIGHTING
+ * Simulates environmental key light from top
+ * ═══════════════════════════════════════════════════════ */
+.glass-scene-lit {
+  position: relative;
+}
+
+.glass-scene-lit::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+  background: radial-gradient(
+    ellipse 80% 35% at 50% 0%,
+    rgba(255, 255, 255, 0.04),
+    transparent 60%
+  );
+}
+
+/* Fill light from bottom (subtle) */
+.glass-scene-lit-full::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+  background: radial-gradient(
+    ellipse 100% 25% at 50% 100%,
+    rgba(255, 255, 255, 0.02),
+    transparent 50%
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+ * HOVER & FOCUS STATES
+ * VisionOS uses subtle glow changes, NOT rings
+ * ═══════════════════════════════════════════════════════ */
+.glass-interactive {
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.3s ease,
+    transform 0.2s ease;
+}
+
+.glass-interactive:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.glass-interactive:focus-visible,
+.glass-interactive.focused {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow:
+    var(--glass-highlight),
+    0 0 0 1px rgba(41, 151, 255, 0.15),
+    0 0 20px rgba(41, 151, 255, 0.08);
+  outline: none;
+}
+
+.glass-interactive:active {
+  transform: scale(0.995);
+}
+
+/* ═══════════════════════════════════════════════════════
+ * DEPTH-BASED SHADOWS
+ * Different shadow intensities for layering
+ * ═══════════════════════════════════════════════════════ */
+.glass-depth-near {
+  box-shadow:
+    var(--glass-highlight),
+    0 24px 60px rgba(0, 0, 0, 0.22),
+    0 10px 24px rgba(0, 0, 0, 0.15);
+}
+
+.glass-depth-mid {
+  box-shadow:
+    var(--glass-highlight),
+    0 16px 40px rgba(0, 0, 0, 0.14),
+    0 6px 16px rgba(0, 0, 0, 0.10);
+}
+
+.glass-depth-far {
+  box-shadow:
+    var(--glass-highlight),
+    0 8px 20px rgba(0, 0, 0, 0.08),
+    0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+/* ═══════════════════════════════════════════════════════
+ * UTILITY: REMOVE GLASS EFFECTS
+ * For performance or preference
+ * ═══════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  .glass,
+  .glass-light,
+  .glass-heavy {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(30, 30, 30, 0.95);
+  }
+}
+
+/* Disable blur for low-power mode */
+.reduce-effects .glass,
+.reduce-effects .glass-light,
+.reduce-effects .glass-heavy {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: rgba(30, 30, 30, 0.92);
+}

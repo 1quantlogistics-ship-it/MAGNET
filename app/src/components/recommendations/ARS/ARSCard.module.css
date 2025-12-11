@@ -1,0 +1,228 @@
+/**
+ * MAGNET UI ARS Card Styles
+ *
+ * VisionOS-style recommendation card with glass morphism.
+ */
+
+/* Card base */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 280px;
+  max-width: 400px;
+  transition: all 300ms ease;
+}
+
+.card.expanded {
+  max-width: 440px;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.priority {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.priorityLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(167, 180, 199, 0.8);
+}
+
+.category {
+  padding: 3px 10px;
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(167, 180, 199, 0.7);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 100px;
+}
+
+/* Content */
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.95);
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: rgba(167, 180, 199, 0.8);
+}
+
+/* Impacts */
+.impacts {
+  margin-top: 4px;
+}
+
+/* Expanded content */
+.expandedContent {
+  overflow: hidden;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.description {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: rgba(167, 180, 199, 0.75);
+}
+
+.targetLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(126, 184, 231, 0.9);
+  background: rgba(126, 184, 231, 0.08);
+  border: none;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.targetLink:hover {
+  background: rgba(126, 184, 231, 0.15);
+}
+
+/* Actions */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  margin-top: auto;
+}
+
+.expandToggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  padding: 0;
+  color: rgba(167, 180, 199, 0.6);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.expandToggle:hover {
+  color: rgba(167, 180, 199, 0.9);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Skeleton loading state */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  min-width: 280px;
+  max-width: 400px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 24px;
+  animation: skeletonPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes skeletonPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.skeletonHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.skeletonPriority {
+  width: 60px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 9px;
+}
+
+.skeletonCategory {
+  width: 80px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 100px;
+}
+
+.skeletonContent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skeletonTitle {
+  width: 85%;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+}
+
+.skeletonSubtitle {
+  width: 60%;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+}
+
+.skeletonChip {
+  width: 100px;
+  height: 24px;
+  margin-top: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 100px;
+}
+
+.skeletonActions {
+  display: flex;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.skeletonButton {
+  width: 70px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 100px;
+}

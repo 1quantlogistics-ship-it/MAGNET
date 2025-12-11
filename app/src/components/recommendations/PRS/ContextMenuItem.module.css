@@ -1,0 +1,212 @@
+/**
+ * ContextMenuItem Styles
+ * Individual PRS context menu item
+ */
+
+.item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--prs-item-gap, 12px);
+  width: 100%;
+  padding: var(--prs-item-padding, 14px 18px);
+  padding-left: 22px; /* Space for category indicator */
+  border: none;
+  border-radius: var(--prs-surface-radius-xs, 10px);
+  background: transparent;
+  color: var(--prs-text-primary, rgba(255, 255, 255, 0.95));
+  font-family: var(--prs-font-family);
+  font-size: var(--prs-font-size-md, 14px);
+  font-weight: var(--prs-font-weight-normal, 400);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--prs-duration-fast, 150ms) ease,
+    transform var(--prs-duration-fast, 150ms) ease;
+  animation: prs-slide-up var(--prs-duration-slow, 350ms) var(--prs-ease-out) both;
+}
+
+.item:hover {
+  background: var(--prs-surface-bg-hover, rgba(255, 255, 255, 0.08));
+}
+
+.item:active {
+  transform: scale(0.98);
+}
+
+.item:focus-visible {
+  outline: 2px solid var(--prs-accent, #7EB8E7);
+  outline-offset: -2px;
+}
+
+/* Highlighted state (keyboard navigation) */
+.highlighted {
+  background: var(--prs-surface-bg-hover, rgba(255, 255, 255, 0.08));
+}
+
+/* Category indicator - left edge bar */
+.categoryIndicator {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  opacity: 0;
+  transition: opacity var(--prs-duration-fast, 150ms) ease;
+}
+
+.item:hover .categoryIndicator,
+.highlighted .categoryIndicator {
+  opacity: 1;
+}
+
+/* Icon */
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--prs-text-secondary, rgba(255, 255, 255, 0.65));
+  transition: color var(--prs-duration-fast, 150ms) ease;
+}
+
+.item:hover .icon {
+  color: var(--prs-text-primary, rgba(255, 255, 255, 0.95));
+}
+
+/* Label */
+.label {
+  flex: 1;
+  line-height: 1.3;
+  letter-spacing: var(--prs-letter-spacing-normal, -0.01em);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Action indicator (chevron) */
+.actionIndicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--prs-text-tertiary, rgba(255, 255, 255, 0.45));
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    opacity var(--prs-duration-fast, 150ms) ease,
+    transform var(--prs-duration-fast, 150ms) ease;
+}
+
+.item:hover .actionIndicator,
+.highlighted .actionIndicator {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* =============================================================================
+   Category Variants
+   ============================================================================= */
+
+.categoryAction:hover .icon {
+  color: #7EB8E7;
+}
+
+.categoryClarification:hover .icon {
+  color: #AF89DB;
+}
+
+.categoryNavigation:hover .icon {
+  color: #8CD9A8;
+}
+
+.categoryEnhancement:hover .icon {
+  color: #E5C07B;
+}
+
+/* =============================================================================
+   Divider
+   ============================================================================= */
+
+.divider {
+  display: flex;
+  align-items: center;
+  padding: var(--prs-space-xs, 8px) var(--prs-space-md, 20px);
+  margin: var(--prs-space-2xs, 4px) 0;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--prs-surface-border, rgba(255, 255, 255, 0.08));
+}
+
+.dividerLabel {
+  padding: 0 var(--prs-space-sm, 14px);
+  font-size: var(--prs-font-size-xs, 11px);
+  font-weight: var(--prs-font-weight-medium, 500);
+  color: var(--prs-text-tertiary, rgba(255, 255, 255, 0.45));
+  text-transform: uppercase;
+  letter-spacing: var(--prs-letter-spacing-wide, 0.02em);
+}
+
+/* =============================================================================
+   Group
+   ============================================================================= */
+
+.group {
+  padding: var(--prs-space-2xs, 4px) 0;
+}
+
+.group:not(:first-child) {
+  border-top: 1px solid var(--prs-surface-border, rgba(255, 255, 255, 0.08));
+  margin-top: var(--prs-space-2xs, 4px);
+  padding-top: var(--prs-space-xs, 8px);
+}
+
+.groupHeader {
+  padding: var(--prs-space-xs, 8px) var(--prs-space-md, 20px);
+  padding-bottom: var(--prs-space-2xs, 4px);
+}
+
+.groupLabel {
+  font-size: var(--prs-font-size-xs, 11px);
+  font-weight: var(--prs-font-weight-medium, 500);
+  color: var(--prs-text-tertiary, rgba(255, 255, 255, 0.45));
+  text-transform: uppercase;
+  letter-spacing: var(--prs-letter-spacing-wide, 0.02em);
+}
+
+.groupItems {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* =============================================================================
+   Reduced Motion
+   ============================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .item {
+    animation: none;
+    transition: background 0.1s ease;
+  }
+
+  .item:active {
+    transform: none;
+  }
+
+  .categoryIndicator,
+  .actionIndicator {
+    transition: none;
+  }
+}
