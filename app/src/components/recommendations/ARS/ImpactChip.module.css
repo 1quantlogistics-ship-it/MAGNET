@@ -1,0 +1,121 @@
+/**
+ * MAGNET UI Impact Chip Styles
+ *
+ * VisionOS-style chip with glass morphism.
+ */
+
+/* Base chip styles */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  /* Glass material */
+  background: var(--ars-chip-bg, rgba(255, 255, 255, 0.04));
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+
+  /* Soft border - inset glow */
+  border: none;
+  box-shadow: inset 0 0 0 1px var(--ars-chip-border, rgba(255, 255, 255, 0.06));
+
+  border-radius: 100px;
+
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  white-space: nowrap;
+  transition: all 200ms ease;
+}
+
+/* Size variants */
+.sm {
+  padding: 4px 10px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+.md {
+  padding: 6px 14px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.lg {
+  padding: 8px 18px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+/* Variant styles */
+.neutral {
+  color: rgba(167, 180, 199, 0.9);
+}
+
+.positive {
+  color: rgba(52, 199, 89, 0.9);
+  background: var(--ars-chip-positive, rgba(52, 199, 89, 0.08));
+  box-shadow: inset 0 0 0 1px rgba(52, 199, 89, 0.12);
+}
+
+.negative {
+  color: rgba(255, 69, 58, 0.85);
+  background: var(--ars-chip-negative, rgba(255, 59, 48, 0.06));
+  box-shadow: inset 0 0 0 1px rgba(255, 59, 48, 0.1);
+}
+
+/* Metric name */
+.metric {
+  font-weight: 600;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+/* Divider */
+.divider {
+  width: 1px;
+  height: 10px;
+  background: currentColor;
+  opacity: 0.2;
+}
+
+/* Change value */
+.change {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 500;
+}
+
+/* Direction arrow */
+.arrow {
+  flex-shrink: 0;
+  transition: transform 200ms ease;
+}
+
+/* Detail text */
+.detail {
+  font-size: 9px;
+  opacity: 0.6;
+  text-transform: lowercase;
+}
+
+/* Clickable variant */
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.clickable:active {
+  transform: scale(0.98);
+}
+
+/* Chips container */
+.chipsContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}

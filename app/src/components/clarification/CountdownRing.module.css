@@ -1,0 +1,70 @@
+/**
+ * CountdownRing Styles
+ * Animated SVG countdown with pulse glow
+ */
+
+.container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* =============================================================================
+   Radial Pulse Glow
+   ============================================================================= */
+
+.pulse {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    var(--clarification-ring-pulse-color, rgba(126, 184, 231, 0.15)) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+}
+
+.container[data-paused="true"] .pulse {
+  display: none;
+}
+
+/* =============================================================================
+   SVG Ring
+   ============================================================================= */
+
+.ring {
+  position: relative;
+  z-index: 1;
+}
+
+.track {
+  stroke: var(--clarification-ring-track-color, rgba(255, 255, 255, 0.08));
+}
+
+.progress {
+  stroke: var(--clarification-ring-active-color, rgba(126, 184, 231, 0.4));
+  transform-origin: center;
+  transform: rotate(-90deg);
+}
+
+/* Paused state - dim the progress */
+.container[data-paused="true"] .progress {
+  opacity: 0.5;
+}
+
+/* =============================================================================
+   Reduced Motion
+   ============================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    display: none;
+  }
+
+  .progress {
+    transition: stroke-dashoffset 0.1s linear;
+  }
+}

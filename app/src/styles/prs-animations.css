@@ -1,0 +1,386 @@
+/**
+ * MAGNET UI Module 02: PRS Animations
+ *
+ * VisionOS air-cushion motion - slow, heavy, deliberate animations.
+ * Spring presets for Framer Motion + CSS fallbacks.
+ */
+
+:root {
+  /* ═══════════════════════════════════════════════════════
+   * SPRING PHYSICS PRESETS
+   * For use with Framer Motion
+   * ═══════════════════════════════════════════════════════ */
+
+  --prs-spring-stiffness: 160;
+  --prs-spring-damping: 26;
+  --prs-spring-mass: 1;
+
+  /* Snappier for micro-interactions */
+  --prs-spring-stiffness-snappy: 260;
+  --prs-spring-damping-snappy: 28;
+
+  /* Gentler for larger movements */
+  --prs-spring-stiffness-gentle: 120;
+  --prs-spring-damping-gentle: 22;
+
+  /* ═══════════════════════════════════════════════════════
+   * TIMING CONSTANTS
+   * ═══════════════════════════════════════════════════════ */
+
+  --prs-duration-instant: 100ms;
+  --prs-duration-fast: 150ms;
+  --prs-duration-normal: 250ms;
+  --prs-duration-slow: 350ms;
+  --prs-duration-slower: 500ms;
+
+  --prs-stagger-delay: 50ms;
+  --prs-panel-transition: 350ms;
+  --prs-fade-duration: 200ms;
+  --prs-menu-appear: 280ms;
+  --prs-toast-appear: 400ms;
+
+  /* ═══════════════════════════════════════════════════════
+   * EASING CURVES
+   * ═══════════════════════════════════════════════════════ */
+
+  /* Air-cushion ease - slow start, natural deceleration */
+  --prs-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Smooth in-out */
+  --prs-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Spring-like bounce */
+  --prs-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Gentle deceleration */
+  --prs-ease-decelerate: cubic-bezier(0, 0, 0.2, 1);
+
+  /* Quick acceleration */
+  --prs-ease-accelerate: cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* ═══════════════════════════════════════════════════════
+ * KEYFRAME ANIMATIONS
+ * CSS fallbacks when Framer Motion unavailable
+ * ═══════════════════════════════════════════════════════ */
+
+@keyframes prs-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes prs-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes prs-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes prs-slide-down {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+}
+
+@keyframes prs-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes prs-scale-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes prs-slide-left {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes prs-slide-right {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Context menu specific */
+@keyframes prs-menu-appear {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96) translateZ(0);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1) var(--prs-depth-near);
+  }
+}
+
+@keyframes prs-menu-disappear {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1) var(--prs-depth-near);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98) translateZ(0);
+  }
+}
+
+/* Toast specific */
+@keyframes prs-toast-appear {
+  0% {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.9);
+  }
+  70% {
+    transform: translateY(4px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes prs-toast-disappear {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.95);
+  }
+}
+
+/* Phase panel specific */
+@keyframes prs-phase-expand {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: scaleY(0.8);
+    transform-origin: top;
+  }
+  to {
+    opacity: 1;
+    max-height: 300px;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes prs-phase-collapse {
+  from {
+    opacity: 1;
+    max-height: 300px;
+    transform: scaleY(1);
+  }
+  to {
+    opacity: 0;
+    max-height: 0;
+    transform: scaleY(0.8);
+  }
+}
+
+/* Progress bar */
+@keyframes prs-progress-fill {
+  from {
+    transform: scaleX(0);
+    transform-origin: left;
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* Pulse for active states */
+@keyframes prs-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Shimmer for loading */
+@keyframes prs-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Sparkle for milestones */
+@keyframes prs-sparkle {
+  0%, 100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.2) rotate(180deg);
+    opacity: 0.8;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+ * ANIMATION UTILITY CLASSES
+ * ═══════════════════════════════════════════════════════ */
+
+.prs-animate-in {
+  animation: prs-slide-up var(--prs-duration-slow) var(--prs-ease-out) forwards;
+}
+
+.prs-animate-out {
+  animation: prs-slide-down var(--prs-duration-normal) var(--prs-ease-out) forwards;
+}
+
+.prs-animate-fade-in {
+  animation: prs-fade-in var(--prs-fade-duration) ease forwards;
+}
+
+.prs-animate-fade-out {
+  animation: prs-fade-out var(--prs-fade-duration) ease forwards;
+}
+
+.prs-animate-scale-in {
+  animation: prs-scale-in var(--prs-duration-normal) var(--prs-ease-out) forwards;
+}
+
+.prs-animate-scale-out {
+  animation: prs-scale-out var(--prs-duration-fast) var(--prs-ease-out) forwards;
+}
+
+.prs-animate-menu-in {
+  animation: prs-menu-appear var(--prs-menu-appear) var(--prs-ease-out) forwards;
+}
+
+.prs-animate-menu-out {
+  animation: prs-menu-disappear var(--prs-duration-fast) var(--prs-ease-out) forwards;
+}
+
+.prs-animate-toast-in {
+  animation: prs-toast-appear var(--prs-toast-appear) var(--prs-ease-spring) forwards;
+}
+
+.prs-animate-toast-out {
+  animation: prs-toast-disappear var(--prs-duration-normal) var(--prs-ease-out) forwards;
+}
+
+/* Stagger children */
+.prs-stagger > * {
+  animation: prs-slide-up var(--prs-duration-slow) var(--prs-ease-out) both;
+}
+
+.prs-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.prs-stagger > *:nth-child(2) { animation-delay: 50ms; }
+.prs-stagger > *:nth-child(3) { animation-delay: 100ms; }
+.prs-stagger > *:nth-child(4) { animation-delay: 150ms; }
+.prs-stagger > *:nth-child(5) { animation-delay: 200ms; }
+.prs-stagger > *:nth-child(6) { animation-delay: 250ms; }
+.prs-stagger > *:nth-child(7) { animation-delay: 300ms; }
+.prs-stagger > *:nth-child(8) { animation-delay: 350ms; }
+
+/* Loading shimmer */
+.prs-loading-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: prs-shimmer 1.5s infinite;
+}
+
+/* Active pulse */
+.prs-pulse {
+  animation: prs-pulse 2s ease-in-out infinite;
+}
+
+/* ═══════════════════════════════════════════════════════
+ * REDUCED MOTION
+ * ═══════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .prs-animate-in,
+  .prs-animate-out,
+  .prs-animate-fade-in,
+  .prs-animate-fade-out,
+  .prs-animate-scale-in,
+  .prs-animate-scale-out,
+  .prs-animate-menu-in,
+  .prs-animate-menu-out,
+  .prs-animate-toast-in,
+  .prs-animate-toast-out {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .prs-stagger > * {
+    animation: none;
+    opacity: 1;
+  }
+
+  .prs-loading-shimmer {
+    animation: none;
+  }
+
+  .prs-pulse {
+    animation: none;
+  }
+}

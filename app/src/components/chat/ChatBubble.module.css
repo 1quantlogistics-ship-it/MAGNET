@@ -1,0 +1,188 @@
+/**
+ * ChatBubble Styles
+ * Glass bubbles with lighting and depth-based blur
+ */
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 82%;
+}
+
+.user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.assistant {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+/* =============================================================================
+   GLASS BUBBLE
+   ============================================================================= */
+
+.bubble {
+  position: relative;
+  padding: var(--bubble-padding, 16px 20px);
+  border-radius: var(--bubble-radius, 20px);
+
+  /* NO border — glass material only */
+  border: none;
+
+  /* Dynamic blur based on depth */
+  backdrop-filter: blur(var(--blur-depth, 20px)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--blur-depth, 20px)) saturate(160%);
+
+  /* Shape defined by subtle inset */
+  box-shadow: var(--bubble-inset, inset 0 0 0 0.5px rgba(255, 255, 255, 0.08));
+
+  overflow: hidden;
+}
+
+/* Assistant bubble — neutral glass */
+.assistant .bubble {
+  background: var(--bubble-ai-bg, linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.08),
+    rgba(255, 255, 255, 0.02)
+  ));
+}
+
+/* User bubble — accent tinted glass */
+.user .bubble {
+  background: var(--bubble-user-bg, linear-gradient(
+    to bottom,
+    rgba(126, 184, 231, 0.14),
+    rgba(126, 184, 231, 0.06)
+  ));
+  box-shadow:
+    var(--bubble-user-inset, inset 0 0 0 0.5px rgba(126, 184, 231, 0.15)),
+    0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* Streaming state — subtle glow */
+.streaming {
+  box-shadow: var(--bubble-streaming-glow,
+    inset 0 0 0 0.5px rgba(126, 184, 231, 0.2),
+    0 0 20px rgba(126, 184, 231, 0.08)
+  );
+}
+
+/* =============================================================================
+   GLASS LIGHTING LAYER
+   ============================================================================= */
+
+.glassLighting {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+
+  /* Top-down lighting gradient */
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.06) 0%,
+    transparent 40%
+  );
+
+  /* Soft edge mask */
+  mask-image: radial-gradient(
+    ellipse 120% 80% at 50% 0%,
+    white 40%,
+    transparent 100%
+  );
+}
+
+/* =============================================================================
+   CONTENT
+   ============================================================================= */
+
+.content {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--prs-neutral-200, rgba(167, 180, 199, 0.9));
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.user .content {
+  color: var(--white, #ffffff);
+}
+
+/* =============================================================================
+   STREAMING CARET — Soft, not terminal
+   ============================================================================= */
+
+.caret {
+  display: inline-block;
+  width: var(--caret-width, 2px);
+  height: var(--caret-height, 16px);
+  margin-left: 3px;
+  vertical-align: text-bottom;
+
+  background: var(--caret-color, rgba(126, 184, 231, 0.6));
+  border-radius: 1px;
+}
+
+/* =============================================================================
+   TIMESTAMP — Very subtle
+   ============================================================================= */
+
+.timestamp {
+  display: block;
+  margin-top: 8px;
+
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.25);
+  letter-spacing: 0.02em;
+}
+
+/* =============================================================================
+   COMPONENT LINK
+   ============================================================================= */
+
+.componentLink {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+
+  background: transparent;
+  border: none;
+  border-radius: 100px;
+
+  font-size: 10px;
+  color: var(--prs-neutral-600, rgba(167, 180, 199, 0.4));
+  cursor: pointer;
+
+  transition: all 0.15s ease;
+}
+
+.componentLink:hover {
+  color: var(--prs-accent, #7EB8E7);
+  background: rgba(126, 184, 231, 0.06);
+}
+
+/* =============================================================================
+   Reduced Motion
+   ============================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .caret {
+    animation: none !important;
+    opacity: 0.5;
+  }
+}
+
+/* =============================================================================
+   High Contrast
+   ============================================================================= */
+
+@media (prefers-contrast: high) {
+  .bubble {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+  }
+}

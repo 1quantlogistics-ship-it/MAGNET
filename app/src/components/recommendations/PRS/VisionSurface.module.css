@@ -1,0 +1,228 @@
+/**
+ * VisionSurface Styles
+ * Unified glass material for PRS components
+ */
+
+.surface {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--prs-surface-radius, 22px);
+  overflow: hidden;
+  isolation: isolate;
+  transition:
+    transform var(--prs-panel-transition, 350ms) var(--prs-ease-out),
+    opacity var(--prs-fade-duration, 200ms) ease,
+    box-shadow var(--prs-duration-normal, 250ms) ease;
+  will-change: transform, opacity;
+  perspective: var(--prs-perspective, 1200px);
+  transform-style: preserve-3d;
+}
+
+/* Glass backdrop layer */
+.glassBackdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--prs-surface-bg, rgba(255, 255, 255, 0.05));
+  backdrop-filter: var(--prs-surface-blur, blur(26px) saturate(170%));
+  -webkit-backdrop-filter: var(--prs-surface-blur, blur(26px) saturate(170%));
+  z-index: 0;
+}
+
+/* Top edge highlight - light source simulation */
+.edgeHighlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.15) 20%,
+    rgba(255, 255, 255, 0.20) 50%,
+    rgba(255, 255, 255, 0.15) 80%,
+    transparent 100%
+  );
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* Border layer */
+.border {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid var(--prs-surface-border, rgba(255, 255, 255, 0.08));
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Content wrapper */
+.content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* =============================================================================
+   Variants
+   ============================================================================= */
+
+.variantDefault {
+  box-shadow: var(--prs-surface-shadow);
+}
+
+.variantActive {
+  box-shadow: var(--prs-surface-shadow);
+}
+
+.variantActive .glassBackdrop {
+  background: linear-gradient(
+    135deg,
+    var(--prs-accent-subtle, rgba(126, 184, 231, 0.12)) 0%,
+    var(--prs-surface-bg, rgba(255, 255, 255, 0.05)) 100%
+  );
+}
+
+.variantActive .border {
+  border-color: rgba(126, 184, 231, 0.20);
+}
+
+.variantSuccess {
+  box-shadow: var(--prs-surface-shadow);
+}
+
+.variantSuccess .glassBackdrop {
+  background: linear-gradient(
+    135deg,
+    var(--prs-success-subtle, rgba(140, 217, 168, 0.10)) 0%,
+    var(--prs-surface-bg, rgba(255, 255, 255, 0.05)) 100%
+  );
+}
+
+.variantSuccess .border {
+  border-color: rgba(140, 217, 168, 0.20);
+}
+
+/* =============================================================================
+   Depth Transforms (3D Spatial)
+   ============================================================================= */
+
+.depthNear {
+  transform: var(--prs-depth-near, translateZ(16px) rotateX(0.5deg));
+  z-index: var(--prs-z-menu, 300);
+}
+
+.depthMid {
+  transform: var(--prs-depth-mid, translateZ(8px));
+  z-index: var(--prs-z-panel, 200);
+}
+
+.depthFar {
+  transform: var(--prs-depth-far, translateZ(0));
+  z-index: var(--prs-z-base, 100);
+}
+
+/* =============================================================================
+   Interactive States
+   ============================================================================= */
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover {
+  box-shadow: var(--prs-surface-shadow-hover);
+}
+
+.clickable:hover .glassBackdrop {
+  background: var(--prs-surface-bg-hover, rgba(255, 255, 255, 0.08));
+}
+
+.clickable:hover .border {
+  border-color: var(--prs-surface-border-hover, rgba(255, 255, 255, 0.12));
+}
+
+.clickable:active {
+  transform: scale(0.99);
+}
+
+/* =============================================================================
+   Focus States (Soft-Focus Orchestration)
+   ============================================================================= */
+
+.focused {
+  box-shadow: var(--prs-surface-shadow-hover);
+}
+
+.focused .border {
+  border-color: var(--prs-surface-border-hover, rgba(255, 255, 255, 0.12));
+}
+
+.blurred {
+  filter: var(--prs-focus-blur, blur(3px));
+  opacity: var(--prs-focus-opacity, 0.6);
+  transform: scale(var(--prs-focus-scale, 0.98));
+  pointer-events: none;
+}
+
+/* =============================================================================
+   Size Variants (for different surface sizes)
+   ============================================================================= */
+
+.surface[data-size="sm"] {
+  border-radius: var(--prs-surface-radius-sm, 14px);
+}
+
+.surface[data-size="xs"] {
+  border-radius: var(--prs-surface-radius-xs, 10px);
+}
+
+/* =============================================================================
+   Responsive
+   ============================================================================= */
+
+@media (max-width: 768px) {
+  .surface {
+    border-radius: var(--prs-surface-radius-sm, 18px);
+  }
+
+  .depthNear,
+  .depthMid {
+    transform: none;
+  }
+}
+
+/* =============================================================================
+   Reduced Motion
+   ============================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .surface {
+    transition: opacity 0.15s ease;
+  }
+
+  .clickable:active {
+    transform: none;
+  }
+
+  .blurred {
+    filter: none;
+    opacity: 0.7;
+    transform: none;
+  }
+}
+
+/* =============================================================================
+   High Contrast
+   ============================================================================= */
+
+@media (prefers-contrast: high) {
+  .border {
+    border-width: 2px;
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+}

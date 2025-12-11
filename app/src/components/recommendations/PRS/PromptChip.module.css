@@ -1,0 +1,189 @@
+/**
+ * PromptChip Styles
+ * VisionOS pill-style chat suggestion chips
+ */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prs-spacing-xs, 6px);
+  padding: var(--prs-spacing-xs, 6px) var(--prs-spacing-sm, 10px);
+  background: var(--prs-surface-bg, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--prs-surface-border, rgba(255, 255, 255, 0.06));
+  border-radius: 100px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 450;
+  color: var(--prs-neutral-200, rgba(167, 180, 199, 0.9));
+  white-space: nowrap;
+  transition:
+    background var(--prs-duration-fast, 150ms) ease,
+    border-color var(--prs-duration-fast, 150ms) ease,
+    transform var(--prs-duration-fast, 150ms) ease,
+    box-shadow var(--prs-duration-fast, 150ms) ease;
+  animation: chipAppear var(--prs-fade-duration, 200ms) var(--prs-ease-out) both;
+  will-change: transform, opacity;
+}
+
+@keyframes chipAppear {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.chip:hover {
+  background: var(--prs-surface-bg-hover, rgba(255, 255, 255, 0.08));
+  border-color: var(--prs-surface-border-hover, rgba(255, 255, 255, 0.10));
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.chip:active {
+  transform: scale(0.97);
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--prs-accent, rgba(126, 184, 231, 0.6));
+  outline-offset: 2px;
+}
+
+/* =============================================================================
+   Size Variants
+   ============================================================================= */
+
+.sizeSm {
+  padding: 4px 8px;
+  font-size: 12px;
+  gap: 4px;
+}
+
+.sizeMd {
+  padding: var(--prs-spacing-xs, 6px) var(--prs-spacing-sm, 10px);
+  font-size: 13px;
+}
+
+/* =============================================================================
+   Category Colors
+   ============================================================================= */
+
+.chip[data-category="action"] .icon {
+  color: var(--prs-category-action, #7EB8E7);
+}
+
+.chip[data-category="clarification"] .icon {
+  color: var(--prs-category-clarification, #B8A7E7);
+}
+
+.chip[data-category="navigation"] .icon {
+  color: var(--prs-category-navigation, #A7C7B8);
+}
+
+.chip[data-category="enhancement"] .icon {
+  color: var(--prs-category-enhancement, #E7C7A7);
+}
+
+/* =============================================================================
+   Icon
+   ============================================================================= */
+
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.8;
+  transition: opacity var(--prs-duration-fast, 150ms) ease;
+}
+
+.chip:hover .icon {
+  opacity: 1;
+}
+
+/* =============================================================================
+   Label
+   ============================================================================= */
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+/* =============================================================================
+   Chip Group
+   ============================================================================= */
+
+.chipGroup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--prs-spacing-sm, 8px);
+}
+
+/* =============================================================================
+   More Indicator
+   ============================================================================= */
+
+.moreIndicator {
+  font-size: 12px;
+  color: var(--prs-neutral-500, rgba(167, 180, 199, 0.5));
+  padding: 4px 8px;
+}
+
+/* =============================================================================
+   Responsive
+   ============================================================================= */
+
+@media (max-width: 768px) {
+  .chip {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+
+  .label {
+    max-width: 150px;
+  }
+
+  .chipGroup {
+    gap: 6px;
+  }
+}
+
+/* =============================================================================
+   Reduced Motion
+   ============================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .chip {
+    animation: none;
+    transition: background 0.1s ease, border-color 0.1s ease;
+  }
+
+  .chip:hover {
+    transform: none;
+  }
+
+  .chip:active {
+    transform: none;
+  }
+}
+
+/* =============================================================================
+   High Contrast
+   ============================================================================= */
+
+@media (prefers-contrast: high) {
+  .chip {
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .chip:hover {
+    border-color: rgba(255, 255, 255, 0.4);
+  }
+}

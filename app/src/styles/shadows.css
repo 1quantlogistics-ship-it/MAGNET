@@ -1,0 +1,152 @@
+/**
+ * MAGNET UI Shadow System
+ * VisionOS Three-Layer Shadow System
+ *
+ * VisionOS shadows are:
+ * - Softer, larger spread
+ * - Lower opacity (0.08-0.20)
+ * - More diffused
+ */
+
+:root {
+  /* ═══════════════════════════════════════════════════════
+   * THREE-LAYER SHADOW SYSTEM
+   * Based on perceived depth in spatial UI
+   * ═══════════════════════════════════════════════════════ */
+
+  /* Layer 1 — Foreground (chat, modals, popovers) */
+  --shadow-foreground:
+    0 30px 60px rgba(0, 0, 0, 0.20),
+    0 15px 30px rgba(0, 0, 0, 0.12);
+
+  /* Layer 2 — Midground (panels, cards) */
+  --shadow-midground:
+    0 16px 40px rgba(0, 0, 0, 0.14),
+    0 6px 16px rgba(0, 0, 0, 0.08);
+
+  /* Layer 3 — Background (HUD, status bars) */
+  --shadow-background:
+    0 8px 20px rgba(0, 0, 0, 0.08),
+    0 2px 8px rgba(0, 0, 0, 0.04);
+
+  /* ═══════════════════════════════════════════════════════
+   * ELEVATION VARIANTS
+   * For fine-tuned depth control
+   * ═══════════════════════════════════════════════════════ */
+
+  /* Elevation 1 - Subtle lift */
+  --shadow-elevation-1:
+    0 2px 4px rgba(0, 0, 0, 0.04),
+    0 1px 2px rgba(0, 0, 0, 0.02);
+
+  /* Elevation 2 - Cards, list items */
+  --shadow-elevation-2:
+    0 4px 12px rgba(0, 0, 0, 0.06),
+    0 2px 4px rgba(0, 0, 0, 0.03);
+
+  /* Elevation 3 - Dropdowns, tooltips */
+  --shadow-elevation-3:
+    0 8px 24px rgba(0, 0, 0, 0.10),
+    0 4px 8px rgba(0, 0, 0, 0.05);
+
+  /* Elevation 4 - Modals, dialogs */
+  --shadow-elevation-4:
+    0 16px 48px rgba(0, 0, 0, 0.15),
+    0 8px 16px rgba(0, 0, 0, 0.08);
+
+  /* Elevation 5 - Full-screen overlays */
+  --shadow-elevation-5:
+    0 32px 64px rgba(0, 0, 0, 0.20),
+    0 16px 32px rgba(0, 0, 0, 0.12);
+
+  /* ═══════════════════════════════════════════════════════
+   * COLORED SHADOWS (for glow effects)
+   * ═══════════════════════════════════════════════════════ */
+  --shadow-blue-glow: 0 0 30px rgba(41, 151, 255, 0.15);
+  --shadow-blue-glow-strong: 0 0 40px rgba(41, 151, 255, 0.25);
+  --shadow-green-glow: 0 0 20px rgba(52, 199, 89, 0.12);
+  --shadow-red-glow: 0 0 20px rgba(255, 59, 48, 0.10);
+  --shadow-white-glow: 0 0 30px rgba(255, 255, 255, 0.08);
+
+  /* ═══════════════════════════════════════════════════════
+   * INSET SHADOWS
+   * For pressed/active states
+   * ═══════════════════════════════════════════════════════ */
+  --shadow-inset-subtle: inset 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-inset-medium: inset 0 2px 6px rgba(0, 0, 0, 0.10);
+  --shadow-inset-strong: inset 0 3px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* ═══════════════════════════════════════════════════════
+ * SHADOW UTILITY CLASSES
+ * ═══════════════════════════════════════════════════════ */
+
+.shadow-none { box-shadow: none; }
+.shadow-sm { box-shadow: var(--shadow-elevation-1); }
+.shadow-md { box-shadow: var(--shadow-elevation-2); }
+.shadow-lg { box-shadow: var(--shadow-elevation-3); }
+.shadow-xl { box-shadow: var(--shadow-elevation-4); }
+.shadow-2xl { box-shadow: var(--shadow-elevation-5); }
+
+.shadow-foreground { box-shadow: var(--shadow-foreground); }
+.shadow-midground { box-shadow: var(--shadow-midground); }
+.shadow-background { box-shadow: var(--shadow-background); }
+
+/* ═══════════════════════════════════════════════════════
+ * DYNAMIC SHADOW (pointer-reactive)
+ * Shadow shifts based on pointer position
+ * ═══════════════════════════════════════════════════════ */
+.shadow-reactive {
+  filter: drop-shadow(0 0 40px rgba(0, 0, 0, 0.12));
+  transition: filter 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.shadow-reactive:hover {
+  filter: drop-shadow(0 0 50px rgba(0, 0, 0, 0.18));
+}
+
+/* ═══════════════════════════════════════════════════════
+ * PROXIMITY GLOW
+ * Panels glow based on cursor proximity
+ * Uses CSS custom property --glow-intensity (0-1)
+ * ═══════════════════════════════════════════════════════ */
+.shadow-proximity-glow {
+  --glow-intensity: 0;
+  box-shadow:
+    var(--shadow-midground),
+    0 0 calc(50px * var(--glow-intensity)) rgba(255, 255, 255, calc(0.04 * var(--glow-intensity)));
+  transition: box-shadow 0.3s ease-out;
+}
+
+/* ═══════════════════════════════════════════════════════
+ * FOCUSED STATE SHADOW
+ * VisionOS focus uses glow, not ring
+ * ═══════════════════════════════════════════════════════ */
+.shadow-focus {
+  box-shadow:
+    0 0 0 1px rgba(41, 151, 255, 0.2),
+    0 0 30px rgba(41, 151, 255, 0.08),
+    var(--shadow-midground);
+}
+
+.shadow-focus-critical {
+  box-shadow:
+    0 0 0 1px rgba(255, 59, 48, 0.2),
+    0 0 30px rgba(255, 59, 48, 0.08),
+    var(--shadow-midground);
+}
+
+/* ═══════════════════════════════════════════════════════
+ * MOTION-REDUCED SHADOWS
+ * Simplified for accessibility
+ * ═══════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  .shadow-reactive {
+    filter: drop-shadow(0 0 30px rgba(0, 0, 0, 0.12));
+    transition: none;
+  }
+
+  .shadow-proximity-glow {
+    transition: none;
+  }
+}

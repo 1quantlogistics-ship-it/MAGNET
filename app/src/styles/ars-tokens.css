@@ -1,0 +1,111 @@
+/**
+ * MAGNET UI ARS Module Tokens
+ * Auto Recommendation System specific design tokens
+ */
+
+:root {
+  /* ═══════════════════════════════════════════════════════
+   * ARS FLOATING WINDOW
+   * Glass-based windows with depth perception
+   * ═══════════════════════════════════════════════════════ */
+  --ars-window-bg: rgba(255, 255, 255, 0.025);
+  --ars-window-blur: blur(20px) saturate(180%);
+  --ars-window-radius: 24px;
+  --ars-window-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.18),
+    0 8px 20px rgba(0, 0, 0, 0.12);
+
+  /* ═══════════════════════════════════════════════════════
+   * INSET GLOW (replaces colored borders)
+   * Etched edges, not drawn borders
+   * ═══════════════════════════════════════════════════════ */
+  --ars-glow-default: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --ars-glow-hover: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --ars-glow-emphasis: inset 0 0 0 1px rgba(41, 151, 255, 0.12);
+  --ars-glow-critical: inset 0 0 0 1px rgba(255, 59, 48, 0.10);
+  --ars-glow-success: inset 0 0 0 1px rgba(52, 199, 89, 0.10);
+
+  /* ═══════════════════════════════════════════════════════
+   * SURFACE TINTS (very subtle background colors)
+   * VisionOS uses barely-perceptible tints
+   * ═══════════════════════════════════════════════════════ */
+  --ars-tint-default: transparent;
+  --ars-tint-emphasis: rgba(41, 151, 255, 0.04);
+  --ars-tint-critical: rgba(255, 59, 48, 0.03);
+  --ars-tint-success: rgba(52, 199, 89, 0.03);
+
+  /* ═══════════════════════════════════════════════════════
+   * IMPACT CHIPS (metric display)
+   * ═══════════════════════════════════════════════════════ */
+  --ars-chip-bg: rgba(255, 255, 255, 0.04);
+  --ars-chip-border: rgba(255, 255, 255, 0.06);
+  --ars-chip-positive-bg: rgba(52, 199, 89, 0.08);
+  --ars-chip-positive-border: rgba(52, 199, 89, 0.12);
+  --ars-chip-negative-bg: rgba(255, 59, 48, 0.06);
+  --ars-chip-negative-border: rgba(255, 59, 48, 0.10);
+
+  /* ═══════════════════════════════════════════════════════
+   * PILL BUTTONS
+   * ═══════════════════════════════════════════════════════ */
+  --ars-pill-radius: 100px;
+  --ars-pill-padding-x: 18px;
+  --ars-pill-padding-y: 10px;
+  --ars-pill-bg: rgba(255, 255, 255, 0.03);
+  --ars-pill-bg-hover: rgba(255, 255, 255, 0.06);
+  --ars-pill-bg-active: rgba(255, 255, 255, 0.08);
+  --ars-pill-bg-primary: rgba(41, 151, 255, 0.15);
+  --ars-pill-bg-primary-hover: rgba(41, 151, 255, 0.22);
+
+  /* ═══════════════════════════════════════════════════════
+   * SPACING (extra generous for ARS cards)
+   * ═══════════════════════════════════════════════════════ */
+  --ars-space-card: 20px;
+  --ars-space-between: 16px;
+  --ars-space-section: 28px;
+  --ars-card-gap: 12px;
+
+  /* ═══════════════════════════════════════════════════════
+   * 3D MARKERS (workspace visualization)
+   * Soft, monochrome by default
+   * ═══════════════════════════════════════════════════════ */
+  --ars-marker-size: 28px;
+  --ars-marker-bg: rgba(255, 255, 255, 0.08);
+  --ars-marker-border: rgba(255, 255, 255, 0.15);
+  --ars-marker-glow: rgba(255, 255, 255, 0.15);
+  --ars-marker-glow-emphasis: rgba(41, 151, 255, 0.20);
+  --ars-marker-glow-critical: rgba(255, 255, 255, 0.25);
+
+  /* ═══════════════════════════════════════════════════════
+   * TELEMETRY STRIP (urgent notifications)
+   * ═══════════════════════════════════════════════════════ */
+  --ars-telemetry-padding: 14px 18px;
+  --ars-telemetry-radius: 12px;
+  --ars-telemetry-bg: var(--blue-subtle);
+  --ars-telemetry-border: rgba(41, 151, 255, 0.15);
+  --ars-telemetry-critical-bg: var(--red-subtle);
+  --ars-telemetry-critical-border: rgba(255, 59, 48, 0.12);
+
+  /* ═══════════════════════════════════════════════════════
+   * PRIORITY INDICATORS
+   * ═══════════════════════════════════════════════════════ */
+  --ars-priority-1-color: rgba(255, 255, 255, 0.9);  /* Critical - bright white */
+  --ars-priority-1-glow: drop-shadow(0 0 4px rgba(255, 255, 255, 0.5));
+  --ars-priority-2-color: rgba(41, 151, 255, 0.8);   /* High - soft blue */
+  --ars-priority-2-glow: drop-shadow(0 0 3px rgba(41, 151, 255, 0.4));
+  --ars-priority-3-color: rgba(255, 255, 255, 0.5);  /* Medium - dim white */
+  --ars-priority-4-color: rgba(255, 255, 255, 0.35); /* Low */
+  --ars-priority-5-color: rgba(255, 255, 255, 0.25); /* Info */
+
+  /* ═══════════════════════════════════════════════════════
+   * DEPTH VARIANTS (shadow intensity)
+   * ═══════════════════════════════════════════════════════ */
+  --ars-depth-near:
+    0 24px 60px rgba(0, 0, 0, 0.22),
+    0 10px 24px rgba(0, 0, 0, 0.15);
+  --ars-depth-mid:
+    0 20px 50px rgba(0, 0, 0, 0.18),
+    0 8px 20px rgba(0, 0, 0, 0.12);
+  --ars-depth-far:
+    0 12px 30px rgba(0, 0, 0, 0.12),
+    0 4px 12px rgba(0, 0, 0, 0.08);
+}

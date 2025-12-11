@@ -1,0 +1,107 @@
+/**
+ * ChatHeader Styles
+ * Minimal chrome with AI presence
+ */
+
+.header {
+  height: var(--header-height, 56px);
+  padding: var(--header-padding, 0 20px);
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  /* NO border — shape defined by glass material */
+  border: none;
+
+  /* Subtle bottom fade instead of border line */
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    transparent 90%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+
+  cursor: grab;
+}
+
+.header:active {
+  cursor: grabbing;
+}
+
+/* =============================================================================
+   AI PRESENCE
+   ============================================================================= */
+
+.presence {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.title {
+  font-size: var(--header-title-size, 11px);
+  font-weight: var(--header-title-weight, 600);
+  color: var(--prs-neutral-400, rgba(167, 180, 199, 0.7));
+  letter-spacing: var(--header-title-spacing, 0.08em);
+  text-transform: uppercase;
+}
+
+/* =============================================================================
+   WINDOW CONTROLS
+   ============================================================================= */
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.button {
+  width: var(--header-button-size, 30px);
+  height: var(--header-button-size, 30px);
+  border-radius: var(--header-button-radius, 10px);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: transparent;
+  border: none;
+  cursor: pointer;
+
+  color: var(--prs-neutral-500, rgba(167, 180, 199, 0.5));
+  transition: color 0.15s ease;
+}
+
+.button:hover {
+  color: var(--prs-neutral-300, rgba(167, 180, 199, 0.85));
+}
+
+/* =============================================================================
+   Reduced Motion
+   ============================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .button {
+    transition: none;
+  }
+}
+
+/* =============================================================================
+   High Contrast
+   ============================================================================= */
+
+@media (prefers-contrast: high) {
+  .title {
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .button {
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  .button:hover {
+    color: rgba(255, 255, 255, 1);
+  }
+}

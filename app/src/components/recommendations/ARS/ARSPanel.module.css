@@ -1,0 +1,237 @@
+/**
+ * MAGNET UI ARS Panel Styles
+ *
+ * VisionOS-style floating panel with glass morphism.
+ */
+
+/* Panel container - handles positioning */
+.panelContainer {
+  position: fixed;
+  z-index: 100;
+}
+
+/* Panel inner wrapper */
+.panel {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 120px);
+  overflow: hidden;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  letter-spacing: -0.01em;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.count {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(167, 180, 199, 0.7);
+}
+
+.collapseButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: rgba(167, 180, 199, 0.6);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.collapseButton:hover {
+  color: rgba(167, 180, 199, 0.9);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Collapsed state toggle */
+.collapseToggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  color: rgba(167, 180, 199, 0.8);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+
+.collapseToggle:hover {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 9px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  background: rgba(41, 151, 255, 0.4);
+  border-radius: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Filters */
+.filters {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.filterGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filterLabel {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(167, 180, 199, 0.5);
+}
+
+.filterOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filterChip {
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(167, 180, 199, 0.7);
+  background: rgba(255, 255, 255, 0.03);
+  border: none;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.filterChip:hover {
+  color: rgba(167, 180, 199, 0.9);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.filterChip.active {
+  color: rgba(126, 184, 231, 0.95);
+  background: rgba(126, 184, 231, 0.12);
+}
+
+.clearFilters,
+.clearFiltersSmall {
+  align-self: flex-start;
+  padding: 4px 10px;
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(167, 180, 199, 0.6);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+
+.clearFilters:hover,
+.clearFiltersSmall:hover {
+  color: rgba(167, 180, 199, 0.9);
+}
+
+/* Recommendations list */
+.list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
+
+  /* Custom scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+}
+
+.list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+
+.list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* List items have gap between them */
+.list > div > div {
+  margin-bottom: 12px;
+}
+
+.list > div > div:last-child {
+  margin-bottom: 0;
+}
+
+/* Loading skeletons */
+.skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Empty state */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px 20px;
+  color: rgba(167, 180, 199, 0.5);
+  text-align: center;
+}
+
+.empty p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+}

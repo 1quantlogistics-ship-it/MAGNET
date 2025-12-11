@@ -18,11 +18,15 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from datetime import datetime, timezone
 import logging
 import asyncio
+import os
 
 if TYPE_CHECKING:
     from magnet.bootstrap.app import AppContext
 
 logger = logging.getLogger("deployment.api")
+
+# Frontend dist path (relative to project root)
+FRONTEND_DIST_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "app", "dist")
 
 
 # =============================================================================
@@ -110,7 +114,8 @@ def create_fastapi_app(context: "AppContext" = None):
     try:
         from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
         from fastapi.middleware.cors import CORSMiddleware
-        from fastapi.responses import JSONResponse
+        from fastapi.responses import JSONResponse, FileResponse
+        from fastapi.staticfiles import StaticFiles
     except ImportError:
         logger.warning("FastAPI not installed, creating stub app")
         return _create_stub_app()
@@ -685,6 +690,45 @@ def create_fastapi_app(context: "AppContext" = None):
         except Exception as e:
             logger.error(f"WebSocket error: {e}")
             await ws_manager.disconnect(client.client_id)
+
+    # =========================================================================
+    # Frontend Static Files
+    # =========================================================================
+
+    # Mount static assets if frontend is built
+    if os.path.exists(FRONTEND_DIST_PATH):
+        assets_path = os.path.join(FRONTEND_DIST_PATH, "assets")
+        if os.path.exists(assets_path):
+            app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+            logger.info(f"Mounted frontend assets from {assets_path}")
+
+        @app.get("/")
+        async def serve_frontend_root():
+            """Serve the frontend SPA."""
+            index_path = os.path.join(FRONTEND_DIST_PATH, "index.html")
+            if os.path.exists(index_path):
+                return FileResponse(index_path)
+            raise HTTPException(status_code=404, detail="Frontend not built")
+
+        @app.get("/{full_path:path}")
+        async def serve_frontend_spa(full_path: str):
+            """Serve frontend SPA for all non-API routes."""
+            # Don't serve frontend for API, docs, or WebSocket paths
+            if full_path.startswith(("api/", "docs", "redoc", "openapi", "ws/", "health", "ready")):
+                raise HTTPException(status_code=404, detail="Not found")
+
+            # Try to serve static file first
+            static_path = os.path.join(FRONTEND_DIST_PATH, full_path)
+            if os.path.exists(static_path) and os.path.isfile(static_path):
+                return FileResponse(static_path)
+
+            # Fall back to index.html for SPA routing
+            index_path = os.path.join(FRONTEND_DIST_PATH, "index.html")
+            if os.path.exists(index_path):
+                return FileResponse(index_path)
+            raise HTTPException(status_code=404, detail="Frontend not built")
+    else:
+        logger.info(f"Frontend not built at {FRONTEND_DIST_PATH}, skipping static file serving")
 
     return app
 

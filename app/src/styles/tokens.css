@@ -1,0 +1,162 @@
+/**
+ * MAGNET UI Design Tokens
+ * VisionOS Premium Design System v2.0
+ *
+ * Base tokens used throughout the UI.
+ * Import this file first in your CSS hierarchy.
+ */
+
+:root {
+  /* ═══════════════════════════════════════════════════════
+   * GRAYSCALE PALETTE — Primary UI colors
+   * VisionOS uses monochrome with subtle semantic accents
+   * ═══════════════════════════════════════════════════════ */
+  --black: #000000;
+  --white: #ffffff;
+  --gray-50: #fafafa;
+  --gray-100: #f5f5f7;
+  --gray-200: #e8e8ed;
+  --gray-300: #d2d2d7;
+  --gray-400: #86868b;
+  --gray-500: #6e6e73;
+  --gray-600: #515154;
+  --gray-700: #3a3a3c;
+  --gray-800: #1d1d1f;
+  --gray-900: #0a0a0a;
+
+  /* ═══════════════════════════════════════════════════════
+   * SEMANTIC COLORS — RESTRICTED USE
+   * VisionOS avoids warm saturation for calm premium feel
+   * ═══════════════════════════════════════════════════════ */
+
+  /* Blue: Active, interactive, focus states */
+  --blue: #0071e3;
+  --blue-dark: #2997ff;
+  --blue-subtle: rgba(41, 151, 255, 0.12);
+  --blue-glow: rgba(41, 151, 255, 0.20);
+
+  /* Green: Success, pass — TRANSIENT ONLY (auto-dismiss) */
+  --green: #34c759;
+  --green-subtle: rgba(52, 199, 89, 0.10);
+
+  /* Red: Critical failure ONLY (structural, safety) */
+  --red: #ff3b30;
+  --red-subtle: rgba(255, 59, 48, 0.08);
+
+  /* ⚠️ ORANGE REMOVED
+   * Warnings now use --blue-subtle
+   * VisionOS maintains calm premium feel */
+
+  /* ═══════════════════════════════════════════════════════
+   * SPACING — Golden Ratio (+40% vertical padding)
+   * Aggressive whitespace for premium feel
+   * ═══════════════════════════════════════════════════════ */
+  --space-2xs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 64px;
+
+  /* Panel padding (generous) */
+  --panel-padding: 20px;
+  --card-padding: 16px;
+  --section-gap: 28px;
+
+  /* ═══════════════════════════════════════════════════════
+   * BORDER RADIUS — VisionOS softness
+   * ═══════════════════════════════════════════════════════ */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+
+  /* Component-specific radii */
+  --radius-window: 24px;
+  --radius-card: 16px;
+  --radius-button: 12px;
+  --radius-pill: 100px;
+  --radius-input: 10px;
+
+  /* ═══════════════════════════════════════════════════════
+   * Z-INDEX LAYERS
+   * ═══════════════════════════════════════════════════════ */
+  --z-base: 0;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-modal: 300;
+  --z-popover: 400;
+  --z-tooltip: 500;
+  --z-toast: 600;
+  --z-overlay: 700;
+  --z-max: 9999;
+
+  /* ═══════════════════════════════════════════════════════
+   * BREAKPOINTS (for reference in media queries)
+   * ═══════════════════════════════════════════════════════ */
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+  --breakpoint-2xl: 1536px;
+
+  /* ═══════════════════════════════════════════════════════
+   * OPACITY LEVELS
+   * VisionOS uses very subtle opacity differences
+   * ═══════════════════════════════════════════════════════ */
+  --opacity-subtle: 0.04;
+  --opacity-light: 0.08;
+  --opacity-medium: 0.15;
+  --opacity-strong: 0.25;
+  --opacity-solid: 0.85;
+
+  /* ═══════════════════════════════════════════════════════
+   * FOCUS STATES
+   * VisionOS uses scale + glow, NOT rings
+   * ═══════════════════════════════════════════════════════ */
+  --focus-scale: 1.008;
+  --focus-glow: 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --focus-transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* ═══════════════════════════════════════════════════════
+ * DARK MODE (default for VisionOS aesthetic)
+ * ═══════════════════════════════════════════════════════ */
+:root,
+[data-theme="dark"] {
+  --text-primary: var(--white);
+  --text-secondary: var(--gray-300);
+  --text-tertiary: var(--gray-400);
+  --text-muted: var(--gray-500);
+  --text-disabled: var(--gray-600);
+
+  --surface-bg: var(--gray-900);
+  --surface-raised: var(--gray-800);
+  --surface-overlay: rgba(255, 255, 255, 0.05);
+
+  --border-subtle: rgba(255, 255, 255, 0.04);
+  --border-default: rgba(255, 255, 255, 0.08);
+  --border-emphasis: rgba(255, 255, 255, 0.12);
+}
+
+/* Light mode overrides (if needed) */
+[data-theme="light"] {
+  --text-primary: var(--gray-900);
+  --text-secondary: var(--gray-700);
+  --text-tertiary: var(--gray-600);
+  --text-muted: var(--gray-500);
+  --text-disabled: var(--gray-400);
+
+  --surface-bg: var(--gray-50);
+  --surface-raised: var(--white);
+  --surface-overlay: rgba(0, 0, 0, 0.03);
+
+  --border-subtle: rgba(0, 0, 0, 0.04);
+  --border-default: rgba(0, 0, 0, 0.08);
+  --border-emphasis: rgba(0, 0, 0, 0.12);
+}

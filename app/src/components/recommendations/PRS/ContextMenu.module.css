@@ -1,0 +1,155 @@
+/**
+ * ContextMenu Styles
+ * 3D-aware context menu with VisionOS glass material
+ */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--prs-z-overlay, 250);
+  pointer-events: none;
+}
+
+.menu {
+  position: fixed;
+  min-width: 240px;
+  max-width: 320px;
+  max-height: 400px;
+  pointer-events: auto;
+  transform-origin: top left;
+  animation: menuAppear var(--prs-menu-appear, 200ms) var(--prs-ease-out) forwards;
+}
+
+@keyframes menuAppear {
+  from {
+    opacity: 0;
+    transform: translateZ(8px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateZ(16px) scale(1);
+  }
+}
+
+.menuContent {
+  display: flex;
+  flex-direction: column;
+  padding: var(--prs-spacing-xs, 6px) 0;
+  overflow-y: auto;
+  max-height: 340px;
+}
+
+/* Scrollbar styling */
+.menuContent::-webkit-scrollbar {
+  width: 6px;
+}
+
+.menuContent::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.menuContent::-webkit-scrollbar-thumb {
+  background: var(--prs-neutral-400, rgba(90, 101, 119, 0.3));
+  border-radius: 3px;
+}
+
+.menuContent::-webkit-scrollbar-thumb:hover {
+  background: var(--prs-neutral-500, rgba(90, 101, 119, 0.5));
+}
+
+/* =============================================================================
+   Empty State
+   ============================================================================= */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--prs-spacing-sm, 8px);
+  padding: var(--prs-spacing-lg, 20px);
+  color: var(--prs-neutral-500, rgba(167, 180, 199, 0.6));
+  text-align: center;
+}
+
+.empty span {
+  font-size: 13px;
+  font-weight: 400;
+}
+
+/* =============================================================================
+   Footer
+   ============================================================================= */
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--prs-spacing-xs, 6px) var(--prs-spacing-sm, 8px);
+  border-top: 1px solid var(--prs-surface-border, rgba(255, 255, 255, 0.06));
+  margin-top: auto;
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--prs-neutral-500, rgba(167, 180, 199, 0.5));
+  display: flex;
+  align-items: center;
+  gap: var(--prs-spacing-xs, 6px);
+}
+
+.hint kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  background: var(--prs-surface-bg, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--prs-surface-border, rgba(255, 255, 255, 0.08));
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--prs-neutral-400, rgba(167, 180, 199, 0.7));
+}
+
+/* =============================================================================
+   Responsive
+   ============================================================================= */
+
+@media (max-width: 768px) {
+  .menu {
+    min-width: 200px;
+    max-width: 280px;
+  }
+
+  .footer {
+    display: none;
+  }
+}
+
+/* =============================================================================
+   Reduced Motion
+   ============================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .menu {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* =============================================================================
+   High Contrast
+   ============================================================================= */
+
+@media (prefers-contrast: high) {
+  .footer {
+    border-top-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .hint kbd {
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+}

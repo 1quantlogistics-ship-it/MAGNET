@@ -1,0 +1,186 @@
+/**
+ * MAGNET UI Module 02: PRS Design Tokens
+ *
+ * VisionOS-aligned design tokens for the Prompt Recommendation System.
+ * Gray-blue neutral palette with air-cushion motion.
+ */
+
+:root {
+  /* ═══════════════════════════════════════════════════════
+   * UNIFIED VISIONOS SURFACE — ONE MATERIAL FOR ALL
+   * ═══════════════════════════════════════════════════════ */
+
+  --prs-surface-bg: rgba(255, 255, 255, 0.05);
+  --prs-surface-bg-hover: rgba(255, 255, 255, 0.08);
+  --prs-surface-bg-active: rgba(255, 255, 255, 0.10);
+  --prs-surface-blur: blur(26px) saturate(170%);
+  --prs-surface-border: rgba(255, 255, 255, 0.08);
+  --prs-surface-border-hover: rgba(255, 255, 255, 0.12);
+  --prs-surface-radius: 22px;
+  --prs-surface-radius-sm: 14px;
+  --prs-surface-radius-xs: 10px;
+  --prs-surface-shadow:
+    0 36px 80px rgba(0, 0, 0, 0.28),
+    0 12px 24px rgba(0, 0, 0, 0.18);
+  --prs-surface-shadow-hover:
+    0 40px 90px rgba(0, 0, 0, 0.32),
+    0 16px 32px rgba(0, 0, 0, 0.22);
+
+  /* ═══════════════════════════════════════════════════════
+   * GRAY-BLUE NEUTRAL PALETTE
+   * Desaturated, professional, VisionOS-aligned
+   * ═══════════════════════════════════════════════════════ */
+
+  --prs-neutral-50: #F7F8FA;
+  --prs-neutral-100: #F0F2F5;
+  --prs-neutral-200: #DDE3EA;
+  --prs-neutral-300: #A7B4C7;
+  --prs-neutral-400: #7A8899;
+  --prs-neutral-500: #5A6577;
+  --prs-neutral-600: #4D5662;
+  --prs-neutral-700: #3D444D;
+  --prs-neutral-800: #2D3238;
+  --prs-neutral-900: #1D2024;
+
+  /* Text colors */
+  --prs-text-primary: rgba(255, 255, 255, 0.95);
+  --prs-text-secondary: rgba(255, 255, 255, 0.65);
+  --prs-text-tertiary: rgba(255, 255, 255, 0.45);
+  --prs-text-disabled: rgba(255, 255, 255, 0.25);
+
+  /* ═══════════════════════════════════════════════════════
+   * ACCENT COLORS — Used VERY Sparingly
+   * ═══════════════════════════════════════════════════════ */
+
+  /* Primary accent - soft blue */
+  --prs-accent: #7EB8E7;
+  --prs-accent-subtle: rgba(126, 184, 231, 0.12);
+  --prs-accent-hover: rgba(126, 184, 231, 0.20);
+  --prs-accent-text: #7EB8E7;
+
+  /* Success - milestone completion only */
+  --prs-success: #8CD9A8;
+  --prs-success-subtle: rgba(140, 217, 168, 0.10);
+  --prs-success-hover: rgba(140, 217, 168, 0.18);
+  --prs-success-text: #8CD9A8;
+
+  /* Warning - rare, soft */
+  --prs-warning: #E5C07B;
+  --prs-warning-subtle: rgba(229, 192, 123, 0.10);
+
+  /* Critical - very rare */
+  --prs-critical: #E88B8B;
+  --prs-critical-subtle: rgba(232, 139, 139, 0.10);
+
+  /* ═══════════════════════════════════════════════════════
+   * CATEGORY COLORS
+   * Subtle tints for visual grouping
+   * ═══════════════════════════════════════════════════════ */
+
+  --prs-category-action: rgba(126, 184, 231, 0.15);
+  --prs-category-action-border: rgba(126, 184, 231, 0.25);
+
+  --prs-category-clarification: rgba(175, 137, 219, 0.15);
+  --prs-category-clarification-border: rgba(175, 137, 219, 0.25);
+
+  --prs-category-navigation: rgba(140, 217, 168, 0.15);
+  --prs-category-navigation-border: rgba(140, 217, 168, 0.25);
+
+  --prs-category-enhancement: rgba(229, 192, 123, 0.15);
+  --prs-category-enhancement-border: rgba(229, 192, 123, 0.25);
+
+  /* ═══════════════════════════════════════════════════════
+   * GENEROUS SPACING
+   * ═══════════════════════════════════════════════════════ */
+
+  --prs-space-2xs: 4px;
+  --prs-space-xs: 8px;
+  --prs-space-sm: 14px;
+  --prs-space-md: 20px;
+  --prs-space-lg: 28px;
+  --prs-space-xl: 40px;
+  --prs-space-2xl: 56px;
+
+  --prs-item-padding: 14px 18px;
+  --prs-item-padding-sm: 10px 14px;
+  --prs-item-gap: 12px;
+
+  /* ═══════════════════════════════════════════════════════
+   * DEPTH TRANSFORMS (3D Spatial)
+   * ═══════════════════════════════════════════════════════ */
+
+  --prs-depth-near: translateZ(16px) rotateX(0.5deg);
+  --prs-depth-mid: translateZ(8px);
+  --prs-depth-far: translateZ(0);
+
+  --prs-perspective: 1200px;
+  --prs-transform-origin: center center;
+
+  /* ═══════════════════════════════════════════════════════
+   * SOFT FOCUS STATES
+   * Global coordination dims unfocused surfaces
+   * ═══════════════════════════════════════════════════════ */
+
+  --prs-focus-blur: blur(3px);
+  --prs-focus-opacity: 0.6;
+  --prs-focus-scale: 0.98;
+  --prs-focus-transition: 400ms ease;
+
+  /* ═══════════════════════════════════════════════════════
+   * TYPOGRAPHY
+   * ═══════════════════════════════════════════════════════ */
+
+  --prs-font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', sans-serif;
+  --prs-font-family-mono: 'SF Mono', 'JetBrains Mono', monospace;
+
+  --prs-font-size-2xs: 9px;
+  --prs-font-size-xs: 11px;
+  --prs-font-size-sm: 12px;
+  --prs-font-size-md: 14px;
+  --prs-font-size-lg: 16px;
+  --prs-font-size-xl: 18px;
+  --prs-font-size-2xl: 22px;
+
+  --prs-font-weight-normal: 400;
+  --prs-font-weight-medium: 500;
+  --prs-font-weight-semibold: 600;
+  --prs-font-weight-bold: 700;
+
+  --prs-line-height-tight: 1.2;
+  --prs-line-height-normal: 1.5;
+  --prs-line-height-relaxed: 1.7;
+
+  --prs-letter-spacing-tight: -0.02em;
+  --prs-letter-spacing-normal: -0.01em;
+  --prs-letter-spacing-wide: 0.02em;
+
+  /* ═══════════════════════════════════════════════════════
+   * PHASE STATUS COLORS
+   * ═══════════════════════════════════════════════════════ */
+
+  --prs-phase-completed-bg: var(--prs-success-subtle);
+  --prs-phase-completed-border: rgba(140, 217, 168, 0.30);
+  --prs-phase-completed-icon: var(--prs-success);
+
+  --prs-phase-active-bg: var(--prs-accent-subtle);
+  --prs-phase-active-border: rgba(126, 184, 231, 0.30);
+  --prs-phase-active-icon: var(--prs-accent);
+
+  --prs-phase-available-bg: rgba(255, 255, 255, 0.04);
+  --prs-phase-available-border: rgba(255, 255, 255, 0.08);
+  --prs-phase-available-icon: var(--prs-neutral-400);
+
+  --prs-phase-locked-bg: rgba(255, 255, 255, 0.02);
+  --prs-phase-locked-border: rgba(255, 255, 255, 0.04);
+  --prs-phase-locked-icon: var(--prs-neutral-600);
+
+  /* ═══════════════════════════════════════════════════════
+   * Z-INDEX LAYERS
+   * ═══════════════════════════════════════════════════════ */
+
+  --prs-z-base: 100;
+  --prs-z-panel: 200;
+  --prs-z-menu: 300;
+  --prs-z-toast: 400;
+  --prs-z-overlay: 500;
+}

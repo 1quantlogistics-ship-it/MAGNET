@@ -1,0 +1,206 @@
+/**
+ * MAGNET UI Telemetry Strip Styles
+ *
+ * VisionOS-style urgent notification bar.
+ */
+
+/* Strip container */
+.strip {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+
+  min-width: 480px;
+  max-width: 720px;
+
+  border-radius: 20px;
+  overflow: hidden;
+
+  /* Depth shadow */
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.25),
+    0 8px 20px rgba(0, 0, 0, 0.15),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+/* Glass background */
+.glass {
+  position: absolute;
+  inset: 0;
+  background: rgba(30, 30, 35, 0.85);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  z-index: 0;
+}
+
+/* Progress track */
+.progressTrack {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  z-index: 2;
+  overflow: hidden;
+}
+
+.progressBar {
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    rgba(126, 184, 231, 0.6),
+    rgba(126, 184, 231, 0.3)
+  );
+  transform-origin: left;
+  will-change: transform;
+}
+
+/* Content */
+.content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 20px;
+}
+
+/* Priority indicator */
+.priority {
+  flex-shrink: 0;
+}
+
+/* Message */
+.message {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.priorityLabel {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(126, 184, 231, 0.9);
+  background: rgba(126, 184, 231, 0.12);
+  border-radius: 100px;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.95);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Impact chip */
+.impact {
+  flex-shrink: 0;
+}
+
+/* Queue indicator */
+.queue {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(167, 180, 199, 0.8);
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 100px;
+}
+
+/* Actions */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.viewButton,
+.applyButton,
+.dismissButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: all 150ms ease;
+  font-family: inherit;
+}
+
+.viewButton {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(167, 180, 199, 0.9);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.viewButton:hover {
+  color: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.applyButton {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  background: rgba(41, 151, 255, 0.2);
+}
+
+.applyButton:hover {
+  background: rgba(41, 151, 255, 0.3);
+}
+
+.dismissButton {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: rgba(167, 180, 199, 0.6);
+  background: transparent;
+}
+
+.dismissButton:hover {
+  color: rgba(167, 180, 199, 0.9);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Responsive adjustments */
+@media (max-width: 600px) {
+  .strip {
+    min-width: calc(100% - 32px);
+    max-width: calc(100% - 32px);
+  }
+
+  .content {
+    padding: 12px 16px;
+    gap: 12px;
+  }
+
+  .message {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .impact {
+    display: none;
+  }
+}

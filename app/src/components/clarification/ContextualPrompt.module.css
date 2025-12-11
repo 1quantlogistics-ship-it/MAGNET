@@ -1,0 +1,176 @@
+/**
+ * MAGNET UI Contextual Prompt Styles
+ *
+ * VisionOS-style dynamic positioned prompt card.
+ */
+
+/* Overlay */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+/* Dimmer */
+.dimmer {
+  position: absolute;
+  inset: 0;
+
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+/* Card */
+.card {
+  position: absolute;
+  z-index: 1;
+
+  /* Glass material */
+  background: rgba(30, 30, 35, 0.9);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+
+  /* Shape */
+  border-radius: 20px;
+
+  /* Shadow */
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.15),
+    0 20px 50px rgba(0, 0, 0, 0.2),
+    inset 0 0 0 0.6px rgba(255, 255, 255, 0.08);
+
+  overflow: visible;
+}
+
+/* Pointer arrow */
+.pointer {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+
+  background: rgba(30, 30, 35, 0.9);
+
+  transform: rotate(45deg);
+
+  box-shadow: -2px -2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.pointer-top {
+  top: -6px;
+}
+
+.pointer-bottom {
+  bottom: -6px;
+  box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Scene lighting */
+.sceneLighting {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+
+  background:
+    radial-gradient(
+      ellipse 120% 60% at 30% -20%,
+      rgba(255, 255, 255, 0.06),
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse 80% 40% at 80% 110%,
+      rgba(126, 184, 231, 0.03),
+      transparent 40%
+    );
+}
+
+/* Edge highlight */
+.edgeHighlight {
+  position: absolute;
+  top: 0;
+  left: 15%;
+  right: 15%;
+  height: 1px;
+
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.12) 30%,
+    rgba(255, 255, 255, 0.12) 70%,
+    transparent
+  );
+}
+
+/* Content */
+.content {
+  padding: 20px 20px 12px;
+}
+
+.question {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.95);
+  line-height: 1.4;
+}
+
+.context {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: rgba(167, 180, 199, 0.7);
+  line-height: 1.4;
+}
+
+/* Instructions */
+.instructions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  margin: 0 12px;
+
+  background: rgba(126, 184, 231, 0.06);
+  border-radius: 12px;
+}
+
+.icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  color: rgba(126, 184, 231, 0.8);
+}
+
+.instructionText {
+  font-size: 12px;
+  color: rgba(126, 184, 231, 0.9);
+}
+
+/* Actions */
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 20px 16px;
+}
+
+.cancelButton {
+  padding: 8px 16px;
+
+  background: transparent;
+  border: none;
+  border-radius: 100px;
+
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(167, 180, 199, 0.5);
+  font-family: inherit;
+
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.cancelButton:hover {
+  color: rgba(167, 180, 199, 0.8);
+}

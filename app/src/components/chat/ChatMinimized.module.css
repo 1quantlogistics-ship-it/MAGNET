@@ -1,0 +1,132 @@
+/**
+ * ChatMinimized Styles
+ * Floating hologram pill for minimized state
+ */
+
+.pill {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  z-index: var(--chat-z-minimized, 900);
+
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 22px;
+
+  /* Holographic glass */
+  background: var(--pill-bg, rgba(255, 255, 255, 0.03));
+  backdrop-filter: var(--pill-blur, blur(24px) saturate(170%));
+  -webkit-backdrop-filter: var(--pill-blur, blur(24px) saturate(170%));
+
+  /* NO border — glow defines shape */
+  border: none;
+  border-radius: var(--pill-radius, 100px);
+  box-shadow: var(--pill-glow,
+    0 0 40px rgba(126, 184, 231, 0.08),
+    inset 0 0 0 0.6px rgba(255, 255, 255, 0.08)
+  );
+
+  cursor: pointer;
+  overflow: hidden;
+}
+
+/* =============================================================================
+   MULTI-LAYER ORB
+   ============================================================================= */
+
+.orbContainer {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.orbOuter {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(126, 184, 231, 0.15) 0%,
+    transparent 70%
+  );
+}
+
+.orbInner {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(126, 184, 231, 0.8);
+  box-shadow: 0 0 12px rgba(126, 184, 231, 0.5);
+}
+
+/* =============================================================================
+   LABEL — Minimal
+   ============================================================================= */
+
+.label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--prs-neutral-400, rgba(167, 180, 199, 0.7));
+  letter-spacing: 0.08em;
+}
+
+/* =============================================================================
+   EDGE GLINT
+   ============================================================================= */
+
+.edgeGlint {
+  position: absolute;
+  top: 0;
+  left: 15%;
+  right: 15%;
+  height: 1px;
+
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.15) 30%,
+    rgba(255, 255, 255, 0.15) 70%,
+    transparent
+  );
+}
+
+/* =============================================================================
+   Reduced Motion
+   ============================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .orbOuter,
+  .orbInner {
+    animation: none !important;
+  }
+
+  .orbInner {
+    opacity: 0.7;
+  }
+
+  .orbOuter {
+    opacity: 0.1;
+  }
+}
+
+/* =============================================================================
+   High Contrast
+   ============================================================================= */
+
+@media (prefers-contrast: high) {
+  .pill {
+    box-shadow:
+      0 0 40px rgba(126, 184, 231, 0.15),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+  }
+
+  .label {
+    color: rgba(255, 255, 255, 0.9);
+  }
+}

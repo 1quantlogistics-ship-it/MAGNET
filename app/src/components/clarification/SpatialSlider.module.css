@@ -1,0 +1,137 @@
+/**
+ * SpatialSlider Styles
+ * Glass track with gradient fill and 3D thumb
+ */
+
+.container {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+
+/* =============================================================================
+   Track
+   ============================================================================= */
+
+.track {
+  position: relative;
+  flex: 1;
+  height: var(--clarification-slider-track-height, 6px);
+  background: var(--clarification-slider-track-bg, rgba(255, 255, 255, 0.06));
+  border-radius: var(--clarification-slider-track-radius, 3px);
+  cursor: pointer;
+}
+
+/* =============================================================================
+   Fill
+   ============================================================================= */
+
+.fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: var(--clarification-slider-fill, linear-gradient(
+    90deg,
+    rgba(126, 184, 231, 0.3),
+    rgba(126, 184, 231, 0.5)
+  ));
+  border-radius: inherit;
+}
+
+/* =============================================================================
+   Thumb
+   ============================================================================= */
+
+.thumb {
+  position: absolute;
+  top: 50%;
+  width: var(--clarification-slider-thumb-size, 22px);
+  height: var(--clarification-slider-thumb-size, 22px);
+
+  /* Center on position */
+  transform: translate(-50%, -50%);
+
+  background: var(--clarification-slider-thumb-bg, linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.15),
+    rgba(255, 255, 255, 0.05)
+  ));
+  border-radius: 50%;
+  box-shadow: var(--clarification-slider-thumb-shadow,
+    0 2px 6px rgba(0, 0, 0, 0.25),
+    0 8px 16px rgba(0, 0, 0, 0.15),
+    inset 0 1px 1px rgba(255, 255, 255, 0.3)
+  );
+
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.thumb:active,
+.thumb.dragging {
+  cursor: grabbing;
+  box-shadow:
+    var(--clarification-slider-thumb-shadow),
+    var(--clarification-slider-thumb-glow, 0 0 12px rgba(126, 184, 231, 0.4));
+}
+
+/* Inner lighting highlight */
+.thumbInner {
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 30% 30%,
+    rgba(255, 255, 255, 0.25),
+    transparent 60%
+  );
+  pointer-events: none;
+}
+
+/* =============================================================================
+   Value Display
+   ============================================================================= */
+
+.valueDisplay {
+  min-width: 50px;
+  padding: 6px 10px;
+
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--clarification-white, #FFFFFF);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* =============================================================================
+   Reduced Motion
+   ============================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .fill,
+  .thumb {
+    transition: none;
+  }
+}
+
+/* =============================================================================
+   High Contrast
+   ============================================================================= */
+
+@media (prefers-contrast: high) {
+  .track {
+    background: rgba(255, 255, 255, 0.15);
+  }
+
+  .thumb {
+    box-shadow:
+      0 0 0 2px rgba(255, 255, 255, 0.3),
+      0 2px 6px rgba(0, 0, 0, 0.3);
+  }
+}

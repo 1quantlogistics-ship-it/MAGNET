@@ -1,0 +1,289 @@
+/**
+ * MAGNET UI Module 04: Clarification Design Tokens
+ *
+ * VisionOS-aligned tokens for spatial clarification UI.
+ * Bright fog overlay, volumetric shadows, glass form controls.
+ */
+
+:root {
+  /* ═══════════════════════════════════════════════════════
+   * SPATIAL OVERLAY — Bright fog, not black modal
+   * ═══════════════════════════════════════════════════════ */
+
+  --clarification-overlay-bg: rgba(255, 255, 255, 0.025);
+  --clarification-overlay-filter: blur(40px) brightness(0.35) saturate(120%);
+
+  /* Non-linear blur mask — edge-heavy, center-light */
+  --clarification-blur-mask: radial-gradient(
+    ellipse 70% 70% at 50% 50%,
+    transparent 0%,
+    rgba(0, 0, 0, 0.4) 60%,
+    rgba(0, 0, 0, 0.8) 100%
+  );
+
+  /* ═══════════════════════════════════════════════════════
+   * FLOATING CARDS — Volumetric depth
+   * ═══════════════════════════════════════════════════════ */
+
+  --clarification-card-bg: rgba(255, 255, 255, 0.05);
+  --clarification-card-blur: blur(32px) saturate(180%);
+  --clarification-card-radius: 26px;
+  --clarification-card-inset: inset 0 0 0 0.6px rgba(255, 255, 255, 0.10);
+
+  /* Volumetric 4-layer shadow */
+  --clarification-card-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.08),
+    0 8px 16px rgba(0, 0, 0, 0.12),
+    0 24px 48px rgba(0, 0, 0, 0.18),
+    0 48px 96px rgba(0, 0, 0, 0.14);
+
+  /* Perspective tilt for spatial depth */
+  --clarification-card-transform: translateZ(32px) rotateX(1deg);
+
+  /* ═══════════════════════════════════════════════════════
+   * SPATIAL CHIPS — Floating quick options
+   * ═══════════════════════════════════════════════════════ */
+
+  --clarification-chip-bg: rgba(255, 255, 255, 0.04);
+  --clarification-chip-blur: blur(20px) saturate(160%);
+  --clarification-chip-radius: 100px;
+  --clarification-chip-padding: 12px 22px;
+  --clarification-chip-inset: inset 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+
+  /* 3-layer shadow for floating effect */
+  --clarification-chip-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.06),
+    0 4px 8px rgba(0, 0, 0, 0.1),
+    0 12px 24px rgba(0, 0, 0, 0.12);
+
+  /* Z-offset and micro-tilt */
+  --clarification-chip-z-offset: 16px;
+  --clarification-chip-tilt: rotateX(2deg) rotateY(-1deg);
+
+  /* Hover state */
+  --clarification-chip-bg-hover: rgba(255, 255, 255, 0.07);
+  --clarification-chip-shadow-hover:
+    0 2px 4px rgba(0, 0, 0, 0.08),
+    0 8px 16px rgba(0, 0, 0, 0.14),
+    0 20px 40px rgba(0, 0, 0, 0.16);
+
+  /* Selected state */
+  --clarification-chip-bg-selected: rgba(126, 184, 231, 0.15);
+  --clarification-chip-border-selected: rgba(126, 184, 231, 0.3);
+
+  /* ═══════════════════════════════════════════════════════
+   * OPTION ITEMS — Card options
+   * ═══════════════════════════════════════════════════════ */
+
+  --clarification-option-bg: rgba(255, 255, 255, 0.025);
+  --clarification-option-bg-hover: rgba(255, 255, 255, 0.05);
+  --clarification-option-bg-selected: rgba(126, 184, 231, 0.12);
+  --clarification-option-radius: 16px;
+  --clarification-option-padding: 16px 20px;
+
+  /* ═══════════════════════════════════════════════════════
+   * SPHERICAL INDICATOR — Micro-glass selection dot
+   * ═══════════════════════════════════════════════════════ */
+
+  --clarification-indicator-size: 20px;
+  --clarification-indicator-bg: rgba(255, 255, 255, 0.04);
+  --clarification-indicator-blur: blur(8px);
+  --clarification-indicator-glow: inset 0 1px 2px rgba(255, 255, 255, 0.15);
+  --clarification-indicator-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.15),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.1);
+
+  /* Active dot */
+  --clarification-indicator-active-bg: rgba(126, 184, 231, 0.9);
+  --clarification-indicator-active-glow: 0 0 8px rgba(126, 184, 231, 0.5);
+
+  /* ═══════════════════════════════════════════════════════
+   * COUNTDOWN RING — Animated progress
+   * ═══════════════════════════════════════════════════════ */
+
+  --clarification-ring-stroke-width: 2px;
+  --clarification-ring-track-color: rgba(255, 255, 255, 0.08);
+  --clarification-ring-active-color: rgba(126, 184, 231, 0.4);
+  --clarification-ring-pulse-color: rgba(126, 184, 231, 0.15);
+
+  /* Size variants */
+  --clarification-ring-size-sm: 24px;
+  --clarification-ring-size-md: 32px;
+  --clarification-ring-size-lg: 48px;
+
+  /* ═══════════════════════════════════════════════════════
+   * GLASS PICKER — Custom dropdown
+   * ═══════════════════════════════════════════════════════ */
+
+  --clarification-picker-bg: rgba(255, 255, 255, 0.035);
+  --clarification-picker-blur: blur(24px) saturate(170%);
+  --clarification-picker-radius: 14px;
+  --clarification-picker-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.12),
+    0 16px 32px rgba(0, 0, 0, 0.1);
+
+  /* Dropdown menu */
+  --clarification-picker-dropdown-bg: rgba(30, 32, 38, 0.95);
+  --clarification-picker-dropdown-blur: blur(32px) saturate(180%);
+  --clarification-picker-dropdown-radius: 16px;
+  --clarification-picker-dropdown-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.2),
+    0 32px 64px rgba(0, 0, 0, 0.15);
+
+  /* ═══════════════════════════════════════════════════════
+   * SPATIAL SLIDER — Custom range input
+   * ═══════════════════════════════════════════════════════ */
+
+  --clarification-slider-track-bg: rgba(255, 255, 255, 0.06);
+  --clarification-slider-track-height: 6px;
+  --clarification-slider-track-radius: 3px;
+
+  --clarification-slider-fill: linear-gradient(
+    90deg,
+    rgba(126, 184, 231, 0.3),
+    rgba(126, 184, 231, 0.5)
+  );
+
+  --clarification-slider-thumb-size: 22px;
+  --clarification-slider-thumb-bg: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.15),
+    rgba(255, 255, 255, 0.05)
+  );
+  --clarification-slider-thumb-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.25),
+    0 8px 16px rgba(0, 0, 0, 0.15),
+    inset 0 1px 1px rgba(255, 255, 255, 0.3);
+
+  /* Drag glow */
+  --clarification-slider-thumb-glow: 0 0 12px rgba(126, 184, 231, 0.4);
+
+  /* ═══════════════════════════════════════════════════════
+   * GLASS TOGGLE — Custom switch
+   * ═══════════════════════════════════════════════════════ */
+
+  --clarification-toggle-width: 48px;
+  --clarification-toggle-height: 28px;
+  --clarification-toggle-radius: 14px;
+
+  --clarification-toggle-track-off: rgba(255, 255, 255, 0.06);
+  --clarification-toggle-track-on: rgba(126, 184, 231, 0.25);
+
+  --clarification-toggle-thumb-size: 22px;
+  --clarification-toggle-thumb-bg: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.2),
+    rgba(255, 255, 255, 0.08)
+  );
+  --clarification-toggle-thumb-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.2),
+    inset 0 1px 1px rgba(255, 255, 255, 0.25);
+
+  /* Active glow */
+  --clarification-toggle-glow: 0 0 8px rgba(126, 184, 231, 0.5);
+
+  /* ═══════════════════════════════════════════════════════
+   * TYPOGRAPHY
+   * ═══════════════════════════════════════════════════════ */
+
+  --clarification-title-size: 18px;
+  --clarification-title-weight: 600;
+  --clarification-title-tracking: -0.02em;
+
+  --clarification-context-size: 13px;
+  --clarification-context-color: rgba(167, 180, 199, 0.7);
+
+  --clarification-label-size: 11px;
+  --clarification-label-weight: 500;
+  --clarification-label-tracking: 0.06em;
+  --clarification-label-color: rgba(167, 180, 199, 0.6);
+
+  --clarification-option-label-size: 15px;
+  --clarification-option-desc-size: 12px;
+
+  /* ═══════════════════════════════════════════════════════
+   * SPACING
+   * ═══════════════════════════════════════════════════════ */
+
+  --clarification-section-gap: 28px;
+  --clarification-option-gap: 10px;
+  --clarification-field-gap: 24px;
+  --clarification-chip-gap: 12px;
+
+  /* ═══════════════════════════════════════════════════════
+   * SCENE LIGHTING — Asymmetric gradients
+   * ═══════════════════════════════════════════════════════ */
+
+  --clarification-scene-lighting:
+    radial-gradient(
+      ellipse 120% 60% at 30% -20%,
+      rgba(255, 255, 255, 0.07),
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse 80% 40% at 80% 110%,
+      rgba(126, 184, 231, 0.03),
+      transparent 40%
+    );
+
+  /* Edge highlight — top-left emphasis */
+  --clarification-edge-highlight: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.15) 0%,
+    rgba(255, 255, 255, 0.05) 20%,
+    transparent 40%
+  );
+
+  /* ═══════════════════════════════════════════════════════
+   * SPATIAL OCCLUSION — Window dimming
+   * ═══════════════════════════════════════════════════════ */
+
+  --clarification-occlusion-dim: 0.6;
+  --clarification-occlusion-blur: blur(4px);
+  --clarification-occlusion-shift: translateZ(-40px);
+  --clarification-occlusion-scale: 0.98;
+  --clarification-occlusion-transition: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ═══════════════════════════════════════════════════════
+   * MOTION
+   * ═══════════════════════════════════════════════════════ */
+
+  --clarification-spring-stiffness: 140;
+  --clarification-spring-damping: 24;
+  --clarification-spring-mass: 0.8;
+
+  --clarification-chip-bounce-overshoot: 1.08;
+  --clarification-chip-bounce-duration: 0.5s;
+
+  --clarification-stagger-delay: 50ms;
+
+  /* ═══════════════════════════════════════════════════════
+   * TIMING
+   * ═══════════════════════════════════════════════════════ */
+
+  --clarification-auto-dismiss-ms: 30000;
+
+  /* ═══════════════════════════════════════════════════════
+   * ACCENT COLORS
+   * ═══════════════════════════════════════════════════════ */
+
+  --clarification-accent: #7EB8E7;
+  --clarification-accent-dim: rgba(126, 184, 231, 0.15);
+  --clarification-accent-subtle: rgba(126, 184, 231, 0.08);
+
+  --clarification-white: #FFFFFF;
+  --clarification-neutral-200: #E8EAED;
+  --clarification-neutral-300: #C4C9D1;
+  --clarification-neutral-400: #9BA3B0;
+  --clarification-neutral-500: #7A8899;
+  --clarification-neutral-600: #5C6573;
+  --clarification-neutral-700: #3D444F;
+
+  /* ═══════════════════════════════════════════════════════
+   * Z-INDEX LAYERS
+   * ═══════════════════════════════════════════════════════ */
+
+  --clarification-z-overlay: 1000;
+  --clarification-z-card: 1001;
+  --clarification-z-dropdown: 1002;
+}

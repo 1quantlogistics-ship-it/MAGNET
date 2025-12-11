@@ -1,0 +1,182 @@
+/**
+ * MAGNET UI PhaseItem Styles
+ * BRAVO OWNS THIS FILE.
+ *
+ * Individual phase row styling for PRS panel.
+ */
+
+/* Container */
+.container {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm, 8px);
+  padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+  border: 1px solid transparent;
+  user-select: none;
+}
+
+.container:hover {
+  background-color: var(--color-surface-hover, rgba(255, 255, 255, 0.05));
+}
+
+.container:focus {
+  outline: none;
+  border-color: var(--color-focus, #4a9eff);
+}
+
+/* Active state */
+.active {
+  background-color: var(--color-surface-active, rgba(74, 158, 255, 0.1));
+  border-color: var(--color-primary, #4a9eff);
+}
+
+/* Status variants */
+.status-pending {
+  opacity: 0.6;
+}
+
+.status-active {
+  opacity: 1;
+}
+
+.status-completed {
+  opacity: 0.9;
+}
+
+.status-approved {
+  opacity: 1;
+}
+
+.status-failed {
+  border-color: var(--color-error, #ff4a4a);
+}
+
+.status-blocked {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Icon */
+.icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.icon-pending {
+  color: var(--color-text-muted, #888);
+}
+
+.icon-active {
+  color: var(--color-primary, #4a9eff);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.icon-completed {
+  color: var(--color-success, #4aff7a);
+}
+
+.icon-approved {
+  color: var(--color-success, #4aff7a);
+}
+
+.icon-failed {
+  color: var(--color-error, #ff4a4a);
+}
+
+.icon-blocked {
+  color: var(--color-warning, #ffaa4a);
+}
+
+/* Content */
+.content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text, #fff);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status {
+  font-size: 11px;
+  color: var(--color-text-muted, #888);
+  text-transform: capitalize;
+}
+
+/* Actions */
+.actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: var(--spacing-xs, 4px);
+}
+
+.actionButton {
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid var(--color-border, #333);
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  color: var(--color-text, #fff);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.actionButton:hover {
+  background-color: var(--color-surface-hover, rgba(255, 255, 255, 0.1));
+  border-color: var(--color-primary, #4a9eff);
+}
+
+.actionButton:focus {
+  outline: none;
+  border-color: var(--color-focus, #4a9eff);
+  box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.2);
+}
+
+.approveButton {
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid var(--color-success, #4aff7a);
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  color: var(--color-success, #4aff7a);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.approveButton:hover {
+  background-color: rgba(74, 255, 122, 0.1);
+}
+
+.approveButton:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(74, 255, 122, 0.2);
+}
+
+/* Pulse animation for active phase */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
