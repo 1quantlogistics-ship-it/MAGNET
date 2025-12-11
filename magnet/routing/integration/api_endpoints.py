@@ -1,14 +1,21 @@
 """
-api_endpoints.py - REST API routes v1.1
+api_endpoints.py - REST API routes v1.2
 BRAVO OWNS THIS FILE.
 
 Module 60: Systems Routing
 FastAPI endpoints for routing operations.
+
+v1.2 Changes:
+- Added domain hash fields (V1.4 FIX #2)
+- Added routing_hash to all responses
+- Added update_id/prev_update_id chain tracking (V1.4 FIX #1)
 """
 
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass, field
 import logging
+import hashlib
+import json
 
 try:
     from fastapi import APIRouter, HTTPException, Query
@@ -26,6 +33,23 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+def _compute_routing_hash(layout: Any) -> Optional[str]:
+    """Compute SHA256 hash for routing layout."""
+    if layout is None:
+        return None
+    try:
+        if hasattr(layout, 'to_dict'):
+            data = layout.to_dict()
+        elif isinstance(layout, dict):
+            data = layout
+        else:
+            return None
+        normalized = json.dumps(data, sort_keys=True, separators=(',', ':'))
+        return hashlib.sha256(normalized.encode('utf-8')).hexdigest()
+    except Exception:
+        return None
 
 
 # =============================================================================
@@ -52,6 +76,11 @@ if HAS_FASTAPI:
         total_length_m: float
         zone_violations: int
         log: List[str]
+        # V1.4 domain hash fields
+        routing_hash: Optional[str] = None
+        update_id: Optional[str] = None
+        prev_update_id: Optional[str] = None
+        version: int = 1
 
     class ValidationResponse(BaseModel):
         """Response from validation operation."""
@@ -59,6 +88,9 @@ if HAS_FASTAPI:
         systems_validated: int
         total_violations: int
         violations: List[Dict[str, Any]]
+        # V1.4 domain hash fields
+        routing_hash: Optional[str] = None
+        version: int = 1
 
     class TopologyResponse(BaseModel):
         """Response with system topology."""
@@ -67,6 +99,9 @@ if HAS_FASTAPI:
         trunk_count: int
         total_length_m: float
         is_complete: bool
+        # V1.4 domain hash fields
+        routing_hash: Optional[str] = None
+        version: int = 1
 
     class ConflictResponse(BaseModel):
         """Response with conflict information."""
@@ -74,6 +109,9 @@ if HAS_FASTAPI:
         resolved: int
         unresolved: int
         conflicts: List[Dict[str, Any]]
+        # V1.4 domain hash fields
+        routing_hash: Optional[str] = None
+        version: int = 1
 
 else:
     # Fallback dataclasses when FastAPI not available
@@ -91,6 +129,11 @@ else:
         total_length_m: float = 0.0
         zone_violations: int = 0
         log: List[str] = field(default_factory=list)
+        # V1.4 domain hash fields
+        routing_hash: Optional[str] = None
+        update_id: Optional[str] = None
+        prev_update_id: Optional[str] = None
+        version: int = 1
 
     @dataclass
     class ValidationResponse:
@@ -98,6 +141,9 @@ else:
         systems_validated: int = 0
         total_violations: int = 0
         violations: List[Dict[str, Any]] = field(default_factory=list)
+        # V1.4 domain hash fields
+        routing_hash: Optional[str] = None
+        version: int = 1
 
 
 # =============================================================================
@@ -184,6 +230,19 @@ def create_routing_router(
         # Save routing
         await state_integrator.save_routing(design_id, result.routing_layout)
 
+        # V1.4: Compute routing hash
+        routing_hash = _compute_routing_hash(result.routing_layout)
+
+        # Get version info if available
+        update_id = None
+        prev_update_id = None
+        version = 1
+        if hasattr(result.routing_layout, 'version_info'):
+            vi = result.routing_layout.version_info
+            update_id = getattr(vi, 'update_id', None)
+            prev_update_id = getattr(vi, 'prev_update_id', None)
+            version = getattr(vi, 'version', 1)
+
         return RouteResponse(
             success=result.is_complete,
             systems_routed=[str(s) for s in result.systems_routed],
@@ -192,6 +251,10 @@ def create_routing_router(
             total_length_m=result.total_length_m,
             zone_violations=result.zone_violations,
             log=result.log,
+            routing_hash=routing_hash,
+            update_id=update_id,
+            prev_update_id=prev_update_id,
+            version=version,
         )
 
     @router.get("/layout")
@@ -204,9 +267,25 @@ def create_routing_router(
                 detail="No routing layout found"
             )
 
+        # V1.4: Include routing hash in response
+        result = {}
         if hasattr(layout, 'to_dict'):
-            return layout.to_dict()
-        return layout
+            result = layout.to_dict()
+        else:
+            result = layout if isinstance(layout, dict) else {}
+
+        result['routing_hash'] = _compute_routing_hash(layout)
+
+        # Add version info if available
+        if hasattr(layout, 'version_info'):
+            vi = layout.version_info
+            result['update_id'] = getattr(vi, 'update_id', None)
+            result['prev_update_id'] = getattr(vi, 'prev_update_id', None)
+            result['version'] = getattr(vi, 'version', 1)
+        else:
+            result['version'] = 1
+
+        return result
 
     @router.delete("/layout")
     async def clear_routing(design_id: str) -> dict:
@@ -377,11 +456,19 @@ def create_routing_router(
             else:
                 violations.append(v)
 
+        # V1.4: Include routing hash
+        routing_hash = _compute_routing_hash(layout)
+        version = 1
+        if hasattr(layout, 'version_info'):
+            version = getattr(layout.version_info, 'version', 1)
+
         return ValidationResponse(
             is_valid=result.is_valid,
             systems_validated=len(result.systems_validated),
             total_violations=len(result.violations),
             violations=violations,
+            routing_hash=routing_hash,
+            version=version,
         )
 
     @router.get("/validation")

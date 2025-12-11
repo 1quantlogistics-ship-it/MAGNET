@@ -1,0 +1,2604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="MAGNET — The Naval Engineering Operating System. From mission brief to validated design in minutes, not months.">
+    <title>MAGNET — The Design Operating System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@400;500;600;700&family=SF+Pro+Text:wght@400;500&family=SF+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <style>
+        /* ============================================
+           CSS RESET & CUSTOM PROPERTIES
+           ============================================ */
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            /* Colors */
+            --black: #000000;
+            --white: #ffffff;
+            --gray-50: #fafafa;
+            --gray-100: #f5f5f7;
+            --gray-200: #e8e8ed;
+            --gray-300: #d2d2d7;
+            --gray-400: #86868b;
+            --gray-500: #6e6e73;
+            --gray-600: #424245;
+            --gray-700: #2d2d2d;
+            --gray-800: #1d1d1f;
+            --gray-900: #0a0a0a;
+
+            --blue: #0071e3;
+            --blue-hover: #0077ed;
+            --green: #34c759;
+            --green-dark: #30d158;
+            --red: #ff3b30;
+            --purple: #af52de;
+            --orange: #ff9500;
+            --cyan: #5ac8fa;
+
+            /* Gradients */
+            --gradient-text: linear-gradient(180deg, #fff 0%, rgba(255,255,255,0.6) 100%);
+            --gradient-dark: linear-gradient(180deg, #000 0%, #0a0a0a 100%);
+            --gradient-hero: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(120,119,198,0.3), transparent);
+            --gradient-glow: radial-gradient(circle at 50% 50%, rgba(0,113,227,0.15), transparent 50%);
+
+            /* Typography */
+            --font-display: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --font-text: 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --font-mono: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+
+            /* Spacing */
+            --section-padding: clamp(80px, 12vw, 160px);
+            --container-max: 1200px;
+            --container-wide: 1400px;
+
+            /* Transitions */
+            --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+            --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+            --transition-fast: 150ms var(--ease-out-expo);
+            --transition-medium: 300ms var(--ease-out-expo);
+            --transition-slow: 500ms var(--ease-out-expo);
+        }
+
+        html {
+            scroll-behavior: smooth;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        body {
+            font-family: var(--font-text);
+            font-size: 17px;
+            line-height: 1.5;
+            color: var(--gray-800);
+            background: var(--white);
+            overflow-x: hidden;
+        }
+
+        /* ============================================
+           TYPOGRAPHY SYSTEM
+           ============================================ */
+        h1, h2, h3, h4, h5, h6 {
+            font-family: var(--font-display);
+            font-weight: 700;
+            line-height: 1.1;
+            letter-spacing: -0.02em;
+        }
+
+        .hero-title {
+            font-size: clamp(64px, 14vw, 140px);
+            font-weight: 700;
+            letter-spacing: -0.04em;
+        }
+
+        .section-headline {
+            font-size: clamp(40px, 8vw, 72px);
+            font-weight: 700;
+        }
+
+        .feature-headline {
+            font-size: clamp(32px, 6vw, 56px);
+            font-weight: 700;
+        }
+
+        .body-large {
+            font-size: clamp(19px, 3vw, 24px);
+            line-height: 1.4;
+        }
+
+        .body-regular {
+            font-size: 17px;
+            line-height: 1.6;
+        }
+
+        .label {
+            font-size: 14px;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+        }
+
+        .eyebrow {
+            font-size: 15px;
+            font-weight: 500;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: var(--gray-400);
+        }
+
+        /* ============================================
+           LAYOUT UTILITIES
+           ============================================ */
+        .container {
+            max-width: var(--container-max);
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        .container-wide {
+            max-width: var(--container-wide);
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        .section {
+            padding: var(--section-padding) 0;
+        }
+
+        .section-dark {
+            background: var(--black);
+            color: var(--white);
+        }
+
+        .section-light {
+            background: var(--white);
+            color: var(--gray-800);
+        }
+
+        .section-gray {
+            background: var(--gray-100);
+            color: var(--gray-800);
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .text-gradient {
+            background: var(--gradient-text);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* ============================================
+           NAVIGATION
+           ============================================ */
+        .nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            padding: 16px 24px;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: saturate(180%) blur(20px);
+            -webkit-backdrop-filter: saturate(180%) blur(20px);
+            transition: background var(--transition-medium);
+        }
+
+        .nav-container {
+            max-width: var(--container-wide);
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .nav-logo {
+            font-family: var(--font-display);
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--white);
+            text-decoration: none;
+            letter-spacing: -0.02em;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 32px;
+            list-style: none;
+        }
+
+        .nav-link {
+            color: var(--gray-300);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: color var(--transition-fast);
+        }
+
+        .nav-link:hover {
+            color: var(--white);
+        }
+
+        .nav-cta {
+            background: var(--blue);
+            color: var(--white);
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            text-decoration: none;
+            transition: background var(--transition-fast);
+        }
+
+        .nav-cta:hover {
+            background: var(--blue-hover);
+        }
+
+        @media (max-width: 768px) {
+            .nav-links {
+                display: none;
+            }
+        }
+
+        /* ============================================
+           1. HERO SECTION
+           ============================================ */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            background: var(--black);
+            color: var(--white);
+            position: relative;
+            overflow: hidden;
+            padding: 120px 24px 80px;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--gradient-hero);
+            pointer-events: none;
+        }
+
+        .hero-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0.4;
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 1;
+            max-width: 1000px;
+        }
+
+        .hero-eyebrow {
+            margin-bottom: 24px;
+            opacity: 0;
+            transform: translateY(20px);
+            animation: fadeInUp 0.8s var(--ease-out-expo) 0.2s forwards;
+        }
+
+        .hero-title {
+            margin-bottom: 24px;
+            opacity: 0;
+            transform: translateY(30px);
+            animation: fadeInUp 0.8s var(--ease-out-expo) 0.4s forwards;
+        }
+
+        .hero-subtitle {
+            font-size: clamp(20px, 4vw, 28px);
+            color: var(--gray-400);
+            margin-bottom: 48px;
+            opacity: 0;
+            transform: translateY(20px);
+            animation: fadeInUp 0.8s var(--ease-out-expo) 0.6s forwards;
+        }
+
+        .hero-cta {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--blue);
+            font-size: 20px;
+            font-weight: 500;
+            text-decoration: none;
+            opacity: 0;
+            transform: translateY(20px);
+            animation: fadeInUp 0.8s var(--ease-out-expo) 0.8s forwards;
+            transition: gap var(--transition-fast);
+        }
+
+        .hero-cta:hover {
+            gap: 12px;
+        }
+
+        .hero-cta svg {
+            transition: transform var(--transition-fast);
+        }
+
+        .hero-cta:hover svg {
+            transform: translateX(4px);
+        }
+
+        .hero-visual {
+            position: absolute;
+            bottom: -100px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100%;
+            max-width: 1200px;
+            height: 400px;
+            opacity: 0;
+            animation: fadeIn 1.5s var(--ease-out-expo) 1s forwards;
+        }
+
+        /* Animated vessel wireframe */
+        .vessel-wireframe {
+            width: 100%;
+            height: 100%;
+        }
+
+        .vessel-wireframe path {
+            stroke: var(--blue);
+            stroke-width: 1;
+            fill: none;
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+            animation: drawLine 3s var(--ease-out-expo) 1.2s forwards;
+        }
+
+        .vessel-wireframe .station-line {
+            stroke: rgba(255, 255, 255, 0.2);
+            animation-delay: 1.5s;
+        }
+
+        @keyframes drawLine {
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+
+        @keyframes fadeInUp {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeIn {
+            to {
+                opacity: 1;
+            }
+        }
+
+        /* ============================================
+           2. PROBLEM STATEMENT
+           ============================================ */
+        .problem {
+            background: var(--white);
+            position: relative;
+        }
+
+        .problem-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+            margin-top: 64px;
+        }
+
+        .problem-card {
+            background: var(--gray-100);
+            border-radius: 16px;
+            padding: 32px;
+            opacity: 0;
+            transform: translateY(30px);
+            transition: transform var(--transition-medium), box-shadow var(--transition-medium);
+        }
+
+        .problem-card.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .problem-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        .problem-icon {
+            width: 48px;
+            height: 48px;
+            background: var(--red);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+            color: var(--white);
+            font-size: 24px;
+        }
+
+        .problem-card h3 {
+            font-size: 20px;
+            margin-bottom: 12px;
+        }
+
+        .problem-card p {
+            color: var(--gray-500);
+            font-size: 15px;
+        }
+
+        /* ============================================
+           3. OLD WAY VS MAGNET
+           ============================================ */
+        .comparison {
+            background: var(--gray-100);
+        }
+
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 48px;
+            margin-top: 64px;
+        }
+
+        @media (max-width: 768px) {
+            .comparison-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .comparison-panel {
+            background: var(--white);
+            border-radius: 24px;
+            padding: 48px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .comparison-panel.old-way {
+            border: 2px solid var(--gray-200);
+        }
+
+        .comparison-panel.new-way {
+            background: var(--black);
+            color: var(--white);
+            border: 2px solid var(--gray-700);
+        }
+
+        .comparison-label {
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .comparison-panel.old-way .comparison-label {
+            color: var(--red);
+        }
+
+        .comparison-panel.new-way .comparison-label {
+            color: var(--green);
+        }
+
+        .comparison-title {
+            font-size: clamp(28px, 5vw, 40px);
+            margin-bottom: 32px;
+        }
+
+        .comparison-list {
+            list-style: none;
+        }
+
+        .comparison-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+            font-size: 15px;
+        }
+
+        .comparison-list li:last-child {
+            border-bottom: none;
+        }
+
+        .comparison-icon {
+            flex-shrink: 0;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .old-way .comparison-icon {
+            background: rgba(255, 59, 48, 0.15);
+            color: var(--red);
+        }
+
+        .new-way .comparison-icon {
+            background: rgba(52, 199, 89, 0.2);
+            color: var(--green);
+        }
+
+        .comparison-time {
+            display: inline-block;
+            background: var(--gray-800);
+            color: var(--white);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-top: 24px;
+        }
+
+        .old-way .comparison-time {
+            background: var(--red);
+        }
+
+        .new-way .comparison-time {
+            background: var(--green);
+        }
+
+        /* ============================================
+           4. CORE PHILOSOPHY
+           ============================================ */
+        .philosophy {
+            background: var(--black);
+            color: var(--white);
+            text-align: center;
+            position: relative;
+        }
+
+        .philosophy::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 600px;
+            height: 600px;
+            background: var(--gradient-glow);
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        .philosophy-content {
+            position: relative;
+            z-index: 1;
+        }
+
+        .philosophy-headline {
+            margin-bottom: 32px;
+        }
+
+        .philosophy-stats {
+            display: flex;
+            justify-content: center;
+            gap: 48px;
+            flex-wrap: wrap;
+            margin-top: 48px;
+        }
+
+        .philosophy-stat {
+            text-align: center;
+        }
+
+        .philosophy-stat-number {
+            font-family: var(--font-display);
+            font-size: clamp(36px, 6vw, 56px);
+            font-weight: 700;
+            color: var(--blue);
+        }
+
+        .philosophy-stat-label {
+            font-size: 14px;
+            color: var(--gray-400);
+            margin-top: 8px;
+        }
+
+        /* ============================================
+           5. PHYSICS ENGINES SHOWCASE
+           ============================================ */
+        .physics {
+            background: var(--white);
+        }
+
+        .physics-subtitle {
+            color: var(--gray-500);
+            margin-top: 16px;
+        }
+
+        .physics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 20px;
+            margin-top: 64px;
+        }
+
+        .physics-card {
+            background: var(--gray-50);
+            border: 1px solid var(--gray-200);
+            border-radius: 16px;
+            padding: 28px;
+            transition: all var(--transition-medium);
+            opacity: 0;
+            transform: translateY(20px);
+        }
+
+        .physics-card.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .physics-card:hover {
+            border-color: var(--blue);
+            transform: translateY(-4px);
+            box-shadow: 0 8px 30px rgba(0, 113, 227, 0.1);
+        }
+
+        .physics-card-icon {
+            width: 44px;
+            height: 44px;
+            background: linear-gradient(135deg, var(--blue), var(--purple));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 16px;
+            color: var(--white);
+            font-size: 20px;
+        }
+
+        .physics-card h3 {
+            font-size: 17px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .physics-card p {
+            font-size: 14px;
+            color: var(--gray-500);
+            line-height: 1.5;
+        }
+
+        /* ============================================
+           6. BIG IMPACT NUMBER
+           ============================================ */
+        .impact {
+            background: var(--black);
+            color: var(--white);
+            text-align: center;
+            padding: clamp(100px, 15vw, 200px) 24px;
+        }
+
+        .impact-number {
+            font-family: var(--font-display);
+            font-size: clamp(80px, 20vw, 200px);
+            font-weight: 700;
+            background: linear-gradient(180deg, var(--green) 0%, var(--cyan) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1;
+            margin-bottom: 16px;
+        }
+
+        .impact-label {
+            font-size: clamp(24px, 5vw, 40px);
+            color: var(--gray-400);
+            margin-bottom: 64px;
+        }
+
+        .impact-comparisons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 32px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .impact-comparison {
+            padding: 24px;
+            border: 1px solid var(--gray-700);
+            border-radius: 16px;
+            transition: border-color var(--transition-medium);
+        }
+
+        .impact-comparison:hover {
+            border-color: var(--gray-500);
+        }
+
+        .impact-comparison-title {
+            font-size: 14px;
+            color: var(--gray-400);
+            margin-bottom: 12px;
+        }
+
+        .impact-comparison-values {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+        }
+
+        .impact-old {
+            font-size: 18px;
+            color: var(--gray-500);
+            text-decoration: line-through;
+        }
+
+        .impact-arrow {
+            color: var(--green);
+            font-size: 20px;
+        }
+
+        .impact-new {
+            font-size: 22px;
+            font-weight: 600;
+            color: var(--green);
+        }
+
+        /* ============================================
+           7. DESIGN SPIRAL
+           ============================================ */
+        .spiral {
+            background: var(--gray-100);
+        }
+
+        .spiral-visualization {
+            margin-top: 64px;
+            position: relative;
+        }
+
+        .spiral-flow {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 16px;
+            position: relative;
+        }
+
+        .spiral-phase {
+            background: var(--white);
+            border: 2px solid var(--gray-200);
+            border-radius: 12px;
+            padding: 20px 28px;
+            text-align: center;
+            min-width: 140px;
+            position: relative;
+            transition: all var(--transition-medium);
+            cursor: default;
+        }
+
+        .spiral-phase:hover {
+            border-color: var(--blue);
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(0, 113, 227, 0.15);
+        }
+
+        .spiral-phase.active {
+            background: var(--blue);
+            border-color: var(--blue);
+            color: var(--white);
+        }
+
+        .spiral-phase-number {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--blue);
+            margin-bottom: 8px;
+        }
+
+        .spiral-phase.active .spiral-phase-number {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .spiral-phase-name {
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        .spiral-arrow {
+            display: flex;
+            align-items: center;
+            color: var(--gray-400);
+            font-size: 20px;
+        }
+
+        .spiral-description {
+            text-align: center;
+            max-width: 600px;
+            margin: 48px auto 0;
+            color: var(--gray-600);
+        }
+
+        .spiral-features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 24px;
+            margin-top: 48px;
+        }
+
+        .spiral-feature {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 15px;
+        }
+
+        .spiral-feature-check {
+            width: 24px;
+            height: 24px;
+            background: var(--green);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--white);
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        /* ============================================
+           8. MULTI-AGENT ARCHITECTURE
+           ============================================ */
+        .agents {
+            background: var(--white);
+        }
+
+        .agents-subtitle {
+            color: var(--gray-500);
+            margin-top: 16px;
+        }
+
+        .agents-diagram {
+            margin-top: 64px;
+            position: relative;
+        }
+
+        .agents-hub {
+            text-align: center;
+            margin-bottom: 48px;
+        }
+
+        .agents-hub-core {
+            display: inline-block;
+            background: linear-gradient(135deg, var(--blue), var(--purple));
+            color: var(--white);
+            padding: 32px 48px;
+            border-radius: 24px;
+            position: relative;
+        }
+
+        .agents-hub-title {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .agents-hub-subtitle {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+
+        .agents-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+        }
+
+        .agent-card {
+            background: var(--gray-50);
+            border: 1px solid var(--gray-200);
+            border-radius: 20px;
+            padding: 32px;
+            transition: all var(--transition-medium);
+            opacity: 0;
+            transform: translateY(20px);
+        }
+
+        .agent-card.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .agent-card:hover {
+            border-color: var(--blue);
+            box-shadow: 0 12px 40px rgba(0, 113, 227, 0.1);
+        }
+
+        .agent-icon {
+            width: 56px;
+            height: 56px;
+            background: var(--black);
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+
+        .agent-card h3 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        .agent-card p {
+            font-size: 15px;
+            color: var(--gray-500);
+            line-height: 1.5;
+        }
+
+        /* ============================================
+           9. BY THE NUMBERS
+           ============================================ */
+        .stats {
+            background: var(--black);
+            color: var(--white);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 32px;
+            margin-top: 64px;
+        }
+
+        @media (max-width: 1024px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 600px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 32px 16px;
+            border: 1px solid var(--gray-700);
+            border-radius: 16px;
+            transition: border-color var(--transition-medium);
+        }
+
+        .stat-item:hover {
+            border-color: var(--gray-500);
+        }
+
+        .stat-number {
+            font-family: var(--font-display);
+            font-size: clamp(40px, 7vw, 56px);
+            font-weight: 700;
+            color: var(--blue);
+            margin-bottom: 8px;
+        }
+
+        .stat-number .suffix {
+            font-size: 0.6em;
+            color: var(--gray-400);
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: var(--gray-400);
+        }
+
+        /* ============================================
+           10. CAPABILITY MATRIX
+           ============================================ */
+        .capabilities {
+            background: var(--gray-100);
+        }
+
+        .capabilities-current {
+            margin-top: 48px;
+        }
+
+        .capability-section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--green);
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .capabilities-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 16px;
+        }
+
+        .capability-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: var(--white);
+            padding: 16px 20px;
+            border-radius: 12px;
+            font-size: 15px;
+        }
+
+        .capability-check {
+            width: 22px;
+            height: 22px;
+            background: var(--green);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--white);
+            font-size: 12px;
+            flex-shrink: 0;
+        }
+
+        .capabilities-roadmap {
+            margin-top: 64px;
+        }
+
+        .capability-section-title.coming {
+            color: var(--gray-500);
+        }
+
+        .capabilities-roadmap .capability-item {
+            background: var(--white);
+            opacity: 0.7;
+        }
+
+        .capabilities-roadmap .capability-check {
+            background: var(--gray-400);
+        }
+
+        .capability-badge {
+            margin-left: auto;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 20px;
+            background: var(--gray-200);
+            color: var(--gray-600);
+        }
+
+        /* ============================================
+           11. OUTPUT PACKAGE
+           ============================================ */
+        .output {
+            background: var(--white);
+        }
+
+        .output-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-top: 48px;
+        }
+
+        .output-item {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            background: var(--gray-50);
+            border: 1px solid var(--gray-200);
+            padding: 20px 24px;
+            border-radius: 12px;
+            font-size: 15px;
+            transition: all var(--transition-medium);
+        }
+
+        .output-item:hover {
+            border-color: var(--blue);
+            background: var(--white);
+        }
+
+        .output-icon {
+            width: 40px;
+            height: 40px;
+            background: var(--blue);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--white);
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        /* ============================================
+           12. 3D VISUALIZATION
+           ============================================ */
+        .visualization {
+            background: var(--black);
+            color: var(--white);
+        }
+
+        .visualization-subtitle {
+            color: var(--gray-400);
+            margin-top: 16px;
+        }
+
+        .visualization-window {
+            margin-top: 48px;
+            background: var(--gray-900);
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid var(--gray-700);
+        }
+
+        .visualization-titlebar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            background: var(--gray-800);
+            border-bottom: 1px solid var(--gray-700);
+        }
+
+        .visualization-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .visualization-dot.red { background: #ff5f57; }
+        .visualization-dot.yellow { background: #febc2e; }
+        .visualization-dot.green { background: #28c840; }
+
+        .visualization-title {
+            margin-left: 12px;
+            font-size: 13px;
+            color: var(--gray-400);
+        }
+
+        .visualization-content {
+            aspect-ratio: 16/9;
+            background: linear-gradient(135deg, #0a1628 0%, #0d1b2a 50%, #1b263b 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .visualization-hull {
+            width: 70%;
+            max-width: 600px;
+        }
+
+        .visualization-hull path {
+            fill: none;
+            stroke: var(--blue);
+            stroke-width: 2;
+        }
+
+        .visualization-hull .hull-fill {
+            fill: rgba(0, 113, 227, 0.1);
+            stroke: none;
+        }
+
+        .visualization-grid {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image:
+                linear-gradient(rgba(0, 113, 227, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 113, 227, 0.1) 1px, transparent 1px);
+            background-size: 40px 40px;
+            opacity: 0.5;
+        }
+
+        .visualization-code {
+            margin-top: 32px;
+            background: var(--gray-900);
+            border-radius: 12px;
+            padding: 24px;
+            overflow-x: auto;
+        }
+
+        .visualization-code pre {
+            font-family: var(--font-mono);
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--gray-300);
+        }
+
+        .visualization-code .keyword { color: var(--purple); }
+        .visualization-code .function { color: var(--blue); }
+        .visualization-code .string { color: var(--green); }
+        .visualization-code .comment { color: var(--gray-500); }
+
+        /* ============================================
+           13. INTEGRATION
+           ============================================ */
+        .integration {
+            background: var(--gray-100);
+        }
+
+        .integration-flow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 32px;
+            flex-wrap: wrap;
+            margin-top: 64px;
+        }
+
+        .integration-magnet {
+            background: linear-gradient(135deg, var(--blue), var(--purple));
+            color: var(--white);
+            padding: 24px 40px;
+            border-radius: 16px;
+            font-weight: 700;
+            font-size: 24px;
+        }
+
+        .integration-arrow {
+            font-size: 32px;
+            color: var(--gray-400);
+        }
+
+        .integration-tools {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .integration-tool {
+            background: var(--white);
+            border: 1px solid var(--gray-200);
+            padding: 16px 24px;
+            border-radius: 12px;
+            font-weight: 500;
+            font-size: 15px;
+            transition: all var(--transition-medium);
+        }
+
+        .integration-tool:hover {
+            border-color: var(--blue);
+            transform: translateY(-2px);
+        }
+
+        /* ============================================
+           14. SECURITY
+           ============================================ */
+        .security {
+            background: var(--gray-800);
+            color: var(--white);
+        }
+
+        .security-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-top: 48px;
+        }
+
+        .security-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--gray-700);
+            padding: 20px 24px;
+            border-radius: 12px;
+            font-size: 15px;
+        }
+
+        .security-icon {
+            width: 40px;
+            height: 40px;
+            background: var(--green);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--white);
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        /* ============================================
+           15. ROADMAP
+           ============================================ */
+        .roadmap {
+            background: var(--black);
+            color: var(--white);
+        }
+
+        .roadmap-timeline {
+            margin-top: 64px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 24px;
+        }
+
+        .roadmap-card {
+            background: var(--gray-900);
+            border: 1px solid var(--gray-700);
+            border-radius: 20px;
+            padding: 32px;
+            transition: all var(--transition-medium);
+        }
+
+        .roadmap-card:hover {
+            border-color: var(--gray-500);
+            transform: translateY(-4px);
+        }
+
+        .roadmap-version {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--blue);
+            margin-bottom: 12px;
+        }
+
+        .roadmap-title {
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 20px;
+        }
+
+        .roadmap-features {
+            list-style: none;
+        }
+
+        .roadmap-features li {
+            font-size: 14px;
+            color: var(--gray-400);
+            padding: 8px 0;
+            border-bottom: 1px solid var(--gray-800);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .roadmap-features li:last-child {
+            border-bottom: none;
+        }
+
+        .roadmap-features li::before {
+            content: '→';
+            color: var(--gray-600);
+        }
+
+        /* ============================================
+           16. FOUNDER'S NOTE
+           ============================================ */
+        .founder {
+            background: var(--gray-900);
+            color: var(--white);
+            text-align: center;
+        }
+
+        .founder-quote {
+            font-family: var(--font-display);
+            font-size: clamp(24px, 4vw, 36px);
+            font-weight: 400;
+            font-style: italic;
+            color: var(--gray-300);
+            max-width: 900px;
+            margin: 0 auto 48px;
+            line-height: 1.5;
+        }
+
+        .founder-answer {
+            font-size: clamp(32px, 6vw, 56px);
+            font-weight: 700;
+            margin-bottom: 16px;
+        }
+
+        .founder-proof {
+            font-size: 20px;
+            color: var(--gray-400);
+            margin-bottom: 64px;
+        }
+
+        .founder-signature {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .founder-name {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .founder-title {
+            font-size: 14px;
+            color: var(--gray-500);
+        }
+
+        /* ============================================
+           17. CTA FOOTER
+           ============================================ */
+        .footer {
+            background: var(--black);
+            color: var(--white);
+            text-align: center;
+            padding: clamp(80px, 12vw, 140px) 24px;
+        }
+
+        .footer-title {
+            font-size: clamp(48px, 10vw, 96px);
+            font-weight: 700;
+            letter-spacing: -0.04em;
+            margin-bottom: 16px;
+        }
+
+        .footer-tagline {
+            font-size: clamp(20px, 4vw, 28px);
+            color: var(--gray-400);
+            margin-bottom: 32px;
+        }
+
+        .footer-stats {
+            font-size: 14px;
+            color: var(--gray-500);
+            margin-bottom: 48px;
+        }
+
+        .footer-closing {
+            font-size: 18px;
+            color: var(--gray-300);
+            max-width: 600px;
+            margin: 0 auto 48px;
+        }
+
+        .footer-cta {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--blue);
+            color: var(--white);
+            padding: 16px 32px;
+            border-radius: 30px;
+            font-size: 17px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all var(--transition-medium);
+        }
+
+        .footer-cta:hover {
+            background: var(--blue-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0, 113, 227, 0.4);
+        }
+
+        .footer-bottom {
+            margin-top: 80px;
+            padding-top: 32px;
+            border-top: 1px solid var(--gray-800);
+            font-size: 13px;
+            color: var(--gray-500);
+        }
+
+        /* ============================================
+           SCROLL ANIMATIONS
+           ============================================ */
+        .reveal {
+            opacity: 0;
+            transform: translateY(40px);
+            transition: opacity 0.8s var(--ease-out-expo), transform 0.8s var(--ease-out-expo);
+        }
+
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .reveal-stagger > * {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity 0.6s var(--ease-out-expo), transform 0.6s var(--ease-out-expo);
+        }
+
+        .reveal-stagger.visible > *:nth-child(1) { transition-delay: 0.1s; }
+        .reveal-stagger.visible > *:nth-child(2) { transition-delay: 0.2s; }
+        .reveal-stagger.visible > *:nth-child(3) { transition-delay: 0.3s; }
+        .reveal-stagger.visible > *:nth-child(4) { transition-delay: 0.4s; }
+        .reveal-stagger.visible > *:nth-child(5) { transition-delay: 0.5s; }
+        .reveal-stagger.visible > *:nth-child(6) { transition-delay: 0.6s; }
+        .reveal-stagger.visible > *:nth-child(7) { transition-delay: 0.7s; }
+        .reveal-stagger.visible > *:nth-child(8) { transition-delay: 0.8s; }
+        .reveal-stagger.visible > *:nth-child(9) { transition-delay: 0.9s; }
+        .reveal-stagger.visible > *:nth-child(10) { transition-delay: 1s; }
+        .reveal-stagger.visible > *:nth-child(11) { transition-delay: 1.1s; }
+        .reveal-stagger.visible > *:nth-child(12) { transition-delay: 1.2s; }
+
+        .reveal-stagger.visible > * {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="nav">
+        <div class="nav-container">
+            <a href="#" class="nav-logo">MAGNET</a>
+            <ul class="nav-links">
+                <li><a href="#problem" class="nav-link">The Problem</a></li>
+                <li><a href="#physics" class="nav-link">Physics</a></li>
+                <li><a href="#agents" class="nav-link">Architecture</a></li>
+                <li><a href="#roadmap" class="nav-link">Roadmap</a></li>
+            </ul>
+            <a href="mailto:contact@1quantlogistics.com" class="nav-cta">Get in Touch</a>
+        </div>
+    </nav>
+
+    <!-- 1. Hero Section -->
+    <section class="hero" id="hero">
+        <canvas class="hero-canvas" id="heroCanvas"></canvas>
+        <div class="hero-content">
+            <p class="eyebrow hero-eyebrow">The Naval Engineering Operating System</p>
+            <h1 class="hero-title text-gradient">MAGNET</h1>
+            <p class="hero-subtitle">From mission brief to validated design.<br>Minutes, not months.</p>
+            <a href="#problem" class="hero-cta">
+                See how it works
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+            </a>
+        </div>
+        <div class="hero-visual">
+            <svg class="vessel-wireframe" viewBox="0 0 800 300" preserveAspectRatio="xMidYMid meet">
+                <!-- Hull profile -->
+                <path d="M50,200 Q100,220 200,220 L600,220 Q700,220 750,200 L730,180 Q680,120 600,100 L200,100 Q120,120 70,180 Z" class="hull-outline"/>
+                <!-- Waterline -->
+                <path d="M80,180 L720,180" class="station-line"/>
+                <!-- Station lines -->
+                <path d="M150,100 L150,220" class="station-line"/>
+                <path d="M250,100 L250,220" class="station-line"/>
+                <path d="M350,100 L350,220" class="station-line"/>
+                <path d="M450,100 L450,220" class="station-line"/>
+                <path d="M550,100 L550,220" class="station-line"/>
+                <path d="M650,100 L650,220" class="station-line"/>
+                <!-- Deck line -->
+                <path d="M120,100 Q400,80 680,100" class="hull-outline"/>
+            </svg>
+        </div>
+    </section>
+
+    <!-- 2. Problem Statement -->
+    <section class="section section-light problem" id="problem">
+        <div class="container">
+            <h2 class="section-headline text-center reveal">Marine design is broken.</h2>
+            <div class="problem-grid reveal-stagger">
+                <div class="problem-card">
+                    <div class="problem-icon">8+</div>
+                    <h3>Disconnected Tools</h3>
+                    <p>Hull in Rhino, hydro in Maxsurf, structure in Excel, stability in NAPA... Each tool is an island.</p>
+                </div>
+                <div class="problem-card">
+                    <div class="problem-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                    </div>
+                    <h3>Weeks of Iteration</h3>
+                    <p>Every change means re-running 6 different programs. A single parameter update cascades into days of work.</p>
+                </div>
+                <div class="problem-card">
+                    <div class="problem-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                        </svg>
+                    </div>
+                    <h3>Manual Data Transfer</h3>
+                    <p>Copy-paste values between tools and pray nothing breaks. Human error is inevitable.</p>
+                </div>
+                <div class="problem-card">
+                    <div class="problem-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                            <line x1="12" y1="9" x2="12" y2="13"/>
+                            <line x1="12" y1="17" x2="12.01" y2="17"/>
+                        </svg>
+                    </div>
+                    <h3>No Single Source of Truth</h3>
+                    <p>Which file is current? Nobody knows. Version drift is the norm, not the exception.</p>
+                </div>
+                <div class="problem-card">
+                    <div class="problem-icon">5×</div>
+                    <h3>Duplicate Entry</h3>
+                    <p>Enter LOA in 5 different places and hope they match. Inconsistency breeds errors.</p>
+                </div>
+                <div class="problem-card">
+                    <div class="problem-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"/>
+                            <line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                    </div>
+                    <h3>Zero Intelligence</h3>
+                    <p>Tools don't understand intent, only button clicks. No reasoning, no recommendations, no learning.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 3. Old Way vs MAGNET -->
+    <section class="section section-gray comparison">
+        <div class="container">
+            <h2 class="section-headline text-center reveal">Two approaches.</h2>
+            <div class="comparison-grid">
+                <div class="comparison-panel old-way reveal">
+                    <p class="comparison-label">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"/>
+                            <line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                        Traditional Workflow
+                    </p>
+                    <h3 class="comparison-title">Fragmented.<br>Manual.<br>Slow.</h3>
+                    <ul class="comparison-list">
+                        <li>
+                            <span class="comparison-icon">✕</span>
+                            8+ disconnected applications
+                        </li>
+                        <li>
+                            <span class="comparison-icon">✕</span>
+                            Manual data transfer between tools
+                        </li>
+                        <li>
+                            <span class="comparison-icon">✕</span>
+                            No automatic validation
+                        </li>
+                        <li>
+                            <span class="comparison-icon">✕</span>
+                            Days to iterate on a single change
+                        </li>
+                        <li>
+                            <span class="comparison-icon">✕</span>
+                            Version drift and data loss
+                        </li>
+                    </ul>
+                    <span class="comparison-time">Weeks to months</span>
+                </div>
+                <div class="comparison-panel new-way reveal">
+                    <p class="comparison-label">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                        MAGNET
+                    </p>
+                    <h3 class="comparison-title">Unified.<br>Intelligent.<br>Instant.</h3>
+                    <ul class="comparison-list">
+                        <li>
+                            <span class="comparison-icon">✓</span>
+                            One unified design state
+                        </li>
+                        <li>
+                            <span class="comparison-icon">✓</span>
+                            Automatic propagation everywhere
+                        </li>
+                        <li>
+                            <span class="comparison-icon">✓</span>
+                            Real-time validation and correction
+                        </li>
+                        <li>
+                            <span class="comparison-icon">✓</span>
+                            Instant iteration, live updates
+                        </li>
+                        <li>
+                            <span class="comparison-icon">✓</span>
+                            Full traceability, zero drift
+                        </li>
+                    </ul>
+                    <span class="comparison-time">Minutes</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 4. Core Philosophy -->
+    <section class="section section-dark philosophy">
+        <div class="container philosophy-content">
+            <h2 class="section-headline philosophy-headline reveal">
+                One state. One truth.<br>One system.
+            </h2>
+            <p class="body-large reveal" style="color: var(--gray-400); max-width: 700px; margin: 0 auto;">
+                Not AI guesswork. Deterministic mathematics.<br>
+                Not plugins. A complete operating system.
+            </p>
+            <div class="philosophy-stats reveal-stagger">
+                <div class="philosophy-stat">
+                    <div class="philosophy-stat-number" data-count="500">0</div>
+                    <div class="philosophy-stat-label">Parameters</div>
+                </div>
+                <div class="philosophy-stat">
+                    <div class="philosophy-stat-number" data-count="27">0</div>
+                    <div class="philosophy-stat-label">Dataclasses</div>
+                </div>
+                <div class="philosophy-stat">
+                    <div class="philosophy-stat-number" data-count="12">0</div>
+                    <div class="philosophy-stat-label">Physics Engines</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 5. Physics Engines Showcase -->
+    <section class="section section-light physics" id="physics">
+        <div class="container">
+            <h2 class="section-headline text-center reveal">12 Physics Engines. Unified.</h2>
+            <p class="body-large text-center physics-subtitle reveal">Every calculation. Every simulation. One coherent system.</p>
+            <div class="physics-grid reveal-stagger">
+                <div class="physics-card">
+                    <div class="physics-card-icon">∿</div>
+                    <h3>NURBS/B-splines</h3>
+                    <p>Mathematical precision hull surface representation with full curvature continuity.</p>
+                </div>
+                <div class="physics-card">
+                    <div class="physics-card-icon">∫</div>
+                    <h3>Hydrostatics Integration</h3>
+                    <p>Simpson's Rule for displacement, centers, and waterplane properties.</p>
+                </div>
+                <div class="physics-card">
+                    <div class="physics-card-icon">⟳</div>
+                    <h3>Righting Arm Physics</h3>
+                    <p>Complete GZ curve generation across all heel angles.</p>
+                </div>
+                <div class="physics-card">
+                    <div class="physics-card-icon">◇</div>
+                    <h3>GM/AVS Stability</h3>
+                    <p>Metacentric height and angle of vanishing stability calculations.</p>
+                </div>
+                <div class="physics-card">
+                    <div class="physics-card-icon">▭</div>
+                    <h3>Plate & Stiffener</h3>
+                    <p>Section modulus, moment of inertia, buckling analysis.</p>
+                </div>
+                <div class="physics-card">
+                    <div class="physics-card-icon">≋</div>
+                    <h3>Holtrop-Mennen</h3>
+                    <p>Displacement hull resistance prediction with high accuracy.</p>
+                </div>
+                <div class="physics-card">
+                    <div class="physics-card-icon">⋀</div>
+                    <h3>Savitsky Planing</h3>
+                    <p>High-speed planing hull resistance and trim analysis.</p>
+                </div>
+                <div class="physics-card">
+                    <div class="physics-card-icon">⚡</div>
+                    <h3>Power/Range</h3>
+                    <p>Fuel consumption and operating envelope estimation.</p>
+                </div>
+                <div class="physics-card">
+                    <div class="physics-card-icon">⊕</div>
+                    <h3>Weight/CG Propagation</h3>
+                    <p>Parametric mass with LCG, VCG, TCG tracking.</p>
+                </div>
+                <div class="physics-card">
+                    <div class="physics-card-icon">▦</div>
+                    <h3>Spatial Packing</h3>
+                    <p>Interior layout optimization algorithms.</p>
+                </div>
+                <div class="physics-card">
+                    <div class="physics-card-icon">⊞</div>
+                    <h3>R-tree Indexing</h3>
+                    <p>Fast geometric queries for routing and clash detection.</p>
+                </div>
+                <div class="physics-card">
+                    <div class="physics-card-icon">⬡</div>
+                    <h3>A*/Graph Routing</h3>
+                    <p>Systems routing through complex 3D geometry.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 6. Big Impact Number -->
+    <section class="section impact">
+        <div class="container">
+            <div class="reveal">
+                <div class="impact-number" data-count="95">0</div>
+                <div class="impact-label">percent time reduction</div>
+            </div>
+            <div class="impact-comparisons reveal-stagger">
+                <div class="impact-comparison">
+                    <div class="impact-comparison-title">Concept Vessel</div>
+                    <div class="impact-comparison-values">
+                        <span class="impact-old">Weeks</span>
+                        <span class="impact-arrow">→</span>
+                        <span class="impact-new">10 min</span>
+                    </div>
+                </div>
+                <div class="impact-comparison">
+                    <div class="impact-comparison-title">20 Design Variants</div>
+                    <div class="impact-comparison-values">
+                        <span class="impact-old">3 months</span>
+                        <span class="impact-arrow">→</span>
+                        <span class="impact-new">1 hour</span>
+                    </div>
+                </div>
+                <div class="impact-comparison">
+                    <div class="impact-comparison-title">RFP Package</div>
+                    <div class="impact-comparison-values">
+                        <span class="impact-old">Days</span>
+                        <span class="impact-arrow">→</span>
+                        <span class="impact-new">Minutes</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 7. Design Spiral -->
+    <section class="section section-gray spiral">
+        <div class="container">
+            <h2 class="section-headline text-center reveal">The Design Spiral. Automated.</h2>
+            <div class="spiral-visualization reveal">
+                <div class="spiral-flow">
+                    <div class="spiral-phase" data-phase="1">
+                        <div class="spiral-phase-number">01</div>
+                        <div class="spiral-phase-name">Mission</div>
+                    </div>
+                    <div class="spiral-arrow">→</div>
+                    <div class="spiral-phase" data-phase="2">
+                        <div class="spiral-phase-number">02</div>
+                        <div class="spiral-phase-name">Hull Form</div>
+                    </div>
+                    <div class="spiral-arrow">→</div>
+                    <div class="spiral-phase" data-phase="3">
+                        <div class="spiral-phase-number">03</div>
+                        <div class="spiral-phase-name">Structure</div>
+                    </div>
+                    <div class="spiral-arrow">→</div>
+                    <div class="spiral-phase" data-phase="4">
+                        <div class="spiral-phase-number">04</div>
+                        <div class="spiral-phase-name">Arrangement</div>
+                    </div>
+                    <div class="spiral-arrow">→</div>
+                    <div class="spiral-phase" data-phase="5">
+                        <div class="spiral-phase-number">05</div>
+                        <div class="spiral-phase-name">Propulsion</div>
+                    </div>
+                </div>
+                <div class="spiral-flow" style="margin-top: 24px;">
+                    <div class="spiral-phase" data-phase="9">
+                        <div class="spiral-phase-number">09</div>
+                        <div class="spiral-phase-name">Production</div>
+                    </div>
+                    <div class="spiral-arrow">←</div>
+                    <div class="spiral-phase" data-phase="8">
+                        <div class="spiral-phase-number">08</div>
+                        <div class="spiral-phase-name">Compliance</div>
+                    </div>
+                    <div class="spiral-arrow">←</div>
+                    <div class="spiral-phase" data-phase="7">
+                        <div class="spiral-phase-number">07</div>
+                        <div class="spiral-phase-name">Stability</div>
+                    </div>
+                    <div class="spiral-arrow">←</div>
+                    <div class="spiral-phase" data-phase="6">
+                        <div class="spiral-phase-number">06</div>
+                        <div class="spiral-phase-name">Weight</div>
+                    </div>
+                    <div class="spiral-arrow">←</div>
+                </div>
+            </div>
+            <p class="spiral-description reveal">
+                Each phase has entry conditions, continuous validators, exit gates, and rollback support.
+                Changes propagate through the entire system automatically.
+            </p>
+            <div class="spiral-features reveal-stagger">
+                <div class="spiral-feature">
+                    <span class="spiral-feature-check">✓</span>
+                    Entry Conditions
+                </div>
+                <div class="spiral-feature">
+                    <span class="spiral-feature-check">✓</span>
+                    Continuous Validators
+                </div>
+                <div class="spiral-feature">
+                    <span class="spiral-feature-check">✓</span>
+                    Exit Gates
+                </div>
+                <div class="spiral-feature">
+                    <span class="spiral-feature-check">✓</span>
+                    Rollback Support
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 8. Multi-Agent Architecture -->
+    <section class="section section-light agents" id="agents">
+        <div class="container">
+            <h2 class="section-headline text-center reveal">A Team of Engineering Minds</h2>
+            <p class="body-large text-center agents-subtitle reveal">Specialized agents. Unified reasoning.</p>
+
+            <div class="agents-diagram">
+                <div class="agents-hub reveal">
+                    <div class="agents-hub-core">
+                        <div class="agents-hub-title">Unified Design State</div>
+                        <div class="agents-hub-subtitle">500+ parameters • Event bus • Full traceability</div>
+                    </div>
+                </div>
+
+                <div class="agents-grid reveal-stagger">
+                    <div class="agent-card">
+                        <div class="agent-icon">🎯</div>
+                        <h3>Director Agent</h3>
+                        <p>Interprets user intent and orchestrates the design process across all domains.</p>
+                    </div>
+                    <div class="agent-card">
+                        <div class="agent-icon">🚢</div>
+                        <h3>Naval Architect Agent</h3>
+                        <p>Hull form generation, coefficients, resistance prediction, and seakeeping analysis.</p>
+                    </div>
+                    <div class="agent-card">
+                        <div class="agent-icon">🔩</div>
+                        <h3>Structural Engineer Agent</h3>
+                        <p>Scantlings, loads, frame sizing, and structural integrity verification.</p>
+                    </div>
+                    <div class="agent-card">
+                        <div class="agent-icon">⚙️</div>
+                        <h3>Systems Agent</h3>
+                        <p>Propulsion sizing, electrical loads, HVAC requirements, and fuel systems.</p>
+                    </div>
+                    <div class="agent-card">
+                        <div class="agent-icon">📐</div>
+                        <h3>Interior Agent</h3>
+                        <p>Spatial layout, compartment arrangement, egress planning, and space optimization.</p>
+                    </div>
+                    <div class="agent-card">
+                        <div class="agent-icon">⚖️</div>
+                        <h3>Supervisor Agent</h3>
+                        <p>Arbitration, tradeoff analysis, safety verification, and design optimization.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 9. By The Numbers -->
+    <section class="section section-dark stats" id="stats">
+        <div class="container">
+            <h2 class="section-headline text-center reveal">By The Numbers</h2>
+            <div class="stats-grid reveal-stagger">
+                <div class="stat-item">
+                    <div class="stat-number"><span data-count="58">0</span></div>
+                    <div class="stat-label">Production Modules</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number"><span data-count="2090">0</span></div>
+                    <div class="stat-label">Passing Tests</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number"><span data-count="150">0</span><span class="suffix">k+</span></div>
+                    <div class="stat-label">Lines of Code</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number"><span data-count="500">0</span><span class="suffix">+</span></div>
+                    <div class="stat-label">State Parameters</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number"><span data-count="80">0</span><span class="suffix">+</span></div>
+                    <div class="stat-label">API Endpoints</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number"><span data-count="12">0</span></div>
+                    <div class="stat-label">Physics Engines</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number"><span data-count="4">0</span></div>
+                    <div class="stat-label">Class Societies</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number"><span data-count="5">0</span></div>
+                    <div class="stat-label">Export Formats</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 10. Capability Matrix -->
+    <section class="section section-gray capabilities">
+        <div class="container">
+            <h2 class="section-headline text-center reveal">Current Capabilities</h2>
+
+            <div class="capabilities-current reveal">
+                <p class="capability-section-title">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    V1.1 Production Release
+                </p>
+                <div class="capabilities-list">
+                    <div class="capability-item">
+                        <span class="capability-check">✓</span>
+                        Mission interpretation & requirements
+                    </div>
+                    <div class="capability-item">
+                        <span class="capability-check">✓</span>
+                        Parametric hull generation (GRM + NURBS)
+                    </div>
+                    <div class="capability-item">
+                        <span class="capability-check">✓</span>
+                        Full hydrostatics suite
+                    </div>
+                    <div class="capability-item">
+                        <span class="capability-check">✓</span>
+                        Intact & damage stability (GZ curves)
+                    </div>
+                    <div class="capability-item">
+                        <span class="capability-check">✓</span>
+                        Structural scantlings design
+                    </div>
+                    <div class="capability-item">
+                        <span class="capability-check">✓</span>
+                        Weight & CG modeling (LCG/VCG/TCG)
+                    </div>
+                    <div class="capability-item">
+                        <span class="capability-check">✓</span>
+                        Propulsion sizing (Holtrop/Savitsky)
+                    </div>
+                    <div class="capability-item">
+                        <span class="capability-check">✓</span>
+                        Compartment layout & arrangement
+                    </div>
+                    <div class="capability-item">
+                        <span class="capability-check">✓</span>
+                        Classification compliance checking
+                    </div>
+                    <div class="capability-item">
+                        <span class="capability-check">✓</span>
+                        Real-time WebGL visualization
+                    </div>
+                    <div class="capability-item">
+                        <span class="capability-check">✓</span>
+                        Multi-format geometry export
+                    </div>
+                    <div class="capability-item">
+                        <span class="capability-check">✓</span>
+                        Engineering packet generation
+                    </div>
+                </div>
+            </div>
+
+            <div class="capabilities-roadmap reveal">
+                <p class="capability-section-title coming">Coming Soon</p>
+                <div class="capabilities-list">
+                    <div class="capability-item">
+                        <span class="capability-check">○</span>
+                        Natural language mission briefs
+                        <span class="capability-badge">V2</span>
+                    </div>
+                    <div class="capability-item">
+                        <span class="capability-check">○</span>
+                        Design variant optimization
+                        <span class="capability-badge">V2</span>
+                    </div>
+                    <div class="capability-item">
+                        <span class="capability-check">○</span>
+                        Advanced systems routing
+                        <span class="capability-badge">V3</span>
+                    </div>
+                    <div class="capability-item">
+                        <span class="capability-check">○</span>
+                        FEA integration
+                        <span class="capability-badge">V4</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 11. Output Package -->
+    <section class="section section-light output">
+        <div class="container">
+            <h2 class="section-headline text-center reveal">Complete Engineering Packet</h2>
+            <p class="body-large text-center reveal" style="color: var(--gray-500); margin-top: 16px;">
+                Everything you need, automatically generated.
+            </p>
+            <div class="output-grid reveal-stagger">
+                <div class="output-item">
+                    <div class="output-icon">📐</div>
+                    <span>Linesplan</span>
+                </div>
+                <div class="output-item">
+                    <div class="output-icon">📊</div>
+                    <span>Body Plan</span>
+                </div>
+                <div class="output-item">
+                    <div class="output-icon">📈</div>
+                    <span>Stability Curves</span>
+                </div>
+                <div class="output-item">
+                    <div class="output-icon">🌊</div>
+                    <span>Resistance Data</span>
+                </div>
+                <div class="output-item">
+                    <div class="output-icon">🔧</div>
+                    <span>Scantling Table</span>
+                </div>
+                <div class="output-item">
+                    <div class="output-icon">⚖️</div>
+                    <span>Weight Summary</span>
+                </div>
+                <div class="output-item">
+                    <div class="output-icon">⚡</div>
+                    <span>Systems Loads</span>
+                </div>
+                <div class="output-item">
+                    <div class="output-icon">✅</div>
+                    <span>Compliance Matrix</span>
+                </div>
+                <div class="output-item">
+                    <div class="output-icon">🎨</div>
+                    <span>CAD Geometry</span>
+                </div>
+                <div class="output-item">
+                    <div class="output-icon">📦</div>
+                    <span>glTF / GLB Export</span>
+                </div>
+                <div class="output-item">
+                    <div class="output-icon">🖨️</div>
+                    <span>STL / OBJ Export</span>
+                </div>
+                <div class="output-item">
+                    <div class="output-icon">📋</div>
+                    <span>JSON Data</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 12. 3D Visualization -->
+    <section class="section section-dark visualization">
+        <div class="container">
+            <h2 class="section-headline text-center reveal">See What The Math Sees</h2>
+            <p class="body-large text-center visualization-subtitle reveal">
+                Engineering-accurate geometry. Real-time updates.
+            </p>
+
+            <div class="visualization-window reveal">
+                <div class="visualization-titlebar">
+                    <div class="visualization-dot red"></div>
+                    <div class="visualization-dot yellow"></div>
+                    <div class="visualization-dot green"></div>
+                    <span class="visualization-title">MAGNET Viewer — patrol_32ft.mnet</span>
+                </div>
+                <div class="visualization-content">
+                    <div class="visualization-grid"></div>
+                    <svg class="visualization-hull" viewBox="0 0 400 200">
+                        <path class="hull-fill" d="M20,120 Q40,160 80,170 L320,170 Q360,160 380,120 L360,90 Q320,40 280,30 L120,30 Q80,40 40,90 Z"/>
+                        <path d="M20,120 Q40,160 80,170 L320,170 Q360,160 380,120 L360,90 Q320,40 280,30 L120,30 Q80,40 40,90 Z"/>
+                        <path d="M30,100 L370,100" style="stroke: rgba(0,113,227,0.5); stroke-dasharray: 5,5;"/>
+                        <path d="M100,30 L100,170" style="stroke: rgba(255,255,255,0.2);"/>
+                        <path d="M200,30 L200,170" style="stroke: rgba(255,255,255,0.2);"/>
+                        <path d="M300,30 L300,170" style="stroke: rgba(255,255,255,0.2);"/>
+                    </svg>
+                </div>
+            </div>
+
+            <div class="visualization-code reveal">
+                <pre><code><span class="keyword">from</span> magnet.webgl.geometry_service <span class="keyword">import</span> <span class="function">GeometryService</span>
+<span class="keyword">from</span> magnet.webgl.exporter <span class="keyword">import</span> GeometryExporter, ExportFormat
+
+<span class="comment"># Single authoritative geometry source — no drift</span>
+service = <span class="function">GeometryService</span>(state_manager=manager)
+mesh, mode = service.<span class="function">get_hull_geometry</span>(lod=<span class="string">"high"</span>)
+
+<span class="comment"># Export with full traceability</span>
+exporter = <span class="function">GeometryExporter</span>(design_id=<span class="string">"patrol_32ft"</span>)
+result = exporter.<span class="function">export</span>(mesh, ExportFormat.GLB)</code></pre>
+            </div>
+        </div>
+    </section>
+
+    <!-- 13. Integration -->
+    <section class="section section-gray integration">
+        <div class="container">
+            <h2 class="section-headline text-center reveal">Works With Your Tools</h2>
+            <div class="integration-flow reveal">
+                <div class="integration-magnet">MAGNET</div>
+                <div class="integration-arrow">→</div>
+                <div class="integration-tools">
+                    <div class="integration-tool">Rhino</div>
+                    <div class="integration-tool">CADMATIC</div>
+                    <div class="integration-tool">ShipConstructor</div>
+                    <div class="integration-tool">NAPA</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 14. Security -->
+    <section class="section security">
+        <div class="container">
+            <h2 class="section-headline text-center reveal">Built for Classified Programs</h2>
+            <div class="security-grid reveal-stagger">
+                <div class="security-item">
+                    <div class="security-icon">🔒</div>
+                    <span>Fully offline mode</span>
+                </div>
+                <div class="security-item">
+                    <div class="security-icon">🖥️</div>
+                    <span>Encrypted GPU clusters</span>
+                </div>
+                <div class="security-item">
+                    <div class="security-icon">🔐</div>
+                    <span>WireGuard tunnels</span>
+                </div>
+                <div class="security-item">
+                    <div class="security-icon">📡</div>
+                    <span>Zero plaintext transmission</span>
+                </div>
+                <div class="security-item">
+                    <div class="security-icon">💾</div>
+                    <span>AES-256-XTS at rest</span>
+                </div>
+                <div class="security-item">
+                    <div class="security-icon">🛡️</div>
+                    <span>TLS 1.3 inference</span>
+                </div>
+                <div class="security-item">
+                    <div class="security-icon">📦</div>
+                    <span>Containerized isolation</span>
+                </div>
+                <div class="security-item">
+                    <div class="security-icon">🚫</div>
+                    <span>Air-gapped deployment</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 15. Roadmap -->
+    <section class="section section-dark roadmap" id="roadmap">
+        <div class="container">
+            <h2 class="section-headline text-center reveal">Where MAGNET Is Going</h2>
+            <div class="roadmap-timeline reveal-stagger">
+                <div class="roadmap-card">
+                    <div class="roadmap-version">V2</div>
+                    <div class="roadmap-title">Concept-to-Preliminary</div>
+                    <ul class="roadmap-features">
+                        <li>Design variant generation</li>
+                        <li>Multi-objective optimization</li>
+                        <li>Natural language briefs</li>
+                        <li>Sketch interpretation</li>
+                        <li>Automated trade studies</li>
+                    </ul>
+                </div>
+                <div class="roadmap-card">
+                    <div class="roadmap-version">V3</div>
+                    <div class="roadmap-title">Interior + Systems</div>
+                    <ul class="roadmap-features">
+                        <li>Advanced spatial packing</li>
+                        <li>Corridor generation</li>
+                        <li>Macro-routing (piping, HVAC)</li>
+                        <li>Interactive 3D walkthrough</li>
+                        <li>Context-aware recommendations</li>
+                    </ul>
+                </div>
+                <div class="roadmap-card">
+                    <div class="roadmap-version">V4</div>
+                    <div class="roadmap-title">Production-Grade</div>
+                    <ul class="roadmap-features">
+                        <li>3D routing with clash detection</li>
+                        <li>Bulkhead penetrations</li>
+                        <li>Full class rule automation</li>
+                        <li>STEP/IGES CAD export</li>
+                        <li>FEA integration</li>
+                    </ul>
+                </div>
+                <div class="roadmap-card">
+                    <div class="roadmap-version">V5</div>
+                    <div class="roadmap-title">Beyond Marine</div>
+                    <ul class="roadmap-features">
+                        <li>Architecture BIM mode</li>
+                        <li>Aerospace design</li>
+                        <li>Ground vehicle design</li>
+                        <li>Universal CAD pipeline</li>
+                        <li>IFC/STEP export</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 16. Founder's Note -->
+    <section class="section founder">
+        <div class="container">
+            <div class="reveal">
+                <p class="founder-quote">
+                    "Could one system unify the entire naval design spiral — mission, hull, physics, structure, systems, interior, routing, compliance — into a single reasoning engine?"
+                </p>
+                <h2 class="founder-answer text-gradient">The answer is yes.</h2>
+                <p class="founder-proof">And this repository is proof.</p>
+            </div>
+            <div class="founder-signature reveal">
+                <p class="founder-name">Ben Gibson</p>
+                <p class="founder-title">Founder, 1Quant Logistics</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- 17. CTA Footer -->
+    <footer class="footer">
+        <div class="container">
+            <h2 class="footer-title reveal">MAGNET</h2>
+            <p class="footer-tagline reveal">The Design Operating System</p>
+            <p class="footer-stats reveal">58 modules • 2,090 tests • 12 physics engines • 150k+ LOC</p>
+            <p class="footer-closing reveal">
+                One unified platform. Zero disconnected tools. Infinite possibilities.
+            </p>
+            <a href="mailto:contact@1quantlogistics.com" class="footer-cta reveal">
+                Get in Touch
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+            </a>
+            <div class="footer-bottom">
+                <p>© 2024 1Quant Logistics. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // ============================================
+        // INTERSECTION OBSERVER FOR SCROLL REVEALS
+        // ============================================
+        const observerOptions = {
+            root: null,
+            rootMargin: '0px',
+            threshold: 0.1
+        };
+
+        const revealObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+
+                    // Trigger number count-up if element has data-count
+                    const countElements = entry.target.querySelectorAll('[data-count]');
+                    countElements.forEach(el => animateCount(el));
+                }
+            });
+        }, observerOptions);
+
+        // Observe all reveal elements
+        document.querySelectorAll('.reveal, .reveal-stagger, .problem-card, .physics-card, .agent-card').forEach(el => {
+            revealObserver.observe(el);
+        });
+
+        // ============================================
+        // NUMBER COUNT-UP ANIMATION
+        // ============================================
+        function animateCount(element) {
+            if (element.dataset.animated) return;
+            element.dataset.animated = 'true';
+
+            const target = parseInt(element.dataset.count);
+            const duration = 2000;
+            const start = performance.now();
+
+            function update(currentTime) {
+                const elapsed = currentTime - start;
+                const progress = Math.min(elapsed / duration, 1);
+
+                // Easing function (ease-out-expo)
+                const easeProgress = 1 - Math.pow(1 - progress, 4);
+                const current = Math.floor(easeProgress * target);
+
+                element.textContent = current.toLocaleString();
+
+                if (progress < 1) {
+                    requestAnimationFrame(update);
+                } else {
+                    element.textContent = target.toLocaleString();
+                }
+            }
+
+            requestAnimationFrame(update);
+        }
+
+        // ============================================
+        // HERO CANVAS ANIMATION
+        // ============================================
+        const canvas = document.getElementById('heroCanvas');
+        if (canvas) {
+            const ctx = canvas.getContext('2d');
+            let particles = [];
+            let animationId;
+
+            function resizeCanvas() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                initParticles();
+            }
+
+            function initParticles() {
+                particles = [];
+                const numParticles = Math.floor((canvas.width * canvas.height) / 15000);
+
+                for (let i = 0; i < numParticles; i++) {
+                    particles.push({
+                        x: Math.random() * canvas.width,
+                        y: Math.random() * canvas.height,
+                        vx: (Math.random() - 0.5) * 0.3,
+                        vy: (Math.random() - 0.5) * 0.3,
+                        size: Math.random() * 2 + 0.5,
+                        opacity: Math.random() * 0.5 + 0.2
+                    });
+                }
+            }
+
+            function drawParticles() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // Draw grid
+                ctx.strokeStyle = 'rgba(0, 113, 227, 0.05)';
+                ctx.lineWidth = 1;
+
+                const gridSize = 60;
+                for (let x = 0; x < canvas.width; x += gridSize) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, 0);
+                    ctx.lineTo(x, canvas.height);
+                    ctx.stroke();
+                }
+                for (let y = 0; y < canvas.height; y += gridSize) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(canvas.width, y);
+                    ctx.stroke();
+                }
+
+                // Draw particles
+                particles.forEach(p => {
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(0, 113, 227, ${p.opacity})`;
+                    ctx.fill();
+
+                    // Update position
+                    p.x += p.vx;
+                    p.y += p.vy;
+
+                    // Wrap around
+                    if (p.x < 0) p.x = canvas.width;
+                    if (p.x > canvas.width) p.x = 0;
+                    if (p.y < 0) p.y = canvas.height;
+                    if (p.y > canvas.height) p.y = 0;
+                });
+
+                // Draw connections
+                ctx.strokeStyle = 'rgba(0, 113, 227, 0.1)';
+                ctx.lineWidth = 0.5;
+
+                for (let i = 0; i < particles.length; i++) {
+                    for (let j = i + 1; j < particles.length; j++) {
+                        const dx = particles[i].x - particles[j].x;
+                        const dy = particles[i].y - particles[j].y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+
+                        if (dist < 100) {
+                            ctx.beginPath();
+                            ctx.moveTo(particles[i].x, particles[i].y);
+                            ctx.lineTo(particles[j].x, particles[j].y);
+                            ctx.globalAlpha = 1 - (dist / 100);
+                            ctx.stroke();
+                            ctx.globalAlpha = 1;
+                        }
+                    }
+                }
+
+                animationId = requestAnimationFrame(drawParticles);
+            }
+
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+            drawParticles();
+        }
+
+        // ============================================
+        // DESIGN SPIRAL ANIMATION
+        // ============================================
+        const spiralPhases = document.querySelectorAll('.spiral-phase');
+        let currentPhase = 0;
+
+        function animateSpiral() {
+            spiralPhases.forEach((phase, index) => {
+                phase.classList.remove('active');
+            });
+
+            spiralPhases[currentPhase].classList.add('active');
+            currentPhase = (currentPhase + 1) % spiralPhases.length;
+        }
+
+        // Start spiral animation when section is visible
+        const spiralSection = document.querySelector('.spiral');
+        if (spiralSection) {
+            const spiralObserver = new IntersectionObserver((entries) => {
+                if (entries[0].isIntersecting) {
+                    setInterval(animateSpiral, 1500);
+                    spiralObserver.disconnect();
+                }
+            }, { threshold: 0.3 });
+
+            spiralObserver.observe(spiralSection);
+        }
+
+        // ============================================
+        // SMOOTH SCROLL FOR NAVIGATION
+        // ============================================
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+
+        // ============================================
+        // NAVIGATION SCROLL EFFECT
+        // ============================================
+        const nav = document.querySelector('.nav');
+        let lastScroll = 0;
+
+        window.addEventListener('scroll', () => {
+            const currentScroll = window.pageYOffset;
+
+            if (currentScroll > 100) {
+                nav.style.background = 'rgba(0, 0, 0, 0.95)';
+            } else {
+                nav.style.background = 'rgba(0, 0, 0, 0.8)';
+            }
+
+            lastScroll = currentScroll;
+        });
+    </script>
+</body>
+</html>

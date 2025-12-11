@@ -6,12 +6,16 @@ providing a complete view of all routed systems.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any, Set
+from typing import Dict, List, Optional, Any, Set, TYPE_CHECKING
 from datetime import datetime
 from enum import Enum
+import hashlib
 
 from .system_type import SystemType
 from .system_topology import SystemTopology, TopologyStatus
+
+if TYPE_CHECKING:
+    from ..contracts.routing_lineage import RoutingLineage
 
 __all__ = ['RoutingLayout', 'LayoutStatus']
 
@@ -69,6 +73,10 @@ class RoutingLayout:
     created_at: Optional[datetime] = None
     modified_at: Optional[datetime] = None
     version: int = 1
+    content_hash: Optional[str] = None
+
+    # Lineage tracking (V3)
+    lineage: Optional['RoutingLineage'] = None
 
     # Metadata
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -78,6 +86,66 @@ class RoutingLayout:
         if self.created_at is None:
             self.created_at = datetime.utcnow()
         self.modified_at = datetime.utcnow()
+
+    # =========================================================================
+    # Content Hashing
+    # =========================================================================
+
+    def compute_content_hash(self) -> str:
+        """
+        Compute deterministic hash of all routing content.
+
+        The hash covers all nodes and trunks in sorted order to ensure
+        reproducibility regardless of insertion order.
+
+        Returns:
+            SHA-256 hash of routing content (first 32 chars)
+        """
+        hasher = hashlib.sha256()
+
+        # Hash each topology in sorted order by system type
+        for system_type in sorted(self.topologies.keys(), key=lambda x: x.value):
+            topology = self.topologies[system_type]
+            hasher.update(f"system:{system_type.value}\n".encode())
+
+            # Hash nodes in sorted order
+            for node_id in sorted(topology.nodes.keys()):
+                node = topology.nodes[node_id]
+                hasher.update(f"node:{node.node_id}:{node.space_id}:{node.node_type.value}\n".encode())
+
+            # Hash trunks in sorted order
+            for trunk_id in sorted(topology.trunks.keys()):
+                trunk = topology.trunks[trunk_id]
+                path_str = ','.join(trunk.path_spaces)
+                hasher.update(f"trunk:{trunk.trunk_id}:{trunk.from_node_id}:{trunk.to_node_id}:{path_str}\n".encode())
+
+        return hasher.hexdigest()[:32]
+
+    def update_hash(self) -> bool:
+        """
+        Update content hash and increment version if changed.
+
+        Returns:
+            True if hash changed, False if unchanged
+        """
+        new_hash = self.compute_content_hash()
+        if new_hash != self.content_hash:
+            self.content_hash = new_hash
+            self.version += 1
+            self.modified_at = datetime.utcnow()
+            return True
+        return False
+
+    def verify_hash(self) -> bool:
+        """
+        Verify that stored hash matches computed hash.
+
+        Returns:
+            True if hash is valid, False if corrupted/modified
+        """
+        if self.content_hash is None:
+            return True  # No hash to verify
+        return self.compute_content_hash() == self.content_hash
 
     # =========================================================================
     # Topology Management
@@ -333,6 +401,8 @@ class RoutingLayout:
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'modified_at': self.modified_at.isoformat() if self.modified_at else None,
             'version': self.version,
+            'content_hash': self.content_hash,
+            'lineage': self.lineage.to_dict() if self.lineage else None,
             'metadata': self.metadata,
         }
 
@@ -347,6 +417,7 @@ class RoutingLayout:
             total_trunk_length_m=data.get('total_trunk_length_m', 0.0),
             zone_crossing_count=data.get('zone_crossing_count', 0),
             version=data.get('version', 1),
+            content_hash=data.get('content_hash'),
             metadata=data.get('metadata', {}),
         )
 
@@ -360,6 +431,11 @@ class RoutingLayout:
         for st_value, topo_data in data.get('topologies', {}).items():
             topology = SystemTopology.from_dict(topo_data)
             layout.topologies[SystemType(st_value)] = topology
+
+        # Restore lineage (V3)
+        if data.get('lineage'):
+            from ..contracts.routing_lineage import RoutingLineage
+            layout.lineage = RoutingLineage.from_dict(data['lineage'])
 
         return layout
 

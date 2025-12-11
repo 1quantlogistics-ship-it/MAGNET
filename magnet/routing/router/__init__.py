@@ -20,6 +20,11 @@ try:
         calculate_cable_size,
         calculate_duct_size,
     )
+    from magnet.routing.router.steiner_router import (
+        SteinerRouter,
+        SteinerResult,
+        SteinerNode,
+    )
     _HAS_ALPHA = True
 except ImportError:
     _HAS_ALPHA = False
@@ -31,6 +36,9 @@ except ImportError:
     calculate_pipe_diameter = None
     calculate_cable_size = None
     calculate_duct_size = None
+    SteinerRouter = None
+    SteinerResult = None
+    SteinerNode = None
 
 # BRAVO exports
 from magnet.routing.router.redundancy import (
@@ -67,6 +75,10 @@ __all__ = [
     'calculate_pipe_diameter',
     'calculate_cable_size',
     'calculate_duct_size',
+    # V3 - SteinerRouter
+    'SteinerRouter',
+    'SteinerResult',
+    'SteinerNode',
     # BRAVO - Redundancy
     'RedundancyChecker',
     'RedundancyResult',
