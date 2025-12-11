@@ -1,9 +1,12 @@
 """
-deployment/api.py - REST API v1.1
+deployment/api.py - REST API v1.2
 BRAVO OWNS THIS FILE.
 
 Section 56: Deployment Infrastructure
 Provides REST API with full PhaseMachine integration.
+
+v1.2 Fixes:
+- Blocker #12: Forward reference bug - Pydantic models at module level
 
 v1.1 Fixes:
 - Blocker #5: WebSocket task launched in startup
@@ -11,7 +14,6 @@ v1.1 Fixes:
 - Blocker #11: Full PhaseMachine integration
 """
 
-from __future__ import annotations
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from datetime import datetime, timezone
 import logging
@@ -21,6 +23,78 @@ if TYPE_CHECKING:
     from magnet.bootstrap.app import AppContext
 
 logger = logging.getLogger("deployment.api")
+
+
+# =============================================================================
+# Request/Response Models (v1.2: Moved to module level to fix forward ref bug)
+# =============================================================================
+
+try:
+    from pydantic import BaseModel, field_validator
+
+    class DesignCreate(BaseModel):
+        """Request model for creating a new design."""
+        name: str
+        mission: Optional[Dict[str, Any]] = None
+        vessel_type: Optional[str] = None
+
+    class DesignUpdate(BaseModel):
+        """Request model for updating a design value."""
+        path: str
+        value: Any
+
+        @field_validator('path')
+        @classmethod
+        def validate_path(cls, v):
+            # v1.1: Allow aliased paths (fixes blocker #8)
+            valid_prefixes = [
+                'metadata', 'mission', 'hull', 'structure', 'propulsion',
+                'systems', 'weight', 'stability', 'compliance', 'phase_states',
+                'production', 'outfitting', 'arrangement',
+            ]
+            prefix = v.split('.')[0]
+            if prefix not in valid_prefixes:
+                raise ValueError(f'Invalid path prefix: {prefix}. Valid: {valid_prefixes}')
+            return v
+
+    class PhaseRun(BaseModel):
+        """Request model for running a phase."""
+        phases: Optional[List[str]] = None
+        max_iterations: int = 5
+        async_mode: bool = False
+
+    class PhaseApprove(BaseModel):
+        """Request model for approving a phase."""
+        comment: Optional[str] = None
+
+    class JobSubmit(BaseModel):
+        """Request model for submitting a background job."""
+        job_type: str
+        payload: Dict[str, Any] = {}
+        priority: str = "normal"
+
+    class ValidationRun(BaseModel):
+        """Request model for running validation."""
+        phase: Optional[str] = None
+        validators: Optional[List[str]] = None
+
+    _PYDANTIC_AVAILABLE = True
+
+except ImportError:
+    _PYDANTIC_AVAILABLE = False
+    # Stub classes for when pydantic is not available
+    class DesignCreate:
+        pass
+    class DesignUpdate:
+        pass
+    class PhaseRun:
+        pass
+    class PhaseApprove:
+        pass
+    class JobSubmit:
+        pass
+    class ValidationRun:
+        pass
 
 
 def create_fastapi_app(context: "AppContext" = None):
@@ -37,7 +111,6 @@ def create_fastapi_app(context: "AppContext" = None):
         from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
         from fastapi.middleware.cors import CORSMiddleware
         from fastapi.responses import JSONResponse
-        from pydantic import BaseModel, field_validator
     except ImportError:
         logger.warning("FastAPI not installed, creating stub app")
         return _create_stub_app()
@@ -75,50 +148,6 @@ def create_fastapi_app(context: "AppContext" = None):
 
     # WebSocket manager
     ws_manager = get_connection_manager()
-
-    # =========================================================================
-    # Request/Response Models with validation (fixes blocker #8)
-    # =========================================================================
-
-    class DesignCreate(BaseModel):
-        name: str
-        mission: Optional[Dict[str, Any]] = None
-        vessel_type: Optional[str] = None
-
-    class DesignUpdate(BaseModel):
-        path: str
-        value: Any
-
-        @field_validator('path')
-        @classmethod
-        def validate_path(cls, v):
-            # v1.1: Allow aliased paths (fixes blocker #8)
-            valid_prefixes = [
-                'metadata', 'mission', 'hull', 'structure', 'propulsion',
-                'systems', 'weight', 'stability', 'compliance', 'phase_states',
-                'production', 'outfitting', 'arrangement',
-            ]
-            prefix = v.split('.')[0]
-            if prefix not in valid_prefixes:
-                raise ValueError(f'Invalid path prefix: {prefix}. Valid: {valid_prefixes}')
-            return v
-
-    class PhaseRun(BaseModel):
-        phases: Optional[List[str]] = None
-        max_iterations: int = 5
-        async_mode: bool = False
-
-    class PhaseApprove(BaseModel):
-        comment: Optional[str] = None
-
-    class JobSubmit(BaseModel):
-        job_type: str
-        payload: Dict[str, Any] = {}
-        priority: str = "normal"
-
-    class ValidationRun(BaseModel):
-        phase: Optional[str] = None
-        validators: Optional[List[str]] = None
 
     # =========================================================================
     # Dependencies

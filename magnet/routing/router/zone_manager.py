@@ -182,6 +182,93 @@ class ZoneManager:
         return None
 
     # =========================================================================
+    # Zone Cost Multipliers
+    # =========================================================================
+
+    # Cost multipliers for zone crossings
+    ZONE_CROSSING_COSTS = {
+        'fire': 2.0,       # Double cost for fire zone crossing
+        'watertight': 3.0,  # Triple cost for watertight crossing
+        'hazardous': 4.0,   # High cost for hazardous area
+        'zone': 1.5,        # Minor cost for generic zone crossing
+    }
+
+    def get_edge_cost_multiplier(
+        self,
+        from_space: str,
+        to_space: str,
+        system_type: SystemType,
+    ) -> float:
+        """
+        Get cost multiplier for edge based on zone crossings.
+
+        Used to integrate zone compliance into MST edge weights,
+        so routing naturally prefers compliant paths.
+
+        Args:
+            from_space: Source space ID
+            to_space: Destination space ID
+            system_type: Type of system being routed
+
+        Returns:
+            Cost multiplier (1.0 = no crossing, inf = prohibited)
+        """
+        props = get_system_properties(system_type)
+
+        # Check boundary type
+        boundary_type = self.get_boundary_type(from_space, to_space)
+
+        if boundary_type is None:
+            return 1.0  # No boundary, no cost increase
+
+        # Check if crossing is prohibited
+        if boundary_type == "fire" and not props.can_cross_fire_zone:
+            return float('inf')  # Prohibit
+        if boundary_type == "watertight" and not props.can_cross_watertight:
+            return float('inf')  # Prohibit
+
+        # Check prohibited zones
+        from_zone = self._space_to_zone.get(from_space)
+        to_zone = self._space_to_zone.get(to_space)
+        to_type = self._zone_types.get(to_zone) if to_zone else None
+
+        for prohibited in props.prohibited_zones:
+            if to_type and prohibited.lower() in str(to_type.value).lower():
+                return float('inf')  # Prohibit
+
+        # Return cost multiplier
+        return self.ZONE_CROSSING_COSTS.get(boundary_type, 1.0)
+
+    def get_path_cost_multiplier(
+        self,
+        path_spaces: List[str],
+        system_type: SystemType,
+    ) -> float:
+        """
+        Get total cost multiplier for a path.
+
+        Args:
+            path_spaces: List of space IDs in path
+            system_type: Type of system
+
+        Returns:
+            Product of all edge cost multipliers (inf if any prohibited)
+        """
+        if len(path_spaces) < 2:
+            return 1.0
+
+        total_multiplier = 1.0
+        for i in range(len(path_spaces) - 1):
+            multiplier = self.get_edge_cost_multiplier(
+                path_spaces[i], path_spaces[i + 1], system_type
+            )
+            if multiplier == float('inf'):
+                return float('inf')
+            total_multiplier *= multiplier
+
+        return total_multiplier
+
+    # =========================================================================
     # Crossing Validation
     # =========================================================================
 

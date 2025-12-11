@@ -149,9 +149,9 @@ class TrunkRouter:
                 )
                 return result
 
-        # Build MST
+        # Build MST with deterministic tie-breaking
         try:
-            mst = nx.minimum_spanning_tree(G, weight='cost')
+            mst = self._build_deterministic_mst(G)
         except Exception as e:
             result.errors.append(f"Failed to build MST: {e}")
             return result
@@ -228,6 +228,60 @@ class TrunkRouter:
 
         return result
 
+    def _build_deterministic_mst(self, graph: 'nx.Graph') -> 'nx.Graph':
+        """
+        Build MST with deterministic tie-breaking.
+
+        Uses Kruskal's algorithm with explicit edge sorting to ensure
+        same inputs always produce same MST, even with equal-weight edges.
+
+        Args:
+            graph: NetworkX graph with 'cost' edge weights
+
+        Returns:
+            MST as NetworkX graph
+        """
+        # Get all edges with weights
+        edges = []
+        for u, v, data in graph.edges(data=True):
+            cost = data.get('cost', data.get('weight', 1.0))
+            # Tiebreaker: sorted node IDs
+            tiebreaker = tuple(sorted([u, v]))
+            edges.append((cost, tiebreaker, u, v, data))
+
+        # Sort by (cost, tiebreaker) for determinism
+        edges.sort(key=lambda x: (x[0], x[1]))
+
+        # Kruskal's algorithm with union-find
+        parent = {node: node for node in graph.nodes()}
+        rank = {node: 0 for node in graph.nodes()}
+
+        def find(x):
+            if parent[x] != x:
+                parent[x] = find(parent[x])
+            return parent[x]
+
+        def union(x, y):
+            px, py = find(x), find(y)
+            if px == py:
+                return False
+            if rank[px] < rank[py]:
+                px, py = py, px
+            parent[py] = px
+            if rank[px] == rank[py]:
+                rank[px] += 1
+            return True
+
+        # Build MST
+        mst = nx.Graph()
+        mst.add_nodes_from(graph.nodes(data=True))
+
+        for cost, tiebreaker, u, v, data in edges:
+            if union(u, v):
+                mst.add_edge(u, v, **data)
+
+        return mst
+
     def _create_trunk(
         self,
         system_type: SystemType,
@@ -240,8 +294,14 @@ class TrunkRouter:
         path_spaces = edge_data.get('path_spaces', [])
         path_length = edge_data.get('path_length', 0.0)
 
+        # Generate deterministic trunk ID from content
         trunk = TrunkSegment(
-            trunk_id=generate_trunk_id(),
+            trunk_id=generate_trunk_id(
+                system_type=system_type.value,
+                from_node_id=from_node_id,
+                to_node_id=to_node_id,
+                path_spaces=path_spaces,
+            ),
             system_type=system_type,
             from_node_id=from_node_id,
             to_node_id=to_node_id,
@@ -318,7 +378,12 @@ class TrunkRouter:
                             total_length += edge.get('path_length', 0.0)
 
                     trunk = TrunkSegment(
-                        trunk_id=generate_trunk_id(),
+                        trunk_id=generate_trunk_id(
+                            system_type=system_type.value,
+                            from_node_id=from_node,
+                            to_node_id=to_node,
+                            path_spaces=combined_spaces,
+                        ),
                         system_type=system_type,
                         from_node_id=from_node,
                         to_node_id=to_node,
@@ -470,19 +535,25 @@ class TrunkRouter:
                 )
 
                 if alt_path and len(alt_path) >= 2:
-                    # Create redundant trunk
+                    # Get path through spaces first for deterministic ID
+                    combined_spaces = self._get_combined_path_spaces(
+                        G, alt_path
+                    )
+
+                    # Create redundant trunk with deterministic ID
                     trunk = TrunkSegment(
-                        trunk_id=generate_trunk_id(),
+                        trunk_id=generate_trunk_id(
+                            system_type=system_type.value,
+                            from_node_id=source_id,
+                            to_node_id=node.node_id,
+                            path_spaces=combined_spaces,
+                        ),
                         system_type=system_type,
                         from_node_id=source_id,
                         to_node_id=node.node_id,
                         is_redundant_path=True,
                     )
 
-                    # Get path through spaces
-                    combined_spaces = self._get_combined_path_spaces(
-                        G, alt_path
-                    )
                     trunk.set_path(combined_spaces)
 
                     if space_centers:

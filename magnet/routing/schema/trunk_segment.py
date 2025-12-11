@@ -8,7 +8,7 @@ passing through one or more compartments/spaces.
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Any, Tuple
 from datetime import datetime
-import uuid
+import hashlib
 import math
 
 from .system_type import SystemType
@@ -16,9 +16,39 @@ from .system_type import SystemType
 __all__ = ['TrunkSegment', 'TrunkSize', 'generate_trunk_id']
 
 
-def generate_trunk_id() -> str:
-    """Generate unique trunk ID."""
-    return f"trunk_{uuid.uuid4().hex[:12]}"
+def generate_trunk_id(
+    system_type: Optional[str] = None,
+    from_node_id: Optional[str] = None,
+    to_node_id: Optional[str] = None,
+    path_spaces: Optional[List[str]] = None,
+) -> str:
+    """
+    Generate deterministic trunk ID from content.
+
+    If all parameters provided, generates content-based hash for reproducibility.
+    If parameters omitted, generates sequence-based ID for backwards compatibility.
+
+    Args:
+        system_type: System type value string
+        from_node_id: Starting node ID
+        to_node_id: Ending node ID
+        path_spaces: List of space IDs in path
+
+    Returns:
+        Deterministic trunk ID
+    """
+    if system_type and from_node_id and to_node_id:
+        # Sort endpoints for bidirectional consistency
+        endpoints = tuple(sorted([from_node_id, to_node_id]))
+        spaces_str = ','.join(path_spaces) if path_spaces else ''
+        content = f"{system_type}:{endpoints[0]}:{endpoints[1]}:{spaces_str}"
+        return f"trunk_{hashlib.sha256(content.encode()).hexdigest()[:12]}"
+    else:
+        # Fallback: use counter for backwards compatibility
+        if not hasattr(generate_trunk_id, '_counter'):
+            generate_trunk_id._counter = 0
+        generate_trunk_id._counter += 1
+        return f"trunk_{generate_trunk_id._counter:012d}"
 
 
 @dataclass

@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Any, Tuple
 from enum import Enum
 from datetime import datetime
-import uuid
+import hashlib
 
 from .system_type import SystemType
 
@@ -25,9 +25,36 @@ class NodeType(Enum):
     PASS_THROUGH = "pass_through"  # Routes through (penetration, transition)
 
 
-def generate_node_id() -> str:
-    """Generate unique node ID."""
-    return f"node_{uuid.uuid4().hex[:12]}"
+def generate_node_id(
+    system_type: Optional[str] = None,
+    node_type: Optional[str] = None,
+    space_id: Optional[str] = None,
+    name: Optional[str] = None,
+) -> str:
+    """
+    Generate deterministic node ID from content.
+
+    If parameters provided, generates content-based hash for reproducibility.
+    If parameters omitted, generates sequence-based ID for backwards compatibility.
+
+    Args:
+        system_type: System type value string
+        node_type: Node type value string
+        space_id: Space ID where node is located
+        name: Optional node name for disambiguation
+
+    Returns:
+        Deterministic node ID
+    """
+    if system_type and node_type and space_id:
+        content = f"{system_type}:{node_type}:{space_id}:{name or ''}"
+        return f"node_{hashlib.sha256(content.encode()).hexdigest()[:12]}"
+    else:
+        # Fallback: use counter for backwards compatibility
+        if not hasattr(generate_node_id, '_counter'):
+            generate_node_id._counter = 0
+        generate_node_id._counter += 1
+        return f"node_{generate_node_id._counter:012d}"
 
 
 @dataclass

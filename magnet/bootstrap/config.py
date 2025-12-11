@@ -19,19 +19,32 @@ logger = logging.getLogger("bootstrap.config")
 
 @dataclass
 class LLMConfig:
-    """LLM provider configuration."""
+    """LLM provider configuration with safety features."""
 
+    # Provider settings
     provider: str = "anthropic"
     model: str = "claude-sonnet-4-20250514"
     api_key: str = ""
-    base_url: Optional[str] = None
+    base_url: Optional[str] = None  # For local LLM (Ollama)
     max_tokens: int = 4096
     temperature: float = 0.7
     timeout_seconds: int = 120
 
+    # Safety & Cost Control
+    fallback_to_deterministic: bool = True  # Use fallback if LLM fails
+    retry_attempts: int = 2  # Retry on transient errors
+    retry_delay_ms: int = 1000  # Delay between retries
+    max_requests_per_minute: int = 60  # Rate limit
+    max_cost_per_session_usd: float = 5.0  # Cost cap
+
+    # Caching
+    enable_caching: bool = True  # Enable response caching
+    cache_ttl_seconds: int = 3600  # Cache TTL (1 hour)
+
     @classmethod
     def from_env(cls) -> "LLMConfig":
         return cls(
+            # Provider settings
             provider=os.getenv("MAGNET_LLM_PROVIDER", "anthropic"),
             model=os.getenv("MAGNET_LLM_MODEL", "claude-sonnet-4-20250514"),
             api_key=os.getenv("MAGNET_LLM_API_KEY", os.getenv("ANTHROPIC_API_KEY", "")),
@@ -39,6 +52,15 @@ class LLMConfig:
             max_tokens=int(os.getenv("MAGNET_LLM_MAX_TOKENS", "4096")),
             temperature=float(os.getenv("MAGNET_LLM_TEMPERATURE", "0.7")),
             timeout_seconds=int(os.getenv("MAGNET_LLM_TIMEOUT", "120")),
+            # Safety & Cost Control
+            fallback_to_deterministic=os.getenv("MAGNET_LLM_FALLBACK", "true").lower() == "true",
+            retry_attempts=int(os.getenv("MAGNET_LLM_RETRY_ATTEMPTS", "2")),
+            retry_delay_ms=int(os.getenv("MAGNET_LLM_RETRY_DELAY_MS", "1000")),
+            max_requests_per_minute=int(os.getenv("MAGNET_LLM_RATE_LIMIT", "60")),
+            max_cost_per_session_usd=float(os.getenv("MAGNET_LLM_MAX_COST", "5.0")),
+            # Caching
+            enable_caching=os.getenv("MAGNET_LLM_CACHE", "true").lower() == "true",
+            cache_ttl_seconds=int(os.getenv("MAGNET_LLM_CACHE_TTL", "3600")),
         )
 
 
