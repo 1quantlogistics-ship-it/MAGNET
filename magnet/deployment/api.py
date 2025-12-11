@@ -708,3 +708,7 @@ def _create_stub_app():
             return decorator
 
     return StubApp()
+
+
+# Module-level app instance for uvicorn
+app = create_fastapi_app()
