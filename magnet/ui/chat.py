@@ -19,7 +19,7 @@ from .utils import get_state_value, set_state_value, get_phase_status
 
 if TYPE_CHECKING:
     from magnet.core.state_manager import StateManager
-    from magnet.agents.conductor import Conductor
+    from magnet.kernel.conductor import Conductor
 
 logger = logging.getLogger("ui.chat")
 

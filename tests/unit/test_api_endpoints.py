@@ -93,8 +93,8 @@ def mock_context(mock_state_manager, mock_phase_machine, mock_conductor, mock_vi
 
     def resolve(cls):
         from magnet.core.state_manager import StateManager
-        from magnet.core.phase_machine import PhaseMachine
-        from magnet.agents.conductor import Conductor
+        from magnet.core.phase_states import PhaseMachine
+        from magnet.kernel.conductor import Conductor
         from magnet.vision.router import VisionRouter
 
         if cls == StateManager or cls.__name__ == 'StateManager':

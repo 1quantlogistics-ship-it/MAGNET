@@ -170,7 +170,7 @@ def create_fastapi_app(context: "AppContext" = None):
     def get_conductor():
         if context and context.container:
             try:
-                from magnet.agents.conductor import Conductor
+                from magnet.kernel.conductor import Conductor
                 return context.container.resolve(Conductor)
             except Exception as e:
                 logger.warning(f"Could not resolve Conductor: {e}")
@@ -179,7 +179,7 @@ def create_fastapi_app(context: "AppContext" = None):
     def get_phase_machine():
         if context and context.container:
             try:
-                from magnet.core.phase_machine import PhaseMachine
+                from magnet.core.phase_states import PhaseMachine
                 return context.container.resolve(PhaseMachine)
             except Exception as e:
                 logger.warning(f"Could not resolve PhaseMachine: {e}")
@@ -235,7 +235,7 @@ def create_fastapi_app(context: "AppContext" = None):
 
         if context and context.container:
             try:
-                from magnet.agents.conductor import Conductor
+                from magnet.kernel.conductor import Conductor
                 context.container.resolve(Conductor)
                 checks["conductor"] = True
             except Exception:

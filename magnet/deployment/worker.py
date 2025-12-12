@@ -440,7 +440,7 @@ class Worker:
         # Try to get Conductor from container
         if self.container:
             try:
-                from magnet.agents.conductor import Conductor
+                from magnet.kernel.conductor import Conductor
                 conductor = self.container.resolve(Conductor)
                 result = await asyncio.to_thread(conductor.run_phase, phase)
                 return {
@@ -470,7 +470,7 @@ class Worker:
 
         if self.container:
             try:
-                from magnet.agents.conductor import Conductor
+                from magnet.kernel.conductor import Conductor
                 conductor = self.container.resolve(Conductor)
 
                 run = await asyncio.to_thread(
