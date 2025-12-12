@@ -168,7 +168,7 @@ def _handle_run_phase(app: "MAGNETApp", parameters: Dict[str, Any]) -> Dict[str,
         raise ValueError("Missing 'phase' parameter")
 
     try:
-        from magnet.agents.conductor import Conductor
+        from magnet.kernel.conductor import Conductor
 
         conductor = app.container.resolve(Conductor)
         result = conductor.run_phase(phase)
@@ -201,7 +201,7 @@ def _handle_run_full_design(app: "MAGNETApp", parameters: Dict[str, Any]) -> Dic
     max_iterations = parameters.get("max_iterations", 5)
 
     try:
-        from magnet.agents.conductor import Conductor
+        from magnet.kernel.conductor import Conductor
 
         conductor = app.container.resolve(Conductor)
         run = conductor.run_full_design(phases=phases, max_iterations=max_iterations)

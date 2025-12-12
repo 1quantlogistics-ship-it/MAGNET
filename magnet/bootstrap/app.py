@@ -233,26 +233,23 @@ class MAGNETApp:
 
         # Conductor - needs everything (fixes blockers #1, #3)
         try:
-            from magnet.agents.conductor import Conductor
+            from magnet.kernel.conductor import Conductor
 
             def create_conductor():
                 try:
                     from magnet.core.state_manager import StateManager
-                    from magnet.core.phase_states import PhaseMachine
-                    from magnet.agents.factory import AgentFactory
-                    from magnet.agents.llm_client import LLMClient
+                    from magnet.kernel.registry import PhaseRegistry
 
                     container = self._context.container
                     return Conductor(
                         state_manager=container.resolve(StateManager),
-                        phase_machine=container.resolve(PhaseMachine),
-                        agent_factory=container.resolve(AgentFactory),
-                        llm_client=container.resolve(LLMClient),
-                        max_iterations=config.agent.max_iterations_per_phase,
+                        registry=PhaseRegistry(),
                     )
                 except Exception as e:
                     logger.warning(f"Conductor creation with deps failed: {e}")
-                    return Conductor()
+                    return Conductor(
+                        state_manager=container.resolve(StateManager),
+                    )
 
             self._services.add_factory(Conductor, create_conductor)
             self._context._initialized_components.append("Conductor")
@@ -391,7 +388,7 @@ class MAGNETApp:
                 pass
 
             try:
-                from magnet.agents.conductor import Conductor
+                from magnet.kernel.conductor import Conductor
                 ctx.conductor = self._context.container.resolve(Conductor)
             except Exception:
                 pass
