@@ -323,8 +323,8 @@ class AtomicBatch:
 
     Usage:
         with AtomicBatch(state) as batch:
-            batch.write("hull.beam", 6.0)
-            batch.write("hull.draft", 1.5)
+            batch.set("hull.beam", 6.0)
+            batch.set("hull.draft", 1.5)
     """
 
     def __init__(self, state: "StateManager"):
@@ -343,13 +343,15 @@ class AtomicBatch:
         else:
             self.tx_manager.commit()
 
-    def write(self, path: str, value: Any, source: str = "batch") -> None:
-        """Queue a write."""
-        if hasattr(self.state, 'set'):
-            self.state.set(path, value)
-        elif hasattr(self.state, 'write'):
-            self.state.write(path, value)
+    def set(self, path: str, value: Any, source: str = "transactions/batch") -> None:
+        """Queue a write - Hole #7 Fix: Use .set() with proper source."""
+        self.state.set(path, value, source)
         self._writes.append((path, value))
+
+    # Backwards compatibility alias
+    def write(self, path: str, value: Any, source: str = "transactions/batch") -> None:
+        """Deprecated: Use set() instead."""
+        self.set(path, value, source)
 
 
 def compare_and_swap(
@@ -373,10 +375,8 @@ def compare_and_swap(
                 current = None
 
             if current == expected:
-                if hasattr(state, 'set'):
-                    state.set(path, new_value)
-                elif hasattr(state, 'write'):
-                    state.write(path, new_value)
+                # Hole #7 Fix: Use .set() with proper source for provenance
+                state.set(path, new_value, "transactions/cas")
                 return True
             else:
                 # Rollback will happen automatically

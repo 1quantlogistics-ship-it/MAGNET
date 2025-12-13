@@ -222,33 +222,30 @@ class ProductionPlanningValidator(ValidatorInterface):
                     ))
 
             # === WRITE RESULTS ===
-            agent = "production/planning"
+            source = "production/planning"  # Hole #7 Fix: Proper source for provenance
 
             # Material takeoff
             material_data = material_result.to_dict()
-            state_manager.write(
+            state_manager.set(
                 "production.material_takeoff",
                 determinize_dict(material_data),
-                agent,
-                "Material takeoff quantities and weights"
+                source
             )
 
             # Assembly sequence
             assembly_data = assembly_result.to_dict()
-            state_manager.write(
+            state_manager.set(
                 "production.assembly_sequence",
                 determinize_dict(assembly_data),
-                agent,
-                "Work packages and dependencies"
+                source
             )
 
             # Build schedule
             schedule_data = schedule_result.to_dict()
-            state_manager.write(
+            state_manager.set(
                 "production.build_schedule",
                 determinize_dict(schedule_data),
-                agent,
-                "Build milestones and timeline"
+                source
             )
 
             # Production summary
@@ -259,11 +256,10 @@ class ProductionPlanningValidator(ValidatorInterface):
                 build_duration_days=schedule_result.total_days,
                 estimated_delivery=schedule_result.end_date,
             )
-            state_manager.write(
+            state_manager.set(
                 "production.summary",
                 determinize_dict(summary.to_dict()),
-                agent,
-                "Production planning summary"
+                source
             )
 
             # Set result state

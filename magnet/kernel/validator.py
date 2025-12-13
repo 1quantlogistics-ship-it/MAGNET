@@ -138,19 +138,11 @@ class KernelValidator(ValidatorInterface):
                 "warnings": result.warning_count,
             }
 
-            state_manager.write(
-                "kernel.validation_summary",
-                validation_summary,
-                agent,
-                "Kernel validation summary",
-            )
+            # Hole #7 Fix: Use .set() with proper source for provenance
+            source = "kernel/validator"
+            state_manager.set("kernel.validation_summary", validation_summary, source)
 
-            state_manager.write(
-                "kernel.validation_complete",
-                result.error_count == 0,
-                agent,
-                "Validation complete status",
-            )
+            state_manager.set("kernel.validation_complete", result.error_count == 0, source)
 
             # Determine result state
             if result.error_count > 0:

@@ -257,6 +257,78 @@ class MAGNETApp:
             logger.warning(f"Conductor not available: {e}")
 
         # =================================================================
+        # LAYER 3.5: Validator Pipeline Integration
+        # =================================================================
+        try:
+            from magnet.validators.registry import ValidatorRegistry
+            from magnet.validators.topology import ValidatorTopology
+            from magnet.validators.executor import PipelineExecutor
+            from magnet.validators.aggregator import ResultAggregator
+            from magnet.validators.builtin import get_all_validators
+
+            # Guardrail #3: Reset registry to prevent state leakage
+            ValidatorRegistry.reset()
+            logger.debug("ValidatorRegistry reset for clean initialization")
+
+            # Step 1: Initialize validator class mappings
+            ValidatorRegistry.initialize_defaults()
+            logger.info(f"✓ Registered {len(ValidatorRegistry._validator_classes)} validator classes")
+
+            # Step 2: Instantiate ALL validators BEFORE validation (Hole #4 fix)
+            instance_count = ValidatorRegistry.instantiate_all()
+            logger.info(f"✓ Instantiated {instance_count} validators")
+
+            # Guardrail #4: NOW verify required validators have working instances
+            try:
+                ValidatorRegistry.validate_required_implementations()
+            except RuntimeError as e:
+                # Log warning but don't fail - some validators may not be implemented yet
+                logger.warning(f"Some required validators missing: {e}")
+
+            # Step 3: Build validator topology (DAG)
+            topology = ValidatorTopology()
+            for defn in get_all_validators():
+                topology.add_validator(defn)
+            topology.build()
+            logger.info(f"✓ Built validator topology with {len(topology._nodes)} nodes")
+
+            # Step 4: Register topology as singleton
+            self._services.add_singleton(ValidatorTopology, topology)
+
+            # Step 5: Create PipelineExecutor factory
+            def create_pipeline_executor():
+                from magnet.core.state_manager import StateManager
+                state_manager = self._context.container.resolve(StateManager)
+                return PipelineExecutor(
+                    topology=topology,
+                    state_manager=state_manager,
+                    validator_registry=ValidatorRegistry.get_all_instances(),
+                )
+
+            self._services.add_factory(PipelineExecutor, create_pipeline_executor)
+
+            # Step 6: Create ResultAggregator factory
+            def create_result_aggregator():
+                from magnet.core.state_manager import StateManager
+                state_manager = self._context.container.resolve(StateManager)
+                return ResultAggregator(
+                    topology=topology,
+                    state_manager=state_manager,
+                )
+
+            self._services.add_factory(ResultAggregator, create_result_aggregator)
+
+            self._context._initialized_components.append("ValidatorPipeline")
+            logger.info("✓ Validator pipeline registered")
+
+        except ImportError as e:
+            logger.warning(f"Validator pipeline setup failed: {e}")
+        except Exception as e:
+            logger.warning(f"Validator pipeline setup failed: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+
+        # =================================================================
         # LAYER 4: Vision & Reporting
         # =================================================================
 
@@ -317,6 +389,41 @@ class MAGNETApp:
                     logger.debug(f"Validated: {service_type.__name__}")
                 except Exception as e:
                     logger.warning(f"Service not resolvable: {service_type.__name__}: {e}")
+
+        # Guardrail #2: Wire PipelineExecutor into Conductor as single execution authority
+        self._wire_conductor_to_pipeline()
+
+    def _wire_conductor_to_pipeline(self) -> None:
+        """Wire PipelineExecutor and ResultAggregator into Conductor. (Guardrail #2)"""
+        try:
+            from magnet.kernel.conductor import Conductor
+            from magnet.validators.executor import PipelineExecutor
+            from magnet.validators.aggregator import ResultAggregator
+
+            # Check if services are registered
+            if not self._context.container.is_registered(Conductor):
+                logger.debug("Conductor not registered, skipping pipeline wiring")
+                return
+
+            if not self._context.container.is_registered(PipelineExecutor):
+                logger.debug("PipelineExecutor not registered, skipping pipeline wiring")
+                return
+
+            # Resolve and wire
+            conductor = self._context.container.resolve(Conductor)
+            executor = self._context.container.resolve(PipelineExecutor)
+            conductor.set_pipeline_executor(executor)
+            logger.info("✓ Conductor wired to PipelineExecutor (single execution authority)")
+
+            if self._context.container.is_registered(ResultAggregator):
+                aggregator = self._context.container.resolve(ResultAggregator)
+                conductor.set_result_aggregator(aggregator)
+                logger.info("✓ Conductor wired to ResultAggregator")
+
+        except ImportError as e:
+            logger.debug(f"Pipeline wiring skipped: {e}")
+        except Exception as e:
+            logger.warning(f"Pipeline wiring failed: {e}")
 
     async def start(self) -> None:
         """Start application and run startup hooks."""

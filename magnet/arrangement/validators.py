@@ -163,30 +163,28 @@ class ArrangementValidator(ValidatorInterface):
                     ))
 
             # Write results (with determinization - CI#8)
-            agent = "arrangement/generator"
+            source = "arrangement/generator"  # Hole #7 Fix: Proper source for provenance
 
             # FIX v1.1: Determinize all outputs
             arrangement_data = arrangement.to_dict()  # Already determinized
-            state_manager.write("arrangement.data", arrangement_data,
-                               agent, "Complete general arrangement")
+            state_manager.set("arrangement.data", arrangement_data, source)
 
-            state_manager.write("arrangement.compartment_count", len(arrangement.compartments),
-                               agent, "Number of compartments")
+            state_manager.set("arrangement.compartment_count", len(arrangement.compartments), source)
 
             if collision_bhd:
-                state_manager.write("arrangement.collision_bulkhead_m", collision_bhd.position_m,
-                                   agent, "Collision bulkhead position from FP")
+                state_manager.set("arrangement.collision_bulkhead_m", collision_bhd.position_m, source)
 
             # Tank list (with geometry for reconstruction - CI#3)
             tank_list = [t.to_dict() for t in arrangement.tanks]
-            state_manager.write("arrangement.tanks", determinize_dict({"tanks": tank_list})["tanks"],
-                               agent, "Tank definitions for loading computer")
+            state_manager.set("arrangement.tanks", determinize_dict({"tanks": tank_list})["tanks"], source)
 
             # Compartment list
             compartment_list = [c.to_dict() for c in arrangement.compartments]
-            state_manager.write("arrangement.compartments",
-                               determinize_dict({"compartments": compartment_list})["compartments"],
-                               agent, "Compartment definitions for damage stability")
+            state_manager.set(
+                "arrangement.compartments",
+                determinize_dict({"compartments": compartment_list})["compartments"],
+                source
+            )
 
             # Tank summary
             tank_summary = {
@@ -199,8 +197,7 @@ class ArrangementValidator(ValidatorInterface):
                 "hydraulic_m3": sum(t.total_capacity_m3 for t in arrangement.get_tanks_by_type(FluidType.HYDRAULIC_OIL)),
                 "total_tanks": len(arrangement.tanks),
             }
-            state_manager.write("arrangement.tank_summary", determinize_dict(tank_summary),
-                               agent, "Tank capacity summary")
+            state_manager.set("arrangement.tank_summary", determinize_dict(tank_summary), source)
 
             # Set result state
             if result.error_count > 0:

@@ -19,6 +19,8 @@ from .registry import PhaseRegistry, PhaseDefinition
 if TYPE_CHECKING:
     from ..core.state_manager import StateManager
     from ..validators.taxonomy import ValidatorInterface
+    from ..validators.executor import PipelineExecutor
+    from ..validators.aggregator import ResultAggregator
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +36,8 @@ class Conductor:
         self,
         state_manager: 'StateManager',
         registry: PhaseRegistry = None,
+        pipeline_executor: 'PipelineExecutor' = None,
+        result_aggregator: 'ResultAggregator' = None,
     ):
         """
         Initialize conductor.
@@ -41,12 +45,26 @@ class Conductor:
         Args:
             state_manager: StateManager for design state
             registry: Phase registry (creates default if None)
+            pipeline_executor: PipelineExecutor for delegated validation (Guardrail #2)
+            result_aggregator: ResultAggregator for gate checking
         """
         self.state = state_manager
         self.registry = registry or PhaseRegistry()
+        self._pipeline_executor = pipeline_executor  # Guardrail #2: Single execution authority
+        self._result_aggregator = result_aggregator
 
-        self._validators: Dict[str, 'ValidatorInterface'] = {}
-        self._session: Optional[SessionState] = None
+        self._validators: Dict[str, 'ValidatorInterface'] = {}  # Keep for metadata/fallback
+        # Hole #2 Fix: Design-keyed sessions instead of single _session
+        self._sessions: Dict[str, SessionState] = {}
+        self._session: Optional[SessionState] = None  # Backwards compat: last created session
+
+    def set_pipeline_executor(self, executor: 'PipelineExecutor') -> None:
+        """Set the pipeline executor (Guardrail #2: single execution authority)."""
+        self._pipeline_executor = executor
+
+    def set_result_aggregator(self, aggregator: 'ResultAggregator') -> None:
+        """Set the result aggregator."""
+        self._result_aggregator = aggregator
 
     def register_validator(
         self,
@@ -58,23 +76,35 @@ class Conductor:
 
     def create_session(self, design_id: str) -> SessionState:
         """Create a new design session."""
-        self._session = SessionState(
+        session = SessionState(
             session_id=str(uuid.uuid4()),
             design_id=design_id,
             status=SessionStatus.INITIALIZING,
         )
 
-        self._session.status = SessionStatus.ACTIVE
-        logger.info(f"Created session {self._session.session_id} for design {design_id}")
-        return self._session
+        session.status = SessionStatus.ACTIVE
+        # Hole #2 Fix: Store by design_id to prevent concurrent request contamination
+        self._sessions[design_id] = session
+        self._session = session  # Backwards compat
+        logger.info(f"Created session {session.session_id} for design {design_id}")
+        return session
 
-    def get_session(self) -> Optional[SessionState]:
-        """Get current session."""
+    def get_session(self, design_id: Optional[str] = None) -> Optional[SessionState]:
+        """
+        Get session by design_id or current session.
+
+        Hole #2 Fix: Supports design-specific session lookup.
+        """
+        if design_id:
+            return self._sessions.get(design_id)
         return self._session
 
     def run_phase(self, phase_name: str, context: Dict[str, Any] = None) -> PhaseResult:
         """
         Run a single phase.
+
+        Guardrail #2: Delegates to PipelineExecutor for actual validation.
+        Guardrail #1: Checks phase output contracts after validation.
 
         Args:
             phase_name: Name of phase to run
@@ -97,8 +127,30 @@ class Conductor:
                     errors=[f"Dependency not completed: {dep}"],
                 )
 
-        # Execute phase
-        result = self._execute_phase(phase, context or {})
+        # Hole #5 Fix: Check INPUT contracts BEFORE execution
+        from ..validators.contracts import check_phase_inputs
+        input_result = check_phase_inputs(phase_name, self.state)
+        if not input_result.satisfied:
+            return PhaseResult(
+                phase_name=phase_name,
+                status=PhaseStatus.BLOCKED,
+                errors=[f"Missing required inputs: {input_result.missing_outputs}"],
+            )
+
+        # Execute via PipelineExecutor (Guardrail #2) or legacy fallback
+        if self._pipeline_executor:
+            result = self._execute_via_pipeline(phase, context or {})
+        else:
+            # Fallback to legacy execution (for backwards compatibility)
+            result = self._execute_phase(phase, context or {})
+
+        # Check phase output contract (Guardrail #1)
+        from ..validators.contracts import check_phase_contract
+        contract_result = check_phase_contract(phase_name, self.state)
+        if not contract_result.satisfied:
+            result.status = PhaseStatus.FAILED
+            result.errors.append(contract_result.message)
+            logger.warning(f"Phase {phase_name} failed output contract: {contract_result.missing_outputs}")
 
         # Update session
         if self._session:
@@ -245,6 +297,52 @@ class Conductor:
         result.completed_at = datetime.now(timezone.utc)
         return result
 
+    def _execute_via_pipeline(
+        self,
+        phase: PhaseDefinition,
+        context: Dict[str, Any],
+    ) -> PhaseResult:
+        """
+        Execute phase validators via PipelineExecutor.
+
+        Guardrail #2: Single execution authority.
+        """
+        result = PhaseResult(
+            phase_name=phase.name,
+            status=PhaseStatus.RUNNING,
+            started_at=datetime.now(timezone.utc),
+        )
+
+        try:
+            # Run validators through PipelineExecutor
+            execution_state = self._pipeline_executor.execute_phase(phase.name)
+
+            # Aggregate results
+            result.validators_run = len(execution_state.completed) + len(execution_state.failed)
+            result.validators_passed = len(execution_state.completed)
+            result.validators_failed = len(execution_state.failed)
+
+            # Collect errors from failed validators
+            for vid in execution_state.failed:
+                if vid in execution_state.results:
+                    val_result = execution_state.results[vid]
+                    if val_result.error_message:
+                        result.errors.append(f"{vid}: {val_result.error_message}")
+
+            # Determine status
+            if execution_state.failed:
+                result.status = PhaseStatus.FAILED
+            else:
+                result.status = PhaseStatus.COMPLETED
+
+        except Exception as e:
+            result.status = PhaseStatus.FAILED
+            result.errors.append(f"Pipeline execution error: {str(e)}")
+            logger.error(f"Phase {phase.name} pipeline error: {e}")
+
+        result.completed_at = datetime.now(timezone.utc)
+        return result
+
     def _evaluate_gate(
         self,
         phase: PhaseDefinition,
@@ -299,24 +397,19 @@ class Conductor:
     def write_to_state(self) -> None:
         """Write conductor state to state manager."""
         if self._session:
-            agent = "kernel/conductor"
+            source = "kernel/conductor"  # Hole #7 Fix: Proper source for provenance
 
-            self.state.write("kernel.session", self._session.to_dict(),
-                            agent, "Session state")
-            self.state.write("kernel.status", self._session.status.value,
-                            agent, "Kernel status")
-            self.state.write("kernel.current_phase", self._session.current_phase,
-                            agent, "Current phase")
-            self.state.write("kernel.phase_history", self._session.completed_phases,
-                            agent, "Completed phases")
+            self.state.set("kernel.session", self._session.to_dict(), source)
+            self.state.set("kernel.status", self._session.status.value, source)
+            self.state.set("kernel.current_phase", self._session.current_phase, source)
+            self.state.set("kernel.phase_history", self._session.completed_phases, source)
 
             # Gate status
             gate_status = {
                 name: result.passed
                 for name, result in self._session.gate_results.items()
             }
-            self.state.write("kernel.gate_status", gate_status,
-                            agent, "Gate status")
+            self.state.set("kernel.gate_status", gate_status, source)
 
     def get_status_summary(self) -> Dict[str, Any]:
         """Get a summary of conductor status."""

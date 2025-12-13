@@ -211,6 +211,12 @@ class ResultAggregator:
                     status.blocking_validators.append(validator_id)
                 else:
                     status.recommended_failed += 1
+            elif result.state == ValidatorState.NOT_IMPLEMENTED:
+                # Hole #6: Handle NOT_IMPLEMENTED separately - it's permanent
+                if is_required:
+                    status.required_failed += 1
+                    status.blocking_validators.append(validator_id)
+                    logger.warning(f"Required validator {validator_id} has no implementation")
             elif result.state in (ValidatorState.ERROR, ValidatorState.BLOCKED):
                 if is_required:
                     status.required_failed += 1

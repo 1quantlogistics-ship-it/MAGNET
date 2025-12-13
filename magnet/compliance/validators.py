@@ -16,6 +16,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 import logging
+import uuid
 
 from .enums import RegulatoryFramework, RuleCategory, ComplianceStatus
 from .engine import ComplianceEngine, ComplianceReport
@@ -123,9 +124,10 @@ class ComplianceValidator(ValidatorInterface):
                             frameworks.append(RegulatoryFramework(fv))
                     except ValueError:
                         result.add_finding(ValidationFinding(
+                            finding_id=str(uuid.uuid4())[:8],
                             severity=ResultSeverity.WARNING,
                             message=f"Unknown framework: {fv}",
-                            parameter=f"compliance.frameworks.{fv}",
+                            parameter_path=f"compliance.frameworks.{fv}",
                         ))
                 if not frameworks:
                     frameworks = [RegulatoryFramework.ABS_HSNC]
@@ -142,44 +144,48 @@ class ComplianceValidator(ValidatorInterface):
             )
 
             # Write results to state
-            state_manager.set("compliance.status", report.overall_status.value)
-            state_manager.set("compliance.pass_count", report.pass_count)
-            state_manager.set("compliance.fail_count", report.fail_count)
-            state_manager.set("compliance.incomplete_count", report.incomplete_count)
-            state_manager.set("compliance.pass_rate", report.get_pass_rate())
+            source = "compliance/regulatory"
+            state_manager.set("compliance.status", report.overall_status.value, source)
+            state_manager.set("compliance.pass_count", report.pass_count, source)
+            state_manager.set("compliance.fail_count", report.fail_count, source)
+            state_manager.set("compliance.incomplete_count", report.incomplete_count, source)
+            state_manager.set("compliance.pass_rate", report.get_pass_rate(), source)
 
             # Determinize findings for state storage
             findings_data = [f.to_dict() for f in report.findings]
-            state_manager.set("compliance.findings", determinize_dict({"items": findings_data}))
+            state_manager.set("compliance.findings", determinize_dict({"items": findings_data}), source)
 
             # Determinize full report
             report_data = report.to_dict()
-            state_manager.set("compliance.report", determinize_dict(report_data))
+            state_manager.set("compliance.report", determinize_dict(report_data), source)
 
             # Frameworks checked
-            state_manager.set("compliance.frameworks_checked", [f.value for f in frameworks])
+            state_manager.set("compliance.frameworks_checked", [f.value for f in frameworks], source)
 
             # Generate validation findings from compliance findings
             for finding in report.findings:
                 if finding.status == "fail":
                     severity = ResultSeverity.ERROR if finding.severity.value in ["critical", "non_conformance"] else ResultSeverity.WARNING
                     result.add_finding(ValidationFinding(
+                        finding_id=str(uuid.uuid4())[:8],
                         severity=severity,
                         message=finding.message,
-                        parameter=finding.rule_id,
+                        parameter_path=finding.rule_id,
                         suggestion=finding.remediation_guidance,
                     ))
                 elif finding.status == "incomplete":
                     result.add_finding(ValidationFinding(
+                        finding_id=str(uuid.uuid4())[:8],
                         severity=ResultSeverity.WARNING,
                         message=finding.message,
-                        parameter=finding.rule_id,
+                        parameter_path=finding.rule_id,
                     ))
                 elif finding.status == "pass":
                     result.add_finding(ValidationFinding(
+                        finding_id=str(uuid.uuid4())[:8],
                         severity=ResultSeverity.INFO,
                         message=finding.message,
-                        parameter=finding.rule_id,
+                        parameter_path=finding.rule_id,
                     ))
 
             # Determine final state
@@ -261,24 +267,27 @@ class StabilityComplianceValidator(ValidatorInterface):
                 status = "review_required"
 
             # Write results
-            state_manager.set("compliance.stability_status", status)
-            state_manager.set("compliance.stability_pass_count", pass_count)
-            state_manager.set("compliance.stability_fail_count", fail_count)
+            source = "compliance/stability_check"
+            state_manager.set("compliance.stability_status", status, source)
+            state_manager.set("compliance.stability_pass_count", pass_count, source)
+            state_manager.set("compliance.stability_fail_count", fail_count, source)
 
             # Generate validation findings
             for finding in findings:
                 if finding.status == "fail":
                     result.add_finding(ValidationFinding(
+                        finding_id=str(uuid.uuid4())[:8],
                         severity=ResultSeverity.ERROR,
                         message=finding.message,
-                        parameter=finding.rule_id,
+                        parameter_path=finding.rule_id,
                         suggestion=finding.remediation_guidance,
                     ))
                 elif finding.status == "pass":
                     result.add_finding(ValidationFinding(
+                        finding_id=str(uuid.uuid4())[:8],
                         severity=ResultSeverity.INFO,
                         message=finding.message,
-                        parameter=finding.rule_id,
+                        parameter_path=finding.rule_id,
                     ))
 
             # Determine final state

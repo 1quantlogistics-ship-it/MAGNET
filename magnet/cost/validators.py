@@ -76,14 +76,15 @@ class CostValidator(ValidatorInterface):
             estimate = self.estimator.estimate(state_manager)
 
             # Write results to state
-            state_manager.set("cost.estimate", estimate.to_dict())
-            state_manager.set("cost.total_price", estimate.total_price)
-            state_manager.set("cost.acquisition_cost", estimate.acquisition_cost)
-            state_manager.set("cost.lifecycle_npv", estimate.lifecycle_npv)
-            state_manager.set("cost.subtotal_material", estimate.subtotal_material)
-            state_manager.set("cost.subtotal_labor", estimate.subtotal_labor)
-            state_manager.set("cost.subtotal_equipment", estimate.subtotal_equipment)
-            state_manager.set("cost.confidence", estimate.confidence.value)
+            source = "cost/estimation"
+            state_manager.set("cost.estimate", estimate.to_dict(), source)
+            state_manager.set("cost.total_price", estimate.total_price, source)
+            state_manager.set("cost.acquisition_cost", estimate.acquisition_cost, source)
+            state_manager.set("cost.lifecycle_npv", estimate.lifecycle_npv, source)
+            state_manager.set("cost.subtotal_material", estimate.subtotal_material, source)
+            state_manager.set("cost.subtotal_labor", estimate.subtotal_labor, source)
+            state_manager.set("cost.subtotal_equipment", estimate.subtotal_equipment, source)
+            state_manager.set("cost.confidence", estimate.confidence.value, source)
 
             # Summary
             summary = {
@@ -93,7 +94,7 @@ class CostValidator(ValidatorInterface):
                 "confidence": estimate.confidence.value,
                 "hours": estimate.get_total_hours(),
             }
-            state_manager.set("cost.summary", summary)
+            state_manager.set("cost.summary", summary, source)
 
             # Add informational finding
             result.add_finding(ValidationFinding(

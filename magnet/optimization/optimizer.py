@@ -182,13 +182,11 @@ class DesignOptimizer:
                 # Fallback for testing with mock
                 state = self.base_state
 
-            # Apply design variables
+            # Apply design variables - Hole #7 Fix: Use .set() with proper source
+            source = "optimization/optimizer"
             for i, var in enumerate(self.problem.variables):
                 value = solution.variables[i]
-                if hasattr(state, 'write'):
-                    state.write(var.state_path, value, "optimizer", "Design variable")
-                elif hasattr(state, 'set'):
-                    state.set(var.state_path, value)
+                state.set(var.state_path, value, source)
 
             # Run validators
             for validator in self.validators:

@@ -156,11 +156,12 @@ class IntactGMValidator(ValidatorInterface):
             )
 
             # Write outputs to state
-            state_manager.set("stability.gm_transverse_m", gm_results.gm_m)
-            state_manager.set("stability.gm_corrected_m", gm_results.gm_m)
-            state_manager.set("stability.kg_m", gm_results.kg_m)
-            state_manager.set("stability.kb_m", gm_results.kb_m)
-            state_manager.set("stability.bm_m", gm_results.bm_m)
+            source = "stability/intact_gm"
+            state_manager.set("stability.gm_transverse_m", gm_results.gm_m, source)
+            state_manager.set("stability.gm_corrected_m", gm_results.gm_m, source)
+            state_manager.set("stability.kg_m", gm_results.kg_m, source)
+            state_manager.set("stability.kb_m", gm_results.kb_m, source)
+            state_manager.set("stability.bm_m", gm_results.bm_m, source)
 
             # Log KG source for traceability
             logger.info(f"GM calculated using KG from {kg_source}: {gm_results.kg_m:.3f}m")
@@ -299,18 +300,19 @@ class GZCurveValidator(ValidatorInterface):
 
             # Write outputs to state
             # Convert curve to list of dicts for storage
+            source = "stability/gz_curve"
             curve_data = [p.to_dict() for p in gz_results.curve]
-            state_manager.set("stability.gz_curve", curve_data)
-            state_manager.set("stability.gz_max_m", gz_results.gz_max_m)
-            state_manager.set("stability.angle_of_max_gz_deg", gz_results.angle_gz_max_deg)
-            state_manager.set("stability.area_0_30_m_rad", gz_results.area_0_30_m_rad)
-            state_manager.set("stability.area_0_40_m_rad", gz_results.area_0_40_m_rad)
-            state_manager.set("stability.area_30_40_m_rad", gz_results.area_30_40_m_rad)
+            state_manager.set("stability.gz_curve", curve_data, source)
+            state_manager.set("stability.gz_max_m", gz_results.gz_max_m, source)
+            state_manager.set("stability.angle_of_max_gz_deg", gz_results.angle_gz_max_deg, source)
+            state_manager.set("stability.area_0_30_m_rad", gz_results.area_0_30_m_rad, source)
+            state_manager.set("stability.area_0_40_m_rad", gz_results.area_0_40_m_rad, source)
+            state_manager.set("stability.area_30_40_m_rad", gz_results.area_30_40_m_rad, source)
             state_manager.set("stability.angle_of_vanishing_stability_deg",
-                            gz_results.angle_of_vanishing_stability_deg)
+                            gz_results.angle_of_vanishing_stability_deg, source)
             state_manager.set("stability.dynamic_stability_m_rad",
-                            gz_results.dynamic_stability_m_rad)
-            state_manager.set("stability.imo_intact_passed", gz_results.passes_all_gz_criteria)
+                            gz_results.dynamic_stability_m_rad, source)
+            state_manager.set("stability.imo_intact_passed", gz_results.passes_all_gz_criteria, source)
 
             # Add warnings from calculator
             state = ValidatorState.PASSED
@@ -439,10 +441,11 @@ class DamageStabilityValidator(ValidatorInterface):
             )
 
             # Write outputs
+            source = "stability/damage"
             case_dicts = [c.to_dict() for c in damage_results.cases]
-            state_manager.set("stability.damage_cases", case_dicts)
-            state_manager.set("stability.damage_gm_min_m", damage_results.worst_gm_m)
-            state_manager.set("stability.imo_damage_passed", damage_results.all_cases_pass)
+            state_manager.set("stability.damage_cases", case_dicts, source)
+            state_manager.set("stability.damage_gm_min_m", damage_results.worst_gm_m, source)
+            state_manager.set("stability.imo_damage_passed", damage_results.all_cases_pass, source)
 
             # Add warnings
             state = ValidatorState.PASSED
@@ -543,6 +546,24 @@ class WeatherCriterionValidator(ValidatorInterface):
             draft_m = state_manager.get("hull.draft")
             loa_m = state_manager.get("hull.loa")
 
+            # SENIOR AUDIT FIX: Check displacement before calculation to prevent ZeroDivisionError
+            if displacement_mt is None or displacement_mt <= 0:
+                result = ValidationResult(
+                    validator_id=self.definition.validator_id,
+                    state=ValidatorState.FAILED,
+                    started_at=started_at,
+                    completed_at=datetime.utcnow(),
+                    execution_time_ms=int((time.perf_counter() - start_time) * 1000),
+                )
+                result.add_finding(ValidationFinding(
+                    finding_id=str(uuid.uuid4())[:8],
+                    severity=ResultSeverity.ERROR,
+                    message=f"Invalid displacement: {displacement_mt}. Displacement must be > 0 for weather criterion.",
+                    parameter_path="hull.displacement_mt",
+                    suggestion="Run hull phase to calculate displacement",
+                ))
+                return result
+
             # Need GZ curve results
             if gz_curve_data is None or gm_m is None:
                 result = ValidationResult(
@@ -583,9 +604,10 @@ class WeatherCriterionValidator(ValidatorInterface):
             )
 
             # Write outputs
-            state_manager.set("stability.steady_wind_heel_deg", weather_results.steady_wind_heel_deg)
-            state_manager.set("stability.weather_criterion_ratio", weather_results.energy_ratio)
-            state_manager.set("stability.weather_criterion_passed", weather_results.passes_criterion)
+            source = "stability/weather_criterion"
+            state_manager.set("stability.steady_wind_heel_deg", weather_results.steady_wind_heel_deg, source)
+            state_manager.set("stability.weather_criterion_ratio", weather_results.energy_ratio, source)
+            state_manager.set("stability.weather_criterion_passed", weather_results.passes_criterion, source)
 
             # Add warnings
             state = ValidatorState.PASSED

@@ -59,19 +59,20 @@ class PropulsionValidator:
             elif margin > 0.50:
                 warnings.append(f"High power margin: {margin*100:.1f}% - may be oversized")
 
-        # Write ALL fields to state (v1.1 expanded)
-        state.write("propulsion.system", system.to_dict(), self.validator_id, "Propulsion system")
-        state.write("propulsion.propulsion_type", system.propulsor_type, self.validator_id, "Propulsor type")
-        state.write("propulsion.num_engines", system.num_engines, self.validator_id, "Number of engines")
-        state.write("propulsion.num_shafts", system.num_shafts, self.validator_id, "Number of shafts")
-        state.write("propulsion.installed_power_kw", system.total_installed_power_kw, self.validator_id, "Installed power")
-        state.write("propulsion.service_power_kw", system.total_service_power_kw, self.validator_id, "Service power")
+        # Write ALL fields to state (v1.1 expanded) - Hole #7 Fix: Use .set()
+        source = "systems/propulsion"
+        state.set("propulsion.system", system.to_dict(), source)
+        state.set("propulsion.propulsion_type", system.propulsor_type, source)
+        state.set("propulsion.num_engines", system.num_engines, source)
+        state.set("propulsion.num_shafts", system.num_shafts, source)
+        state.set("propulsion.installed_power_kw", system.total_installed_power_kw, source)
+        state.set("propulsion.service_power_kw", system.total_service_power_kw, source)
 
         # v1.1 FIX: Write BOTH fuel rates
-        state.write("propulsion.fuel_rate_max_l_hr", system.fuel_rate_max_l_hr, self.validator_id, "Max fuel rate")
-        state.write("propulsion.fuel_rate_cruise_l_hr", system.fuel_rate_cruise_l_hr, self.validator_id, "Cruise fuel rate")
+        state.set("propulsion.fuel_rate_max_l_hr", system.fuel_rate_max_l_hr, source)
+        state.set("propulsion.fuel_rate_cruise_l_hr", system.fuel_rate_cruise_l_hr, source)
 
-        state.write("propulsion.total_weight_kg", system.total_propulsion_weight_kg, self.validator_id, "Propulsion weight")
+        state.set("propulsion.total_weight_kg", system.total_propulsion_weight_kg, source)
 
         return {
             "valid": len(errors) == 0,

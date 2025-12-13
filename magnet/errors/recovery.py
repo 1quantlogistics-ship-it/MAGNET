@@ -302,10 +302,9 @@ class RecoveryExecutor:
 
         if fallback_value is not None:
             try:
-                if hasattr(self.state, 'set'):
-                    self.state.set(error.path, fallback_value)
-                elif hasattr(self.state, 'write'):
-                    self.state.write(error.path, fallback_value)
+                # Hole #7 Fix: Use .set() with proper source for provenance
+                source = "errors/recovery"
+                self.state.set(error.path, fallback_value, source)
 
                 return RecoveryResult(
                     success=True,

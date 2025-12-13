@@ -50,10 +50,11 @@ class DesignSession:
             status=SessionStatus.ACTIVE,
         )
 
-        # Write initial state
-        self.state.write("design_id", design_id, "kernel/session", "Design ID")
+        # Write initial state - Hole #7 Fix: Proper source for provenance
+        source = "kernel/session"
+        self.state.set("design_id", design_id, source)
         if design_name:
-            self.state.write("design_name", design_name, "kernel/session", "Design name")
+            self.state.set("design_name", design_name, source)
 
         self._write_session_state()
         return self._session
@@ -127,15 +128,13 @@ class DesignSession:
     def _write_session_state(self) -> None:
         """Write session to state manager."""
         if self._session:
-            agent = "kernel/session"
-            self.state.write(
+            source = "kernel/session"  # Hole #7 Fix: Proper source for provenance
+            self.state.set(
                 f"sessions.{self._session.session_id}",
                 self._session.to_dict(),
-                agent,
-                "Session state"
+                source
             )
-            self.state.write("kernel.current_session", self._session.session_id,
-                            agent, "Current session ID")
+            self.state.set("kernel.current_session", self._session.session_id, source)
 
     def _deserialize_session(self, data: Dict[str, Any]) -> SessionState:
         """Deserialize session from dict."""

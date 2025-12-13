@@ -233,18 +233,21 @@ class PipelineExecutor:
         validator_registry: Dict[str, ValidatorInterface],
         max_workers: int = DEFAULT_MAX_WORKERS,
         contract_layer: Optional[Any] = None,  # FIX #8
-        resource_pool: Optional[ResourcePool] = None  # FIX #9
+        resource_pool: Optional[ResourcePool] = None,  # FIX #9
+        design_id: Optional[str] = None,  # Hole #2 Fix: Design-scoped execution
     ):
         self._topology = topology
         self._state_manager = state_manager
         self._registry = validator_registry
         self._max_workers = max_workers
         self._contract_layer = contract_layer  # FIX #8
+        self._design_id = design_id  # Hole #2 Fix: For cache key scoping
 
         # FIX #9: Resource pool
         self._resource_pool = resource_pool or ResourcePool()
         self._resource_lock = threading.Lock()
 
+        # Hole #2 Fix: Each executor instance gets its own cache (no shared state)
         self._cache = ValidationCache()
         self._progress_callbacks: List[Callable[[str, ValidationResult], None]] = []
         self._current_execution: Optional[ExecutionState] = None
@@ -431,7 +434,8 @@ class PipelineExecutor:
         definition = node.validator
         impl = self._registry.get(validator_id)
         if not impl:
-            return self._create_error_result(
+            # Use NOT_IMPLEMENTED state (Hole #6 fix) - permanent, not transient
+            return self._create_not_implemented_result(
                 validator_id, f"No implementation for: {validator_id}"
             )
 
@@ -551,10 +555,24 @@ class PipelineExecutor:
         return result
 
     def _create_error_result(self, validator_id: str, error: str) -> ValidationResult:
-        """Create an error result for code failures."""
+        """Create an error result for code failures (transient, may retry)."""
         return ValidationResult(
             validator_id=validator_id,
             state=ValidatorState.ERROR,
+            started_at=datetime.utcnow(),
+            completed_at=datetime.utcnow(),
+            error_message=error,
+        )
+
+    def _create_not_implemented_result(self, validator_id: str, error: str) -> ValidationResult:
+        """
+        Create a NOT_IMPLEMENTED result for validators without implementations.
+
+        Hole #6 fix: Distinct from ERROR - permanent, not transient.
+        """
+        return ValidationResult(
+            validator_id=validator_id,
+            state=ValidatorState.NOT_IMPLEMENTED,
             started_at=datetime.utcnow(),
             completed_at=datetime.utcnow(),
             error_message=error,
