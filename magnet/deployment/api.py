@@ -194,6 +194,36 @@ def create_fastapi_app(context: "AppContext" = None):
                 logger.warning(f"Could not resolve VisionRouter: {e}")
         return None
 
+    def get_pipeline_executor():
+        """Get configured PipelineExecutor from DI container."""
+        if context and context.container:
+            try:
+                from magnet.validators.executor import PipelineExecutor
+                return context.container.resolve(PipelineExecutor)
+            except Exception as e:
+                logger.warning(f"Could not resolve PipelineExecutor: {e}")
+        return None
+
+    def get_validator_topology():
+        """Get ValidatorTopology from DI container."""
+        if context and context.container:
+            try:
+                from magnet.validators.topology import ValidatorTopology
+                return context.container.resolve(ValidatorTopology)
+            except Exception as e:
+                logger.warning(f"Could not resolve ValidatorTopology: {e}")
+        return None
+
+    def get_result_aggregator():
+        """Get ResultAggregator from DI container."""
+        if context and context.container:
+            try:
+                from magnet.validators.aggregator import ResultAggregator
+                return context.container.resolve(ResultAggregator)
+            except Exception as e:
+                logger.warning(f"Could not resolve ResultAggregator: {e}")
+        return None
+
     # =========================================================================
     # Startup/Shutdown (fixes blocker #5)
     # =========================================================================
@@ -517,34 +547,79 @@ def create_fastapi_app(context: "AppContext" = None):
         phase: str,
         config: ValidationRun = ValidationRun(),
         state_manager=Depends(get_state_manager),
+        executor=Depends(get_pipeline_executor),
+        aggregator=Depends(get_result_aggregator),
     ):
-        """Run validation for a phase."""
+        """Validate a specific phase using the configured pipeline executor."""
         if not state_manager:
             raise HTTPException(status_code=503, detail="StateManager not available")
 
+        if not executor:
+            return {
+                "status": "error",
+                "message": "PipelineExecutor not available",
+                "phase": phase,
+            }
+
         try:
-            from magnet.validators.executor import PipelineExecutor
-            executor = PipelineExecutor(state_manager)
-            result = executor.validate_phase(phase)
+            # Run phase validation via single authority (Guardrail #2)
+            execution_state = executor.execute_phase(phase)
+
+            # Check phase output contract (Guardrail #1)
+            from magnet.validators.contracts import check_phase_contract
+            contract_result = check_phase_contract(phase, state_manager)
+
+            # Get gate status
+            gate_status = None
+            if aggregator:
+                try:
+                    gate_status = aggregator.check_gate(phase, execution_state)
+                except Exception as e:
+                    logger.warning(f"Gate check failed: {e}")
+
+            # Determine overall success
+            validators_passed = len([
+                v for v, r in execution_state.results.items()
+                if r.state.value in ["passed", "warning"]
+            ])
+
+            # Phase fails if: validators failed OR contract not satisfied
+            phase_success = (
+                len(execution_state.failed) == 0 and
+                contract_result.satisfied
+            )
 
             ws_manager.queue_message(WSMessage(
                 type="validation_completed",
                 design_id=design_id,
                 payload={
                     "phase": phase,
-                    "passed": result.passed if hasattr(result, 'passed') else True,
+                    "passed": phase_success,
                 },
             ))
 
             return {
+                "status": "success" if phase_success else "failed",
                 "phase": phase,
-                "passed": result.passed if hasattr(result, 'passed') else True,
-                "errors": len(result.errors) if hasattr(result, 'errors') else 0,
-                "warnings": len(result.warnings) if hasattr(result, 'warnings') else 0,
+                "validators_run": len(execution_state.completed) + len(execution_state.failed),
+                "validators_passed": validators_passed,
+                "validators_failed": len(execution_state.failed),
+                "contract_satisfied": contract_result.satisfied,
+                "missing_outputs": contract_result.missing_outputs,
+                "can_advance": (gate_status.can_advance if gate_status else True) and contract_result.satisfied,
+                "blocking_validators": gate_status.blocking_validators if gate_status else [],
+                "results": {
+                    vid: result.to_dict() if hasattr(result, 'to_dict') else {}
+                    for vid, result in execution_state.results.items()
+                },
             }
         except Exception as e:
-            logger.error(f"Validation failed: {e}")
-            return {"phase": phase, "passed": True, "errors": 0}
+            logger.error(f"Phase validation failed: {e}")
+            return {
+                "status": "error",
+                "message": str(e),
+                "phase": phase,
+            }
 
     @app.post("/api/v1/designs/{design_id}/phases/{phase}/approve")
     async def approve_phase(

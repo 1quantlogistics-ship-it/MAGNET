@@ -74,16 +74,9 @@ class ReportingValidator(ValidatorInterface):
             # Determine which report types are available
             available_types = self._determine_available_types(state)
 
-            # Write available types
-            if hasattr(state, "write"):
-                state.write(
-                    "reporting.available_types",
-                    [t.value for t in available_types],
-                    self.validator_id,
-                    "Available report types",
-                )
-            elif hasattr(state, "set"):
-                state.set("reporting.available_types", [t.value for t in available_types])
+            # Write available types - Hole #7 Fix: Use .set() with proper source
+            source = "reporting/validator"
+            state.set("reporting.available_types", [t.value for t in available_types], source)
 
             # Generate design summary by default
             if ReportType.DESIGN_SUMMARY in available_types:
@@ -92,41 +85,19 @@ class ReportingValidator(ValidatorInterface):
                 # Serialize report to state
                 report_dict = report.to_dict()
 
-                if hasattr(state, "write"):
-                    state.write(
-                        "reporting.design_summary",
-                        report_dict,
-                        self.validator_id,
-                        "Design summary report",
-                    )
-                    state.write(
-                        "reporting.last_report_type",
-                        ReportType.DESIGN_SUMMARY.value,
-                        self.validator_id,
-                        "Last generated report type",
-                    )
-                    state.write(
-                        "reporting.generated_reports",
-                        {
-                            ReportType.DESIGN_SUMMARY.value: {
-                                "title": report.metadata.title,
-                                "generated_at": report.metadata.generated_at,
-                                "section_count": len(report.sections),
-                            }
-                        },
-                        self.validator_id,
-                        "Generated reports metadata",
-                    )
-                elif hasattr(state, "set"):
-                    state.set("reporting.design_summary", report_dict)
-                    state.set("reporting.last_report_type", ReportType.DESIGN_SUMMARY.value)
-                    state.set("reporting.generated_reports", {
+                state.set("reporting.design_summary", report_dict, source)
+                state.set("reporting.last_report_type", ReportType.DESIGN_SUMMARY.value, source)
+                state.set(
+                    "reporting.generated_reports",
+                    {
                         ReportType.DESIGN_SUMMARY.value: {
                             "title": report.metadata.title,
                             "generated_at": report.metadata.generated_at,
                             "section_count": len(report.sections),
                         }
-                    })
+                    },
+                    source
+                )
 
                 result.passed = True
                 result.message = f"Generated design summary report with {len(report.sections)} sections"

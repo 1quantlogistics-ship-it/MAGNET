@@ -75,11 +75,9 @@ def safe_write(state, path: str, value: Any, source: str = "glue") -> bool:
         True if write succeeded, False otherwise
     """
     try:
-        if hasattr(state, 'write'):
-            state.write(path, value, source)
-            return True
-        elif hasattr(state, 'set'):
-            state.set(path, value)
+        # Hole #7 Fix: Standardize on .set() with proper source
+        if hasattr(state, 'set'):
+            state.set(path, value, source)
             return True
         elif isinstance(state, dict):
             parts = path.split('.')

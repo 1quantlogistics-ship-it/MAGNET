@@ -363,6 +363,18 @@ def _export_state(app: "MAGNETApp") -> Dict[str, Any]:
         return {}
 
 
+# RunPod serverless entry point
+try:
+    import runpod
+
+    # Register handler with RunPod SDK
+    runpod.serverless.start({"handler": handler})
+
+except ImportError:
+    # Running locally without RunPod SDK installed
+    pass
+
+
 # For local testing
 if __name__ == "__main__":
     # Test handler

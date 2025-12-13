@@ -49,6 +49,18 @@ from .builtin import (
     CLASS_VALIDATORS,
     PRODUCTION_VALIDATORS,
 )
+from .registry import (
+    ValidatorRegistry,
+)
+from .contracts import (
+    PhaseContract,
+    PhaseOutputContract,  # Backwards compatibility alias
+    ContractResult,
+    PHASE_CONTRACTS,
+    check_phase_contract,
+    check_phase_inputs,
+    check_phase_outputs,
+)
 
 __all__ = [
     # Taxonomy
@@ -85,4 +97,14 @@ __all__ = [
     "STABILITY_VALIDATORS",
     "CLASS_VALIDATORS",
     "PRODUCTION_VALIDATORS",
+    # Registry
+    "ValidatorRegistry",
+    # Contracts
+    "PhaseContract",
+    "PhaseOutputContract",
+    "ContractResult",
+    "PHASE_CONTRACTS",
+    "check_phase_contract",
+    "check_phase_inputs",
+    "check_phase_outputs",
 ]

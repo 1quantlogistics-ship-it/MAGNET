@@ -11,6 +11,33 @@ v1.2: Updated stability validators with:
       - stability.kg_m for weight integration (KG sourcing priority)
       - Explicit m-rad units for GZ area fields
       - Extended validator outputs
+
+# =============================================================================
+# VALIDATOR IMPLEMENTATION STATUS
+#
+# These define ALL validators in the MAGNET system. Not all have implementations.
+# Validators without implementations return ValidatorState.NOT_IMPLEMENTED.
+#
+# Implemented validators (12):
+#   - physics/hydrostatics, physics/resistance
+#   - stability/intact_gm, stability/gz_curve, stability/damage, stability/weather_criterion
+#   - weight/estimation, compliance/regulatory
+#   - arrangement/generator, loading/computer
+#   - production/planning, cost/estimation
+#
+# NOT_IMPLEMENTED validators (16) - definitions retained for topology integrity:
+#   - bounds/hull_parameters, bounds/mission_parameters, bounds/weight_margins, bounds/design_intent
+#   - physics/powering, physics/structural_loads, physics/scantlings
+#   - class/abs_hsv, class/dnv_hslc, class/uscg_subchapter_t
+#   - production/plate_nesting, production/weld_accessibility
+#   - weight/stability_check, compliance/stability
+#   - optimization/design, reporting/generator
+#
+# These definitions are retained because:
+#   1. Topology edges reference them for dependency management
+#   2. NOT_IMPLEMENTED state provides clear feedback to users
+#   3. They serve as placeholders for future implementation
+# =============================================================================
 """
 
 from typing import Dict, List, Optional
@@ -35,7 +62,7 @@ PHYSICS_VALIDATORS = [
         description="Computes displacement, centers, stability parameters (v1.2)",
         category=ValidatorCategory.PHYSICS,
         priority=ValidatorPriority.CRITICAL,
-        phase="hull_form",
+        phase="hull",  # Canonical name (not "hull_form")
         is_gate_condition=True,
         # v1.2: Extended input parameters
         depends_on_parameters=[
@@ -68,7 +95,7 @@ PHYSICS_VALIDATORS = [
         description="Calculates hull resistance using Holtrop-Mennen or similar",
         category=ValidatorCategory.PHYSICS,
         priority=ValidatorPriority.CRITICAL,
-        phase="hull_form",
+        phase="hull",  # Canonical name (not "hull_form")
         is_gate_condition=True,
         depends_on_validators=["physics/hydrostatics"],
         depends_on_parameters=[
@@ -162,7 +189,7 @@ BOUNDS_VALIDATORS = [
         description="Checks hull dimensions against design intent constraints",
         category=ValidatorCategory.BOUNDS,
         priority=ValidatorPriority.CRITICAL,
-        phase="hull_form",
+        phase="hull",  # Canonical name (not "hull_form")
         is_gate_condition=True,
         depends_on_parameters=[
             "hull.loa", "hull.beam", "hull.depth", "hull.draft"

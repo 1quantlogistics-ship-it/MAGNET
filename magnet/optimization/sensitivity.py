@@ -150,12 +150,10 @@ class SensitivityAnalyzer:
             else:
                 state = self.base_state
 
-            # Apply variables
+            # Apply variables - Hole #7 Fix: Use .set() with proper source
+            source = "optimization/sensitivity"
             for i, var in enumerate(self.problem.variables):
-                if hasattr(state, 'write'):
-                    state.write(var.state_path, variables[i], "sensitivity", "Analysis")
-                elif hasattr(state, 'set'):
-                    state.set(var.state_path, variables[i])
+                state.set(var.state_path, variables[i], source)
 
             # Run validators
             for validator in self.validators:

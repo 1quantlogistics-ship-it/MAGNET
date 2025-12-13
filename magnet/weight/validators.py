@@ -256,21 +256,22 @@ class WeightEstimationValidator(ValidatorInterface):
             summary = aggregator.calculate_lightship()
 
             # Write results to state
-            state_manager.set("weight.lightship_mt", summary.lightship_weight_mt)
-            state_manager.set("weight.lightship_lcg_m", summary.lightship_lcg_m)
-            state_manager.set("weight.lightship_vcg_m", summary.lightship_vcg_m)
-            state_manager.set("weight.lightship_tcg_m", summary.lightship_tcg_m)
-            state_manager.set("weight.margin_mt", summary.margin_weight_mt)
-            state_manager.set("weight.average_confidence", summary.average_confidence)
+            source = "weight/estimation"
+            state_manager.set("weight.lightship_mt", summary.lightship_weight_mt, source)
+            state_manager.set("weight.lightship_lcg_m", summary.lightship_lcg_m, source)
+            state_manager.set("weight.lightship_vcg_m", summary.lightship_vcg_m, source)
+            state_manager.set("weight.lightship_tcg_m", summary.lightship_tcg_m, source)
+            state_manager.set("weight.margin_mt", summary.margin_weight_mt, source)
+            state_manager.set("weight.average_confidence", summary.average_confidence, source)
 
             # Write group weights
             for group in SWBSGroup:
                 if group != SWBSGroup.MARGIN and group != SWBSGroup.GROUP_700:
                     weight_mt = summary.get_group_weight_mt(group)
-                    state_manager.set(f"weight.group_{group.value}_mt", weight_mt)
+                    state_manager.set(f"weight.group_{group.value}_mt", weight_mt, source)
 
             # Write summary data (FIX #6: determinized for hash stability)
-            state_manager.set("weight.summary_data", summary.to_dict())
+            state_manager.set("weight.summary_data", summary.to_dict(), source)
 
             # Check for weight concerns
             state = ValidatorState.PASSED
@@ -407,20 +408,22 @@ class WeightStabilityValidator(ValidatorInterface):
                     suggestion="Run weight/estimation and physics/hydrostatics first",
                 ))
                 # Not ready for stability
-                state_manager.set("weight.stability_ready", False)
+                source = "weight/stability_prep"
+                state_manager.set("weight.stability_ready", False, source)
                 return result
 
             # FIX #7: Write KG to stability namespace
             # KG (VCG from baseline) is the vertical center of gravity
+            source = "weight/stability_prep"
             kg_m = lightship_vcg_m
-            state_manager.set("stability.kg_m", kg_m)
+            state_manager.set("stability.kg_m", kg_m, source)
 
             # Calculate estimated GM
             # GM = KB + BM - KG = KM - KG
             km_m = kb_m + bm_m
             estimated_gm_m = km_m - kg_m
 
-            state_manager.set("weight.estimated_gm_m", estimated_gm_m)
+            state_manager.set("weight.estimated_gm_m", estimated_gm_m, source)
 
             # Check GM criterion (IMO minimum 0.15m for vessels < 100m)
             state = ValidatorState.PASSED
@@ -435,7 +438,7 @@ class WeightStabilityValidator(ValidatorInterface):
                     suggestion="Lower KG by moving weight down or increase BM by widening beam",
                 ))
                 state = ValidatorState.WARNING
-                state_manager.set("weight.stability_ready", False)
+                state_manager.set("weight.stability_ready", False, source)
             elif estimated_gm_m < 0.15:
                 findings.append(ValidationFinding(
                     finding_id=str(uuid.uuid4())[:8],
@@ -447,9 +450,9 @@ class WeightStabilityValidator(ValidatorInterface):
                     suggestion="Lower KG by moving weight down",
                 ))
                 state = ValidatorState.WARNING
-                state_manager.set("weight.stability_ready", True)  # Still proceed
+                state_manager.set("weight.stability_ready", True, source)  # Still proceed
             else:
-                state_manager.set("weight.stability_ready", True)
+                state_manager.set("weight.stability_ready", True, source)
                 findings.append(ValidationFinding(
                     finding_id=str(uuid.uuid4())[:8],
                     severity=ResultSeverity.INFO,

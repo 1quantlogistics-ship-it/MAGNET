@@ -143,71 +143,51 @@ class OptimizationValidator(ValidatorInterface):
             analyzer = ParetoAnalyzer(problem)
             metrics = analyzer.compute_metrics(opt_result.pareto_front)
 
-            # Write results
-            agent = "optimization/validator"
+            # Write results - Hole #7 Fix: Use .set() with proper source
+            source = "optimization/validator"
 
             # Problem definition
-            state_manager.write(
+            state_manager.set(
                 "optimization.problem",
                 determinize_dict(problem.to_dict()),
-                agent,
-                "Optimization problem definition",
+                source
             )
 
             # Full result
-            state_manager.write(
+            state_manager.set(
                 "optimization.result",
                 determinize_dict(opt_result.to_dict()),
-                agent,
-                "Optimization result",
+                source
             )
 
             # Pareto front
             pareto_data = [s.to_dict() for s in opt_result.pareto_front]
-            state_manager.write(
+            state_manager.set(
                 "optimization.pareto_front",
                 determinize_dict({"solutions": pareto_data}),
-                agent,
-                "Pareto front solutions",
+                source
             )
 
             # Selected solution
             if opt_result.selected_solution:
-                state_manager.write(
+                state_manager.set(
                     "optimization.selected_solution",
                     determinize_dict(opt_result.selected_solution.to_dict()),
-                    agent,
-                    "Selected best solution",
+                    source
                 )
 
             # Status and statistics
-            state_manager.write(
-                "optimization.status",
-                opt_result.status.value,
-                agent,
-                "Optimizer status",
-            )
+            state_manager.set("optimization.status", opt_result.status.value, source)
 
-            state_manager.write(
-                "optimization.iterations",
-                opt_result.iterations,
-                agent,
-                "Number of iterations",
-            )
+            state_manager.set("optimization.iterations", opt_result.iterations, source)
 
-            state_manager.write(
-                "optimization.evaluations",
-                opt_result.evaluations,
-                agent,
-                "Number of evaluations",
-            )
+            state_manager.set("optimization.evaluations", opt_result.evaluations, source)
 
             # Metrics
-            state_manager.write(
+            state_manager.set(
                 "optimization.metrics",
                 determinize_dict(metrics.to_dict()),
-                agent,
-                "Pareto front metrics",
+                source
             )
 
             # Set result state

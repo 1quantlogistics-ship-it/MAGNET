@@ -1,0 +1,44 @@
+# MAGNET RunPod Serverless Dockerfile
+# For BATCH validation jobs only - stateless, no session persistence
+# For UI/streaming, use API mode instead
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies (needed for scipy/numpy compilation fallback)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies FIRST (better layer caching)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install RunPod SDK
+RUN pip install --no-cache-dir runpod>=1.3.0
+
+# Copy application code
+COPY magnet/ ./magnet/
+COPY pyproject.toml .
+
+# Install magnet package (non-editable for production)
+# NOTE: Using `pip install .` not `-e .` for slim image compatibility
+RUN pip install --no-cache-dir .
+
+# Verify imports work (catch missing deps at build time)
+RUN python -c "import magnet; print('IMPORT_OK')"
+
+# Create temp storage (ephemeral - cleared between invocations)
+RUN mkdir -p /tmp/magnet_data
+
+# Environment
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    MAGNET_ENVIRONMENT=production \
+    MAGNET_STORAGE_DIR=/tmp/magnet_data
+
+# RunPod handler entry point
+CMD ["python", "-u", "magnet/deployment/runpod_handler.py"]

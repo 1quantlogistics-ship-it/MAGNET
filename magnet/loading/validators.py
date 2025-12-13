@@ -200,7 +200,7 @@ class LoadingComputerValidator(ValidatorInterface):
             )
 
             # Write results (with determinization - CI#8)
-            agent = "loading/computer"
+            source = "loading/computer"  # Hole #7 Fix: Proper source for provenance
             all_pass = True
             worst_gm = float('inf')
             worst_condition = None
@@ -208,8 +208,7 @@ class LoadingComputerValidator(ValidatorInterface):
             for cond_name, cond_result in conditions.items():
                 # FIX v1.1: Determinize output
                 cond_dict = determinize_dict(cond_result.to_dict())
-                state_manager.write(f"loading.{cond_name}", cond_dict,
-                                   agent, f"Loading condition: {cond_result.condition_name}")
+                state_manager.set(f"loading.{cond_name}", cond_dict, source)
 
                 # Track worst GM
                 if cond_result.gm_fluid_m < worst_gm:
@@ -232,19 +231,15 @@ class LoadingComputerValidator(ValidatorInterface):
                         message=f"{cond_result.condition_name}: {warning}",
                     ))
 
-            state_manager.write("loading.all_conditions_pass", all_pass,
-                               agent, "All loading conditions pass criteria")
+            state_manager.set("loading.all_conditions_pass", all_pass, source)
 
-            state_manager.write("loading.worst_case_gm_m", worst_gm,
-                               agent, "Worst case GM across conditions")
+            state_manager.set("loading.worst_case_gm_m", worst_gm, source)
 
-            state_manager.write("loading.worst_case_condition", worst_condition,
-                               agent, "Condition with worst GM")
+            state_manager.set("loading.worst_case_condition", worst_condition, source)
 
             # Update stability.kg_m for worst case (highest VCG)
             worst_vcg = max(c.vcg_m for c in conditions.values())
-            state_manager.write("stability.kg_m", worst_vcg,
-                               agent, "KG from worst loading condition")
+            state_manager.set("stability.kg_m", worst_vcg, source)
 
             # Set result state
             if result.error_count > 0:

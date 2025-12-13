@@ -68,6 +68,7 @@ class ValidatorState(Enum):
     SKIPPED = "skipped"          # Intentionally not run
     ERROR = "error"              # Execution error (code failure, NOT validation failure)
     BLOCKED = "blocked"          # Waiting on dependencies
+    NOT_IMPLEMENTED = "not_implemented"  # No implementation exists (permanent, not transient)
 
 
 class ResultSeverity(Enum):
@@ -360,6 +361,11 @@ class ValidationResult:
         return self.state == ValidatorState.ERROR
 
     @property
+    def is_not_implemented(self) -> bool:
+        """Is this validator missing an implementation? (permanent, not transient)"""
+        return self.state == ValidatorState.NOT_IMPLEMENTED
+
+    @property
     def duration(self) -> Optional[timedelta]:
         """Execution duration."""
         if self.completed_at:
@@ -394,6 +400,7 @@ class ValidationResult:
             "error_message": self.error_message,
             "passed": self.passed,
             "is_execution_error": self.is_execution_error,
+            "is_not_implemented": self.is_not_implemented,
             "input_hash": self.input_hash,
         }
 

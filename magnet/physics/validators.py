@@ -152,20 +152,24 @@ class HydrostaticsValidator(ValidatorInterface):
             )
 
             # Write ALL outputs to state (v1.2: 11 outputs)
-            state_manager.set("hull.displacement_m3", results.volume_displaced_m3)
-            state_manager.set("hull.kb_m", results.kb_m)
-            state_manager.set("hull.bm_m", results.bm_m)
-            state_manager.set("hull.lcb_from_ap_m", results.lcb_m)
-            state_manager.set("hull.vcb_m", results.vcb_m)
-            state_manager.set("hull.tpc", results.tpc)
-            state_manager.set("hull.mct", results.mct)
-            state_manager.set("hull.lcf_from_ap_m", results.lcf_m)
-            state_manager.set("hull.waterplane_area_m2", results.waterplane_area_m2)
-            state_manager.set("hull.wetted_surface_m2", results.wetted_surface_m2)
-            state_manager.set("hull.freeboard", results.freeboard_m)
+            # Use correct field names from DesignState.HullState:
+            # - vcb_m = Vertical Center of Buoyancy (KB)
+            # - bmt = Transverse Metacentric Radius (BM transverse)
+            # - bml = Longitudinal Metacentric Radius (BM longitudinal)
+            source = "physics/hydrostatics"
+            state_manager.set("hull.displacement_m3", results.volume_displaced_m3, source)
+            state_manager.set("hull.vcb_m", results.vcb_m, source)  # KB (vertical center of buoyancy)
+            state_manager.set("hull.bmt", results.bm_m, source)     # BMT (transverse metacentric radius)
+            state_manager.set("hull.lcb_from_ap_m", results.lcb_m, source)
+            state_manager.set("hull.tpc", results.tpc, source)
+            state_manager.set("hull.mct", results.mct, source)
+            state_manager.set("hull.lcf_from_ap_m", results.lcf_m, source)
+            state_manager.set("hull.waterplane_area_m2", results.waterplane_area_m2, source)
+            state_manager.set("hull.wetted_surface_m2", results.wetted_surface_m2, source)
+            state_manager.set("hull.freeboard", results.freeboard_m, source)
 
             # Also write displacement in metric tonnes (commonly needed)
-            state_manager.set("hull.displacement_mt", results.displacement_mt)
+            state_manager.set("hull.displacement_mt", results.displacement_mt, source)
 
             # Add findings for any calculator warnings
             state = ValidatorState.PASSED
@@ -343,16 +347,17 @@ class ResistanceValidator(ValidatorInterface):
             )
 
             # Write outputs to state
-            state_manager.set("resistance.total_kn", results.total_kn)
-            state_manager.set("resistance.frictional_kn", results.frictional_kn)
-            state_manager.set("resistance.residuary_kn", results.residuary_kn)
-            state_manager.set("resistance.effective_power_kw", results.effective_power_kw)
-            state_manager.set("resistance.froude_number", results.froude_number)
-            state_manager.set("resistance.reynolds_number", results.reynolds_number)
+            source = "physics/resistance"
+            state_manager.set("resistance.total_kn", results.total_kn, source)
+            state_manager.set("resistance.frictional_kn", results.frictional_kn, source)
+            state_manager.set("resistance.residuary_kn", results.residuary_kn, source)
+            state_manager.set("resistance.effective_power_kw", results.effective_power_kw, source)
+            state_manager.set("resistance.froude_number", results.froude_number, source)
+            state_manager.set("resistance.reynolds_number", results.reynolds_number, source)
 
             # Also write additional useful outputs
-            state_manager.set("resistance.total_n", results.total_n)
-            state_manager.set("resistance.effective_power_hp", results.effective_power_hp)
+            state_manager.set("resistance.total_n", results.total_n, source)
+            state_manager.set("resistance.effective_power_hp", results.effective_power_hp, source)
 
             # Add calculator warnings as findings
             state = ValidatorState.PASSED

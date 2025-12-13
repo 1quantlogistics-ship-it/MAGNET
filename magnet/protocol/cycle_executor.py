@@ -253,11 +253,10 @@ class CycleExecutor:
         tentative: bool = True,
     ) -> None:
         """Apply proposal changes to state."""
+        # Hole #7 Fix: Use .set() with proper source for provenance
+        source = "protocol/cycle_executor"
         for change in proposal.changes:
-            if hasattr(self.state, 'set'):
-                self.state.set(change.path, change.new_value)
-            elif hasattr(self.state, 'write'):
-                self.state.write(change.path, change.new_value)
+            self.state.set(change.path, change.new_value, source)
 
     def _run_validation(self, proposal: Proposal) -> ValidationResult:
         """Run validation pipeline."""
