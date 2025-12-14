@@ -15,11 +15,11 @@
 
 MAGNET is a **parametric naval architecture engine**, powered by a multi-agent reasoning stack, deterministic physics modules, and a VisionOS-style 3D spatial interface. It transforms high-level intent (*"Design a 32 ft patrol cat"*) into validated hulls, layouts, systems plans, routing logic, and engineering reports — **all in minutes, not months**.
 
-This repository contains the full implementation of MAGNET V1.2, including:
+This repository contains the full implementation of MAGNET V1.4, including:
 
 - **Unified Design State** — 500+ parameters, 27 dataclasses, full serialization
 - **Kernel Conductor** — Phase-gated orchestration with dependency resolution
-- **Hull Synthesis Engine** — Auto-generates hull from mission parameters
+- **Hull Synthesis Engine** — Auto-generates hull from mission parameters with coefficient coupling
 - **Physics Engines** — Hydrostatics, stability, resistance, scantlings
 - **Interior Spatial Layout System** — Compartment packing, egress validation
 - **Systems Macro-Routing Engine** — Piping, electrical, HVAC trunk logic
@@ -60,12 +60,16 @@ Traditional marine design workflows require:
 
 ## What MAGNET Can Do
 
-### V1.2 — Production Release (Current)
+### V1.4 — Production Release (Current)
 
 | Capability | Status |
 |------------|--------|
 | Mission interpretation & requirements capture | ✅ Complete |
 | Hull synthesis from mission parameters | ✅ Complete |
+| Coefficient coupling (Cb = Cp × Cm enforcement) | ✅ Complete |
+| Mutation escalation for local optima escape | ✅ Complete |
+| Per-iteration bounds clamping with ratio preservation | ✅ Complete |
+| Family-specific priors (patrol, workboat, ferry, planing, catamaran) | ✅ Complete |
 | Parametric hull generation (GRM + NURBS) | ✅ Complete |
 | Full hydrostatics suite (displacement, LCB, BMt, KMt...) | ✅ Complete |
 | Intact & damage stability (GZ curves, AVS) | ✅ Complete |
@@ -75,12 +79,16 @@ Traditional marine design workflows require:
 | Arrangement & compartment layout | ✅ Complete |
 | Kernel phase orchestration with gates | ✅ Complete |
 | Classification rule checking (Lloyd's, ABS, DNV-GL, BV) | ✅ Complete |
+| PREFERENCE severity for "could be better" guidance | ✅ Complete |
+| Proportional harmony validator | ✅ Complete |
 | Real-time WebGL 3D visualization | ✅ Complete |
 | Multi-format geometry export | ✅ Complete |
 | Engineering packet generation | ✅ Complete |
 
 ### V2 — Concept-to-Preliminary Designer (Roadmap)
 
+- Multi-candidate exploration with determinism & cost semantics
+- Bounded Cp movement for shape character exploration
 - Variant generation & comparison
 - Optimization (NSGA-II, novelty search)
 - Natural language mission briefs
@@ -168,8 +176,8 @@ magnet/
 ├── kernel/             # Conductor, phase registry, hull synthesis engine
 │   ├── conductor.py    # Phase orchestration with gate evaluation
 │   ├── registry.py     # Phase definitions and dependencies
-│   ├── synthesis.py    # Hull synthesis from mission parameters
-│   └── priors/         # Hull family priors (workboat, patrol, etc.)
+│   ├── synthesis.py    # Hull synthesis with coefficient coupling & escalation
+│   └── priors/         # Hull family priors with bounds & constraints
 ├── hull_gen/           # Parametric hull generation, GRM, NURBS
 ├── physics/            # Hydrostatics, resistance calculations
 ├── stability/          # Intact & damage stability, GZ curves
@@ -227,7 +235,7 @@ MAGNET integrates **12 mathematical engines**, each a domain in itself:
 | **Lines of Code** | 105,000+ |
 | **State Parameters** | 500+ tracked values |
 | **Validators** | 15+ physics/stability/compliance |
-| **Hull Families** | 6 (workboat, patrol, tug, ferry, cargo, yacht) |
+| **Hull Families** | 5 (patrol, workboat, ferry, planing, catamaran) |
 | **Physics Engines** | 12 integrated |
 | **Export Formats** | glTF, GLB, STL, OBJ, JSON |
 | **Classification Societies** | Lloyd's, ABS, DNV-GL, BV |
@@ -396,7 +404,7 @@ MAGNET is the foundation for AI-driven design across **ships, buildings, aircraf
 
 <div align="center">
 
-**MAGNET V1.2** — *The Design Operating System*
+**MAGNET V1.4** — *The Design Operating System*
 
 *40 modules • 2,355 tests • 12 physics engines • 105k+ lines of code*
 
