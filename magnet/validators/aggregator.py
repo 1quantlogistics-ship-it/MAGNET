@@ -213,15 +213,17 @@ class ResultAggregator:
 
             # v1.1: Use gate_requirement for bucketing
             gate_req = definition.gate_requirement
-
-            # INVARIANT: NOT_IMPLEMENTED validators ALWAYS skip, regardless of GateRequirement
-            # This ensures missing implementations never block progress
-            if result and result.state == ValidatorState.NOT_IMPLEMENTED:
-                logger.debug(f"Skipping NOT_IMPLEMENTED validator {validator_id}")
-                continue
-
-            # Determine if this is a required validator (for counting purposes)
             is_required = gate_req == GateRequirement.REQUIRED
+
+            # NOT_IMPLEMENTED: REQUIRED validators must block, others skip
+            if result and result.state == ValidatorState.NOT_IMPLEMENTED:
+                if is_required:
+                    status.required_failed += 1
+                    status.blocking_validators.append(validator_id)
+                    logger.error(f"Required validator NOT_IMPLEMENTED: {validator_id}")
+                else:
+                    logger.debug(f"Skipping NOT_IMPLEMENTED validator {validator_id}")
+                continue
 
             if not result:
                 # Missing result - only REQUIRED validators block

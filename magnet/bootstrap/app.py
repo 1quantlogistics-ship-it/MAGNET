@@ -182,12 +182,9 @@ class MAGNETApp:
             from magnet.core.phase_states import PhaseMachine
 
             def create_phase_machine():
-                try:
-                    from magnet.core.state_manager import StateManager
-                    state_manager = self._context.container.resolve(StateManager)
-                    return PhaseMachine(state_manager)
-                except Exception:
-                    return PhaseMachine()
+                from magnet.core.state_manager import StateManager
+                state_manager = self._context.container.resolve(StateManager)
+                return PhaseMachine(state_manager)
 
             self._services.add_factory(PhaseMachine, create_phase_machine)
             self._context._initialized_components.append("PhaseMachine")
@@ -237,12 +234,9 @@ class MAGNETApp:
             from magnet.core.state_manager import StateManager
 
             def create_agent_factory():
-                try:
-                    llm_client = self._context.container.resolve(LLMClient)
-                    state_manager = self._context.container.resolve(StateManager)
-                    return AgentFactory(llm_client=llm_client, state_manager=state_manager)
-                except Exception:
-                    return AgentFactory()
+                llm_client = self._context.container.resolve(LLMClient)
+                state_manager = self._context.container.resolve(StateManager)
+                return AgentFactory(llm_client=llm_client, state_manager=state_manager)
 
             self._services.add_factory(AgentFactory, create_agent_factory)
             self._context._initialized_components.append("AgentFactory")
@@ -296,12 +290,9 @@ class MAGNETApp:
             instance_count = ValidatorRegistry.instantiate_all()
             logger.info(f"✓ Instantiated {instance_count} validators")
 
-            # Guardrail #4: NOW verify required validators have working instances
-            try:
-                ValidatorRegistry.validate_required_implementations()
-            except RuntimeError as e:
-                # Log warning but don't fail - some validators may not be implemented yet
-                logger.warning(f"Some required validators missing: {e}")
+            # Guardrail #4: Verify required validators - MUST abort if missing
+            ValidatorRegistry.validate_required_implementations()
+            logger.info("✓ All required validators verified")
 
             # Step 3: Build validator topology (DAG)
             topology = ValidatorTopology()
@@ -355,12 +346,9 @@ class MAGNETApp:
             from magnet.vision.router import VisionRouter, VisionRequest, VisionResponse
 
             def create_vision_router():
-                try:
-                    from magnet.core.state_manager import StateManager
-                    state_manager = self._context.container.resolve(StateManager)
-                    return VisionRouter(state_manager)
-                except Exception:
-                    return VisionRouter()
+                from magnet.core.state_manager import StateManager
+                state_manager = self._context.container.resolve(StateManager)
+                return VisionRouter(state_manager)
 
             self._services.add_factory(VisionRouter, create_vision_router)
             self._context._initialized_components.append("VisionRouter")
@@ -372,12 +360,9 @@ class MAGNETApp:
             from magnet.reporting.generators.base import ReportGenerator
 
             def create_report_generator():
-                try:
-                    from magnet.core.state_manager import StateManager
-                    state_manager = self._context.container.resolve(StateManager)
-                    return ReportGenerator(state_manager)
-                except Exception:
-                    return ReportGenerator()
+                from magnet.core.state_manager import StateManager
+                state_manager = self._context.container.resolve(StateManager)
+                return ReportGenerator(state_manager)
 
             self._services.add_factory(ReportGenerator, create_report_generator, Lifecycle.TRANSIENT)
             self._context._initialized_components.append("ReportGenerator")
