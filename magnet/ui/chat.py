@@ -284,7 +284,8 @@ Only include fields that are explicitly mentioned or clearly implied."""
         import uuid
         session_id = f"chat_design_{uuid.uuid4().hex[:8]}"
         self.conductor.create_session(session_id)
-        phases = ["mission", "hull", "weight", "stability"]  # Golden path only
+        # Full dependency chain: mission -> hull -> structure -> propulsion -> weight -> stability
+        phases = ["mission", "hull", "structure", "propulsion", "weight", "stability"]
         results = []
 
         # Match existing _cmd_run() pattern - use adaptive API
