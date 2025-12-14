@@ -41,6 +41,23 @@ from .validator import (
     register_kernel_validators,
 )
 
+# v1.1: Hull Synthesis Engine
+from .synthesis import (
+    HullSynthesizer,
+    SynthesisRequest,
+    SynthesisProposal,
+    SynthesisResult,
+    ConvergenceCriteria,
+    TerminationReason,
+)
+from .synthesis_lock import SynthesisLock, SynthesisLockError
+from .synthesis_fallback import (
+    FallbackProposal,
+    FallbackMode,
+    create_fallback_proposal,
+)
+from .priors.hull_families import HullFamily, get_family_prior
+
 
 __all__ = [
     # Enums
@@ -65,4 +82,18 @@ __all__ = [
     "KERNEL_DEFINITION",
     "get_kernel_definition",
     "register_kernel_validators",
+    # Synthesis (v1.1)
+    "HullSynthesizer",
+    "SynthesisRequest",
+    "SynthesisProposal",
+    "SynthesisResult",
+    "ConvergenceCriteria",
+    "TerminationReason",
+    "SynthesisLock",
+    "SynthesisLockError",
+    "FallbackProposal",
+    "FallbackMode",
+    "create_fallback_proposal",
+    "HullFamily",
+    "get_family_prior",
 ]

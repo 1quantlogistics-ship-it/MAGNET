@@ -26,10 +26,19 @@ class MockStateManager:
     def get(self, key, default=None):
         return self._data.get(key, default)
 
+    def get_strict(self, path: str):
+        """Return value or raise InvalidPathError if path invalid.
+
+        For testing, we accept all paths that start with known prefixes.
+        """
+        from magnet.core.state_manager import MISSING
+        # Allow all paths in tests for simplicity
+        return self._data.get(path, MISSING)
+
     def write(self, key, value, agent, description):
         self._data[key] = value
 
-    def set(self, key, value):
+    def set(self, key, value, source=None):
         self._data[key] = value
 
 

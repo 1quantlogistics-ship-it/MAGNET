@@ -112,7 +112,8 @@ class HullState:
     entrance_angle_deg: Optional[float] = None  # Half angle of entrance
 
     # Derived values
-    displacement_m3: Optional[float] = None  # Volume displacement
+    displacement_m3: Optional[float] = None  # Volume displacement (m³)
+    displacement_mt: Optional[float] = None  # Mass displacement (metric tonnes)
     wetted_surface_m2: Optional[float] = None
     waterplane_area_m2: Optional[float] = None
 

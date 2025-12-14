@@ -21,6 +21,7 @@ from magnet.validators.taxonomy import (
     ResultSeverity,
     ValidatorDefinition,
     ValidatorCategory,
+    GateRequirement,
 )
 from magnet.validators.executor import ExecutionState
 from magnet.validators.topology import ValidatorTopology
@@ -200,6 +201,7 @@ class TestResultAggregator:
                 category=ValidatorCategory.PHYSICS,
                 is_gate_condition=True,
                 gate_severity=ResultSeverity.ERROR,
+                gate_requirement=GateRequirement.REQUIRED,  # v1.1: Required for gate blocking
             )
             return node
 

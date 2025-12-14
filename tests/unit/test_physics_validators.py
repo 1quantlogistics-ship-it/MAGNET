@@ -30,7 +30,7 @@ class MockStateManager:
     def get(self, key, default=None):
         return self._values.get(key, default)
 
-    def set(self, key, value):
+    def set(self, key, value, source=None):
         self._values[key] = value
 
     def get_field_metadata(self, key):

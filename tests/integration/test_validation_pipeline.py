@@ -17,6 +17,7 @@ from magnet.validators.taxonomy import (
     ValidationResult,
     ValidationFinding,
     ResultSeverity,
+    GateRequirement,
     ValidatorInterface,
     ResourcePool,
     ResourceRequirements,
@@ -278,26 +279,28 @@ class TestGateAggregation:
         """Create topology with gate validators."""
         topology = ValidatorTopology()
 
-        # Required gate validator
+        # Required gate validator - v1.1: Use gate_requirement for blocking behavior
         topology.add_validator(ValidatorDefinition(
             validator_id="hull/volume",
             name="Hull Volume",
             description="Required hull volume check",
             category=ValidatorCategory.PHYSICS,
-            phase="hull_form",
+            phase="hull",  # Use canonical phase name
             is_gate_condition=True,
-            gate_severity=ResultSeverity.ERROR,  # Required
+            gate_severity=ResultSeverity.ERROR,
+            gate_requirement=GateRequirement.REQUIRED,  # v1.1: Blocks gate on failure
         ))
 
-        # Recommended gate validator
+        # Recommended gate validator - v1.1: OPTIONAL means warning only
         topology.add_validator(ValidatorDefinition(
             validator_id="hull/wetted",
             name="Hull Wetted",
             description="Recommended wetted surface check",
             category=ValidatorCategory.PHYSICS,
-            phase="hull_form",
+            phase="hull",  # Use canonical phase name
             is_gate_condition=True,
-            gate_severity=ResultSeverity.WARNING,  # Recommended
+            gate_severity=ResultSeverity.WARNING,
+            gate_requirement=GateRequirement.OPTIONAL,  # v1.1: Doesn't block gate
         ))
 
         topology.build()
@@ -325,7 +328,7 @@ class TestGateAggregation:
             completed_at=datetime.utcnow(),
         )
 
-        status = aggregator.check_gate("hull_form", exec_state)
+        status = aggregator.check_gate("hull", exec_state)  # Use canonical phase name
 
         assert status.can_advance
         assert status.required_passed == 1
@@ -360,7 +363,7 @@ class TestGateAggregation:
             completed_at=datetime.utcnow(),
         )
 
-        status = aggregator.check_gate("hull_form", exec_state)
+        status = aggregator.check_gate("hull", exec_state)  # Use canonical phase name
 
         assert not status.can_advance
         assert status.required_failed == 1
@@ -445,18 +448,20 @@ class TestEndToEndPipeline:
             name="Dimensions",
             description="Dimension check",
             category=ValidatorCategory.BOUNDS,
-            phase="hull_form",
+            phase="hull",  # Use canonical phase name
             is_gate_condition=True,
             gate_severity=ResultSeverity.ERROR,
+            gate_requirement=GateRequirement.REQUIRED,  # v1.1: Blocks gate on failure
         ))
         topology.add_validator(ValidatorDefinition(
             validator_id="hull/volume",
             name="Volume",
             description="Volume check",
             category=ValidatorCategory.PHYSICS,
-            phase="hull_form",
+            phase="hull",  # Use canonical phase name
             is_gate_condition=True,
             gate_severity=ResultSeverity.ERROR,
+            gate_requirement=GateRequirement.REQUIRED,  # v1.1: Blocks gate on failure
             depends_on_validators=["hull/dimensions"],
         ))
         topology.build()
@@ -483,7 +488,7 @@ class TestEndToEndPipeline:
 
         # 4. Check gate
         aggregator = ResultAggregator(topology=topology)
-        gate_status = aggregator.check_gate("hull_form", exec_state)
+        gate_status = aggregator.check_gate("hull", exec_state)  # Use canonical phase name
 
         assert gate_status.can_advance
         assert gate_status.required_passed == 2

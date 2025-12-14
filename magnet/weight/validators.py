@@ -257,10 +257,13 @@ class WeightEstimationValidator(ValidatorInterface):
 
             # Write results to state
             source = "weight/estimation"
-            state_manager.set("weight.lightship_mt", summary.lightship_weight_mt, source)
-            state_manager.set("weight.lightship_lcg_m", summary.lightship_lcg_m, source)
+            # Canonical paths (contracts/tests expect these names)
+            state_manager.set("weight.lightship_weight_mt", summary.lightship_weight_mt, source)
             state_manager.set("weight.lightship_vcg_m", summary.lightship_vcg_m, source)
+            state_manager.set("weight.lightship_lcg_m", summary.lightship_lcg_m, source)
             state_manager.set("weight.lightship_tcg_m", summary.lightship_tcg_m, source)
+            # Legacy alias (backward compatibility)
+            state_manager.set("weight.lightship_mt", summary.lightship_weight_mt, source)
             state_manager.set("weight.margin_mt", summary.margin_weight_mt, source)
             state_manager.set("weight.average_confidence", summary.average_confidence, source)
 

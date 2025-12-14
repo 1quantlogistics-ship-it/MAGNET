@@ -249,7 +249,7 @@ class TestValidatorTopology:
             name="Hull Validator",
             description="Hull",
             category=ValidatorCategory.PHYSICS,
-            phase="hull_form",
+            phase="hull",  # Use canonical phase name
         ))
         topology.add_validator(ValidatorDefinition(
             validator_id="test/mission",
@@ -261,7 +261,7 @@ class TestValidatorTopology:
 
         topology.build()
 
-        hull_validators = topology.get_validators_for_phase("hull_form")
+        hull_validators = topology.get_validators_for_phase("hull")  # Use canonical phase name
         assert "test/hull" in hull_validators
         assert "test/mission" not in hull_validators
 
@@ -274,7 +274,7 @@ class TestValidatorTopology:
             name="Gate Validator",
             description="Gate",
             category=ValidatorCategory.PHYSICS,
-            phase="hull_form",
+            phase="hull",  # Use canonical phase name
             is_gate_condition=True,
         ))
         topology.add_validator(ValidatorDefinition(
@@ -282,13 +282,13 @@ class TestValidatorTopology:
             name="Non-Gate",
             description="Non-gate",
             category=ValidatorCategory.PHYSICS,
-            phase="hull_form",
+            phase="hull",  # Use canonical phase name
             is_gate_condition=False,
         ))
 
         topology.build()
 
-        gates = topology.get_gate_validators_for_phase("hull_form")
+        gates = topology.get_gate_validators_for_phase("hull")  # Use canonical phase name
         assert "test/gate" in gates
         assert "test/nongate" not in gates
 

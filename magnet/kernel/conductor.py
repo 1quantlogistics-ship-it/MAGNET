@@ -3,7 +3,9 @@ kernel/conductor.py - Phase conductor/orchestrator.
 
 BRAVO OWNS THIS FILE.
 
-Module 15 v1.1 - Phase conductor for MAGNET design process.
+Module 15 v1.2 - Phase conductor for MAGNET design process.
+
+v1.2: Added hull synthesis hook for automatic hull generation.
 """
 
 from __future__ import annotations
@@ -126,6 +128,19 @@ class Conductor:
                     status=PhaseStatus.BLOCKED,
                     errors=[f"Dependency not completed: {dep}"],
                 )
+
+        # v1.2: Hull synthesis hook - MUST run BEFORE input contract check
+        # (synthesis generates the hull dimensions that contracts require)
+        if phase_name == "hull" and not self._hull_exists():
+            synthesis_result = self._run_hull_synthesis()
+            if synthesis_result and not synthesis_result.is_usable:
+                return PhaseResult(
+                    phase_name=phase_name,
+                    status=PhaseStatus.FAILED,
+                    errors=[f"Hull synthesis failed: {synthesis_result.termination_message}"],
+                )
+            # If synthesis succeeded, continue to input contract check
+            # (synthesis should have populated hull.lwl, hull.beam, etc.)
 
         # Hole #5 Fix: Check INPUT contracts BEFORE execution
         from ..validators.contracts import check_phase_inputs
@@ -430,3 +445,103 @@ class Conductor:
                 for k, v in self._session.gate_results.items()
             },
         }
+
+    # =========================================================================
+    # HULL SYNTHESIS (v1.2)
+    # =========================================================================
+
+    def _hull_exists(self) -> bool:
+        """
+        Check if hull dimensions already exist in state.
+
+        Returns True if LWL, beam, and draft are all set.
+        Used to decide whether to run hull synthesis.
+        """
+        lwl = self.state.get("hull.lwl")
+        beam = self.state.get("hull.beam")
+        draft = self.state.get("hull.draft")
+
+        return all(v is not None and v > 0 for v in [lwl, beam, draft])
+
+    def _build_synthesis_request(self) -> Optional['SynthesisRequest']:
+        """
+        Build a SynthesisRequest from current state.
+
+        Reads mission parameters to construct synthesis request.
+        Returns None if required parameters are missing.
+        """
+        from .synthesis import SynthesisRequest
+        from .priors.hull_families import HullFamily
+
+        # Get hull type from hull.hull_type or vessel_type
+        hull_type_str = (
+            self.state.get("hull.hull_type") or
+            self.state.get("mission.vessel_type") or
+            "workboat"
+        )
+        try:
+            hull_family = HullFamily(hull_type_str.lower())
+        except (ValueError, AttributeError):
+            hull_family = HullFamily.WORKBOAT  # Default
+
+        # Required: max speed
+        max_speed_kts = self.state.get("mission.max_speed_kts")
+        if not max_speed_kts or max_speed_kts <= 0:
+            logger.warning("Cannot build synthesis request: max_speed_kts missing")
+            return None
+
+        # Optional parameters
+        loa_m = self.state.get("mission.loa") or self.state.get("hull.loa")
+        crew_count = self.state.get("mission.crew_berthed") or self.state.get("mission.crew_count")
+        range_nm = self.state.get("mission.range_nm")
+        gm_min_m = self.state.get("mission.gm_required_m")
+
+        return SynthesisRequest(
+            hull_family=hull_family,
+            max_speed_kts=max_speed_kts,
+            loa_m=loa_m,
+            crew_count=crew_count,
+            range_nm=range_nm,
+            gm_min_m=gm_min_m,
+        )
+
+    def _run_hull_synthesis(self) -> Optional['SynthesisResult']:
+        """
+        Run hull synthesis to generate initial hull dimensions.
+
+        Creates a HullSynthesizer and runs synthesis loop.
+        Returns SynthesisResult or None if synthesis cannot be run.
+        """
+        from .synthesis import HullSynthesizer, SynthesisResult
+
+        # Build synthesis request
+        request = self._build_synthesis_request()
+        if request is None:
+            logger.warning("Hull synthesis skipped: cannot build request")
+            return None
+
+        # Create synthesizer
+        synthesizer = HullSynthesizer(
+            executor=self._pipeline_executor,
+            state_manager=self.state,
+        )
+
+        # Run synthesis
+        logger.info(f"Running hull synthesis for {request.hull_family.value} at {request.max_speed_kts} kts")
+        try:
+            result = synthesizer.synthesize(request)
+
+            if result.is_usable:
+                logger.info(
+                    f"Hull synthesis completed: {result.termination.value}, "
+                    f"iterations={result.iterations_used}, "
+                    f"LWL={result.proposal.lwl_m:.2f}m"
+                )
+            else:
+                logger.warning(f"Hull synthesis produced unusable result: {result.termination_message}")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Hull synthesis failed: {e}")
+            return None

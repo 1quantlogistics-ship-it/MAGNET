@@ -18,12 +18,10 @@ class TestPhaseExecution:
     def setup_app(self):
         """Create app and state manager for testing."""
         from magnet.bootstrap import create_app
-        from magnet.core.state_manager import StateManager
-        from magnet.core.design_state import DesignState
 
         app = create_app()
-        state = DesignState()
-        sm = StateManager(state)
+        # Use the app's own state manager to ensure consistency
+        sm = app.state_manager
 
         return app, sm
 
@@ -44,14 +42,21 @@ class TestPhaseExecution:
         sm.set("hull.draft", 2.5, "test/setup")
         sm.set("hull.depth", 4.0, "test/setup")
         sm.set("hull.cb", 0.55, "test/setup")
+        # Required by physics/resistance validator
+        sm.set("mission.max_speed_kts", 15.0, "test/setup")
 
         # Get conductor and create session
         conductor = app.conductor
         session = conductor.create_session("test-hull-001")
         assert session is not None, "Failed to create session"
 
+        # Run mission phase first (hull depends on mission)
+        mission_result = conductor.run_phase("mission")
+        assert mission_result.status.value in ("completed", "warning", "passed"), \
+            f"Mission phase failed: {mission_result.errors if hasattr(mission_result, 'errors') else 'unknown'}"
+
         # Run hull phase
-        result = conductor.run_phase("hull", design_id="test-hull-001")
+        result = conductor.run_phase("hull")
 
         # Check phase completed
         assert result.status.value in ("completed", "warning", "passed"), \
@@ -81,7 +86,7 @@ class TestPhaseExecution:
         session = conductor.create_session("test-stability-blocked-001")
 
         # Try to run stability without hull - should be BLOCKED
-        result = conductor.run_phase("stability", design_id="test-stability-blocked-001")
+        result = conductor.run_phase("stability")
 
         # Should fail due to missing inputs
         assert result.status.value in ("blocked", "failed"), \
@@ -100,13 +105,23 @@ class TestPhaseExecution:
         # Provide required inputs
         sm.set("hull.lwl", 50.0, "test/setup")
         sm.set("hull.beam", 10.0, "test/setup")
+        sm.set("hull.draft", 2.5, "test/setup")
         sm.set("hull.depth", 4.0, "test/setup")
+        sm.set("hull.cb", 0.55, "test/setup")
+        sm.set("mission.max_speed_kts", 15.0, "test/setup")
 
         conductor = app.conductor
         conductor.create_session("test-weight-001")
 
+        # Weight depends on hull, structure, and propulsion
+        # Run all required prerequisite phases
+        conductor.run_phase("mission")
+        conductor.run_phase("hull")
+        conductor.run_phase("structure")
+        conductor.run_phase("propulsion")
+
         # Run weight phase
-        result = conductor.run_phase("weight", design_id="test-weight-001")
+        result = conductor.run_phase("weight")
 
         assert result.status.value in ("completed", "warning", "passed"), \
             f"Weight phase failed: {result.status}"
@@ -132,12 +147,19 @@ class TestPhaseExecution:
         sm.set("hull.draft", 2.5, "test/setup")
         sm.set("hull.depth", 4.0, "test/setup")
         sm.set("hull.cb", 0.55, "test/setup")
+        # Required by physics/resistance validator
+        sm.set("mission.max_speed_kts", 15.0, "test/setup")
 
         conductor = app.conductor
         conductor.create_session("test-pipeline-001")
 
+        # Run mission phase first (hull depends on mission)
+        mission_result = conductor.run_phase("mission")
+        assert mission_result.status.value in ("completed", "warning", "passed"), \
+            f"Mission phase failed: {mission_result.errors if hasattr(mission_result, 'errors') else 'unknown'}"
+
         # Run hull phase
-        hull_result = conductor.run_phase("hull", design_id="test-pipeline-001")
+        hull_result = conductor.run_phase("hull")
         assert hull_result.status.value in ("completed", "warning", "passed"), \
             f"Hull phase failed: {hull_result.status}"
 
@@ -145,8 +167,12 @@ class TestPhaseExecution:
         assert sm.get("hull.displacement_m3") is not None, "Hull didn't produce displacement"
         assert sm.get("hull.bmt") is not None, "Hull didn't produce BM"
 
+        # Weight depends on structure and propulsion too
+        conductor.run_phase("structure")
+        conductor.run_phase("propulsion")
+
         # Run weight phase
-        weight_result = conductor.run_phase("weight", design_id="test-pipeline-001")
+        weight_result = conductor.run_phase("weight")
         assert weight_result.status.value in ("completed", "warning", "passed"), \
             f"Weight phase failed: {weight_result.status}"
 
@@ -157,7 +183,7 @@ class TestPhaseExecution:
         assert vcg is not None, "weight.lightship_vcg_m not produced"
 
         # Run stability phase
-        stability_result = conductor.run_phase("stability", design_id="test-pipeline-001")
+        stability_result = conductor.run_phase("stability")
         assert stability_result.status.value in ("completed", "warning", "passed"), \
             f"Stability phase failed: {stability_result.status}"
 
@@ -259,8 +285,10 @@ class TestValidatorRegistry:
         from magnet.validators.builtin import get_all_validators
 
         definitions = get_all_validators()
-        topology = ValidatorTopology(definitions)
+        topology = ValidatorTopology()
+        topology.add_all_validators()
+        topology.build()
 
-        # Should have at least 28 nodes (as documented in audit)
-        assert len(topology._nodes) >= 20, \
-            f"Expected at least 20 topology nodes, got {len(topology._nodes)}"
+        # Should have at least 20 nodes (as documented in audit)
+        assert topology.validator_count >= 20, \
+            f"Expected at least 20 topology nodes, got {topology.validator_count}"

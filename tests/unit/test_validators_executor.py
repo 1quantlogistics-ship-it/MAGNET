@@ -352,7 +352,9 @@ class TestPipelineExecutor:
         )
 
         result = executor.execute_single("test/v")
-        assert result.state == ValidatorState.ERROR
+        # NOT_IMPLEMENTED is the correct state for validators without implementations
+        # (distinct from ERROR which indicates code failure)
+        assert result.state == ValidatorState.NOT_IMPLEMENTED
         assert "No implementation" in result.error_message
 
     def test_execute_single_validator_not_found(self):
@@ -615,8 +617,8 @@ class TestPipelineExecutor:
             validator_registry={},
         )
 
-        result = executor.execute_phase("hull_form")
-        topology.get_validators_for_phase.assert_called_with("hull_form")
+        result = executor.execute_phase("hull")  # Use canonical phase name
+        topology.get_validators_for_phase.assert_called_with("hull")  # Use canonical phase name
 
     def test_invalidate_cache(self):
         """Test cache invalidation."""

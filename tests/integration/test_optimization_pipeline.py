@@ -44,7 +44,7 @@ class MockStateManager:
     def get(self, path, default=None):
         return self._data.get(path, default)
 
-    def set(self, path, value):
+    def set(self, path, value, source=None):
         self._data[path] = value
 
     def write(self, path, value, agent="", description=""):

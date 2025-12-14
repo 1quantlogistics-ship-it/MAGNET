@@ -79,6 +79,25 @@ class ResultSeverity(Enum):
     PASSED = "passed"            # Check passed
 
 
+class GateRequirement(Enum):
+    """
+    How a validator participates in gate evaluation (v1.1).
+
+    Gate semantics (consistent invariant):
+    1. NOT_IMPLEMENTED validators ALWAYS skip - regardless of GateRequirement
+    2. REQUIRED + IMPLEMENTED + FAILED → BLOCK gate
+    3. OPTIONAL + FAILED → WARNING (no block)
+    4. INFORMATIONAL → LOG only, no gate impact
+
+    This ensures NOT_IMPLEMENTED validators never block phase progression,
+    while allowing explicit control over which implemented validators
+    are required vs optional.
+    """
+    REQUIRED = "required"        # MUST pass for gate to pass (if implemented)
+    OPTIONAL = "optional"        # Contributes to score but doesn't block
+    INFORMATIONAL = "info"       # Logged only, no gate impact
+
+
 # =============================================================================
 # RESOURCE REQUIREMENTS (FIX #9)
 # =============================================================================
@@ -193,6 +212,7 @@ class ValidatorDefinition:
     phase: str = ""                # Which phase this validates
     is_gate_condition: bool = False  # Does this block phase advancement?
     gate_severity: ResultSeverity = ResultSeverity.ERROR
+    gate_requirement: GateRequirement = GateRequirement.OPTIONAL  # v1.1: Required vs optional
 
     # Dependencies
     depends_on_validators: List[str] = field(default_factory=list)
@@ -231,6 +251,7 @@ class ValidatorDefinition:
             "phase": self.phase,
             "is_gate_condition": self.is_gate_condition,
             "gate_severity": self.gate_severity.value,
+            "gate_requirement": self.gate_requirement.value,  # v1.1
             "depends_on_validators": self.depends_on_validators,
             "depends_on_parameters": self.depends_on_parameters,
             "produces_parameters": self.produces_parameters,
@@ -256,6 +277,7 @@ class ValidatorDefinition:
             phase=data.get("phase", ""),
             is_gate_condition=data.get("is_gate_condition", False),
             gate_severity=ResultSeverity(data.get("gate_severity", "error")),
+            gate_requirement=GateRequirement(data.get("gate_requirement", "optional")),  # v1.1
             depends_on_validators=data.get("depends_on_validators", []),
             depends_on_parameters=data.get("depends_on_parameters", []),
             produces_parameters=data.get("produces_parameters", []),

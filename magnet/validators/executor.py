@@ -255,19 +255,32 @@ class PipelineExecutor:
         # FIX #10: Track last validation time per validator
         self._last_validation_times: Dict[str, datetime] = {}
 
+        # Track validators completed across all phase executions (for cross-phase dependencies)
+        self._all_completed_validators: Set[str] = set()
+
     def execute_all(
         self,
         skip_cached: bool = True,
         stop_on_failure: bool = False,
         stop_on_fatal_error: bool = True,  # FIX #4
         skip_unchanged: bool = True,  # FIX #10
-        validators_to_run: Optional[Set[str]] = None
+        validators_to_run: Optional[Set[str]] = None,
+        previously_completed: Optional[Set[str]] = None,  # Cross-phase dependencies
     ) -> ExecutionState:
         """
         Execute all validators.
 
         FIX #4: stop_on_fatal_error aborts on ERROR state (code failures)
         FIX #10: skip_unchanged skips validators whose inputs haven't changed
+
+        Args:
+            skip_cached: Skip validators with cached results
+            stop_on_failure: Stop pipeline on first failure
+            stop_on_fatal_error: Stop on ERROR state (code failures)
+            skip_unchanged: Skip if inputs haven't changed
+            validators_to_run: Optional subset of validators to run
+            previously_completed: Validators already completed in prior phases
+                (for cross-phase dependency tracking)
         """
         state = ExecutionState(
             execution_id=str(uuid.uuid4())[:8],
@@ -278,6 +291,11 @@ class PipelineExecutor:
             state.pending = validators_to_run.copy()
         else:
             state.pending = set(self._topology.get_execution_order())
+
+        # Pre-populate completed set with validators from prior phases
+        # This allows cross-phase dependencies to be satisfied
+        if previously_completed:
+            state.completed = previously_completed.copy()
 
         self._current_execution = state
 
@@ -397,13 +415,25 @@ class PipelineExecutor:
         skip_cached: bool = True,
         stop_on_failure: bool = True,
     ) -> ExecutionState:
-        """Execute all validators for a specific phase."""
+        """
+        Execute all validators for a specific phase.
+
+        Uses persistent completion tracking to satisfy cross-phase dependencies.
+        For example, if weight/estimation depends on physics/hydrostatics,
+        and hydrostatics ran in the hull phase, it will be in _all_completed_validators.
+        """
         validators = set(self._topology.get_validators_for_phase(phase))
-        return self.execute_all(
+        result = self.execute_all(
             skip_cached=skip_cached,
             stop_on_failure=stop_on_failure,
             validators_to_run=validators,
+            previously_completed=self._all_completed_validators,
         )
+
+        # Update persistent completed set with newly completed validators
+        self._all_completed_validators.update(result.completed)
+
+        return result
 
     def execute_single(
         self,
@@ -600,3 +630,16 @@ class PipelineExecutor:
             self._cache.invalidate(validator_id)
         else:
             self._cache.invalidate_all()
+
+    def reset_completed_validators(self) -> None:
+        """
+        Reset the persistent completed validator tracking.
+
+        Call this when starting a new design session to ensure
+        cross-phase dependencies are freshly evaluated.
+        """
+        self._all_completed_validators.clear()
+
+    def get_completed_validators(self) -> Set[str]:
+        """Get the set of validators completed across all phase executions."""
+        return self._all_completed_validators.copy()

@@ -63,7 +63,7 @@ class MockStateManager:
         """Get value by dot-notation path."""
         return self._data.get(path, default)
 
-    def set(self, path: str, value):
+    def set(self, path: str, value, source=None):
         """Set value by dot-notation path."""
         self._data[path] = value
 

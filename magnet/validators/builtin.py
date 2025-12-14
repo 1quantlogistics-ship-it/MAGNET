@@ -48,6 +48,7 @@ from .taxonomy import (
     ValidatorPriority,
     ResultSeverity,
     ResourceRequirements,
+    GateRequirement,
 )
 
 
@@ -64,6 +65,7 @@ PHYSICS_VALIDATORS = [
         priority=ValidatorPriority.CRITICAL,
         phase="hull",  # Canonical name (not "hull_form")
         is_gate_condition=True,
+        gate_requirement=GateRequirement.REQUIRED,  # v1.1: MUST pass for hull phase
         # v1.2: Extended input parameters
         depends_on_parameters=[
             "hull.loa", "hull.lwl", "hull.beam", "hull.depth", "hull.draft",
@@ -97,6 +99,7 @@ PHYSICS_VALIDATORS = [
         priority=ValidatorPriority.CRITICAL,
         phase="hull",  # Canonical name (not "hull_form")
         is_gate_condition=True,
+        gate_requirement=GateRequirement.REQUIRED,  # v1.1: MUST pass for hull phase
         depends_on_validators=["physics/hydrostatics"],
         depends_on_parameters=[
             "hull.loa", "hull.beam", "hull.draft",
@@ -257,19 +260,21 @@ STABILITY_VALIDATORS = [
         priority=ValidatorPriority.CRITICAL,
         phase="stability",
         is_gate_condition=True,
+        gate_requirement=GateRequirement.REQUIRED,  # v1.1: MUST pass for stability phase
         depends_on_validators=["physics/hydrostatics"],
-        # v1.2: hull.bmt → hull.bm_m, add stability.kg_m for weight integration
+        # v1.2: hull.bmt → hull.bm_m
+        # Note: stability.kg_m is optional - validator falls back to weight.lightship_vcg_m
         depends_on_parameters=[
             "hull.kb_m", "hull.bm_m", "hull.displacement_mt",
-            "stability.kg_m", "weight.lightship_vcg_m"  # KG sourcing priority
+            "weight.lightship_vcg_m"  # Primary KG source (fallback to estimate if missing)
         ],
-        # v1.2: Extended outputs
+        # v1.2: Extended outputs - matches stability/validators.py IntactGMValidator
         produces_parameters=[
-            "stability.gm_m",           # GM with FSC
-            "stability.gm_solid_m",     # GM without FSC
-            "stability.km_m",           # KM from hydrostatics
-            "stability.fsc_m",          # Free surface correction
-            "stability.passes_gm_criterion",  # GM ≥ 0.15m
+            "stability.gm_transverse_m",  # GM (canonical name for contracts)
+            "stability.gm_corrected_m",   # GM corrected for FSC
+            "stability.kg_m",             # Vertical center of gravity
+            "stability.kb_m",             # Vertical center of buoyancy
+            "stability.bm_m",             # Metacentric radius
         ],
         timeout_seconds=60,
         tags=["stability", "intact", "v1.2"],
@@ -285,7 +290,7 @@ STABILITY_VALIDATORS = [
         is_gate_condition=True,
         depends_on_validators=["stability/intact_gm", "physics/hydrostatics"],
         depends_on_parameters=[
-            "stability.gm_m", "hull.bm_m", "hull.beam", "hull.freeboard"
+            "stability.gm_transverse_m", "hull.bm_m", "hull.beam", "hull.freeboard"
         ],
         # v1.2 FIX #2: Explicit m-rad units for area fields
         produces_parameters=[
@@ -313,10 +318,11 @@ STABILITY_VALIDATORS = [
         priority=ValidatorPriority.HIGH,
         phase="stability",
         is_gate_condition=True,
-        depends_on_validators=["stability/intact_gm", "physics/hydrostatics"],
+        # Note: depends on gz_curve because it needs stability.gz_max_m
+        depends_on_validators=["stability/gz_curve"],
         depends_on_parameters=[
-            "hull.lwl", "hull.beam", "hull.draft",
-            "hull.displacement_mt", "stability.gm_m"
+            "hull.displacement_mt",
+            "stability.gm_transverse_m", "stability.gz_max_m"
         ],
         # v1.2: Extended damage outputs
         produces_parameters=[
@@ -342,7 +348,7 @@ STABILITY_VALIDATORS = [
         depends_on_validators=["stability/gz_curve"],
         depends_on_parameters=[
             "hull.beam", "hull.draft", "hull.displacement_mt",
-            "stability.gm_m", "stability.gz_curve",
+            "stability.gm_transverse_m", "stability.gz_curve",
             "hull.projected_lateral_area_m2",
             "hull.height_of_wind_pressure_m"
         ],
@@ -622,7 +628,7 @@ COMPLIANCE_VALIDATORS = [
         depends_on_validators=["stability/intact_gm", "stability/gz_curve"],
         depends_on_parameters=[
             "hull.lwl", "hull.beam", "mission.vessel_type",
-            "stability.gm_m", "stability.gz_max_m", "stability.angle_of_max_gz_deg",
+            "stability.gm_transverse_m", "stability.gz_max_m", "stability.angle_of_max_gz_deg",
             "stability.area_0_30_m_rad", "stability.area_0_40_m_rad", "stability.area_30_40_m_rad",
         ],
         produces_parameters=[
@@ -650,7 +656,7 @@ COMPLIANCE_VALIDATORS = [
         is_gate_condition=False,
         depends_on_validators=["stability/gz_curve"],
         depends_on_parameters=[
-            "stability.gm_m", "stability.gz_max_m",
+            "stability.gm_transverse_m", "stability.gz_max_m",
         ],
         produces_parameters=[
             "compliance.stability_status",

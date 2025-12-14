@@ -4,9 +4,9 @@
 
 **A next-generation spatial intelligence system for vessel design, analysis, and iteration.**
 
-[![Tests](https://img.shields.io/badge/tests-2090%20passing-brightgreen)]()
-[![Modules](https://img.shields.io/badge/modules-58%20complete-purple)]()
-[![LOC](https://img.shields.io/badge/lines%20of%20code-150k+-red)]()
+[![Tests](https://img.shields.io/badge/tests-2355%20passing-brightgreen)]()
+[![Modules](https://img.shields.io/badge/modules-40%20complete-purple)]()
+[![LOC](https://img.shields.io/badge/lines%20of%20code-105k+-red)]()
 [![Physics Engines](https://img.shields.io/badge/physics%20engines-12-blue)]()
 
 </div>
@@ -15,10 +15,11 @@
 
 MAGNET is a **parametric naval architecture engine**, powered by a multi-agent reasoning stack, deterministic physics modules, and a VisionOS-style 3D spatial interface. It transforms high-level intent (*"Design a 32 ft patrol cat"*) into validated hulls, layouts, systems plans, routing logic, and engineering reports — **all in minutes, not months**.
 
-This repository contains the full implementation of MAGNET V1.1, including:
+This repository contains the full implementation of MAGNET V1.2, including:
 
 - **Unified Design State** — 500+ parameters, 27 dataclasses, full serialization
-- **Multi-Agent Architecture** — Domain-specialized reasoning modules
+- **Kernel Conductor** — Phase-gated orchestration with dependency resolution
+- **Hull Synthesis Engine** — Auto-generates hull from mission parameters
 - **Physics Engines** — Hydrostatics, stability, resistance, scantlings
 - **Interior Spatial Layout System** — Compartment packing, egress validation
 - **Systems Macro-Routing Engine** — Piping, electrical, HVAC trunk logic
@@ -59,11 +60,12 @@ Traditional marine design workflows require:
 
 ## What MAGNET Can Do
 
-### V1.1 — Production Release (Current)
+### V1.2 — Production Release (Current)
 
 | Capability | Status |
 |------------|--------|
 | Mission interpretation & requirements capture | ✅ Complete |
+| Hull synthesis from mission parameters | ✅ Complete |
 | Parametric hull generation (GRM + NURBS) | ✅ Complete |
 | Full hydrostatics suite (displacement, LCB, BMt, KMt...) | ✅ Complete |
 | Intact & damage stability (GZ curves, AVS) | ✅ Complete |
@@ -71,6 +73,7 @@ Traditional marine design workflows require:
 | Weight & CG modeling (LCG, VCG, TCG) | ✅ Complete |
 | Propulsion sizing (Holtrop-Mennen, Savitsky) | ✅ Complete |
 | Arrangement & compartment layout | ✅ Complete |
+| Kernel phase orchestration with gates | ✅ Complete |
 | Classification rule checking (Lloyd's, ABS, DNV-GL, BV) | ✅ Complete |
 | Real-time WebGL 3D visualization | ✅ Complete |
 | Multi-format geometry export | ✅ Complete |
@@ -160,30 +163,33 @@ All agents read from and write to the **Unified Design State**, ensuring the ent
 
 ```
 magnet/
+├── bootstrap/          # Application wiring and dependency injection
 ├── core/               # Unified Design State, Serializer, Phase Machine
-├── agents/             # Multi-agent reasoning modules (planned V2)
+├── kernel/             # Conductor, phase registry, hull synthesis engine
+│   ├── conductor.py    # Phase orchestration with gate evaluation
+│   ├── registry.py     # Phase definitions and dependencies
+│   ├── synthesis.py    # Hull synthesis from mission parameters
+│   └── priors/         # Hull family priors (workboat, patrol, etc.)
 ├── hull_gen/           # Parametric hull generation, GRM, NURBS
-├── hydrostatics/       # Displacement, centers, coefficients
+├── physics/            # Hydrostatics, resistance calculations
 ├── stability/          # Intact & damage stability, GZ curves
-├── structure/          # Scantlings, frames, stringers, plating
-├── propulsion/         # Resistance, powering, propeller sizing
+├── structural/         # Scantlings, frames, stringers, plating
 ├── weight/             # Mass estimation, LCG/VCG/TCG tracking
 ├── arrangement/        # Compartment layout, deck plans
 ├── systems/            # Piping, electrical, HVAC routing
 ├── compliance/         # Classification society rule engines
+├── loading/            # Loading condition calculations
+├── production/         # Production planning and cost estimation
 ├── webgl/              # Real-time 3D visualization engine
-│   ├── schema.py       # Versioned data contracts
-│   ├── geometry_service.py  # Single authoritative geometry source
-│   ├── exporter.py     # glTF/GLB/STL/OBJ with traceability
-│   └── serializer.py   # Binary MNET format
-├── validators/         # Rule-based validation graph
-├── exporters/          # CAD export pipeline
-└── reports/            # Engineering packet generator
+├── validators/         # Rule-based validation graph with taxonomy
+├── optimization/       # NSGA-II, sensitivity analysis
+└── reporting/          # Engineering packet generator
 
 tests/
-├── webgl/              # 90 tests for 3D visualization
-├── unit/               # 2000+ unit tests
-└── integration/        # End-to-end validation
+├── unit/               # 1800+ unit tests
+├── integration/        # 400+ integration tests (golden path, pipelines)
+├── deployment/         # Worker smoke tests
+└── webgl/              # 90 tests for 3D visualization
 ```
 
 ---
@@ -216,12 +222,12 @@ MAGNET integrates **12 mathematical engines**, each a domain in itself:
 
 | Metric | Value |
 |--------|-------|
-| **Modules** | 58 production-ready |
-| **Tests** | 2,090 passing |
-| **Lines of Code** | 150,000+ |
+| **Modules** | 40 production-ready |
+| **Tests** | 2,355 passing |
+| **Lines of Code** | 105,000+ |
 | **State Parameters** | 500+ tracked values |
-| **Dataclasses** | 27 domain models |
-| **API Endpoints** | 80+ REST routes |
+| **Validators** | 15+ physics/stability/compliance |
+| **Hull Families** | 6 (workboat, patrol, tug, ferry, cargo, yacht) |
 | **Physics Engines** | 12 integrated |
 | **Export Formats** | glTF, GLB, STL, OBJ, JSON |
 | **Classification Societies** | Lloyd's, ABS, DNV-GL, BV |
@@ -327,11 +333,14 @@ print(f"Generated hull: {hull.loa}m LOA, Cb={hull.block_coefficient:.3f}")
 ### Run Tests
 
 ```bash
-# Full test suite (2,090 tests)
-pytest
+# Full test suite (2,355 tests)
+PYTHONPATH=. pytest tests/ -v
 
 # Specific module
 pytest tests/webgl/ -v
+
+# Integration tests (golden path, pipelines)
+pytest tests/integration/ -v
 
 # With coverage
 pytest --cov=magnet --cov-report=html
@@ -387,9 +396,9 @@ MAGNET is the foundation for AI-driven design across **ships, buildings, aircraf
 
 <div align="center">
 
-**MAGNET V1.1** — *The Design Operating System*
+**MAGNET V1.2** — *The Design Operating System*
 
-*58 modules • 2,090 tests • 12 physics engines • 150k+ lines of code*
+*40 modules • 2,355 tests • 12 physics engines • 105k+ lines of code*
 
 *One unified platform. Zero disconnected tools. Infinite possibilities.*
 
