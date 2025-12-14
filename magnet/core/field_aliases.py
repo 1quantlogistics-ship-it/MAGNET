@@ -39,6 +39,8 @@ FIELD_ALIASES: Dict[str, str] = {
     "hull.wetted_area": "hull.wetted_surface_m2",
     "hull.lcb": "hull.lcb_from_ap_m",
     "hull.kb": "hull.vcb_m",
+    "hull.bm_m": "hull.bmt",  # Canonical path maps to dataclass field
+    "hull.kb_m": "hull.vcb_m",  # KB canonical alias
 
     # Weight aliases
     "weight.lightship": "weight.lightship_weight_mt",

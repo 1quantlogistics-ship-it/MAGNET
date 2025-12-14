@@ -148,7 +148,7 @@ PHASE_CONTRACTS: Dict[str, PhaseContract] = {
         required_outputs=[
             "hull.displacement_m3",
             "hull.vcb_m",     # Vertical center of buoyancy (KB)
-            "hull.bmt",       # Transverse metacentric radius (BM) - matches HullState.bmt
+            "hull.bm_m",      # Transverse metacentric radius (BM) - canonical path
         ],
         optional_outputs=[
             "hull.wetted_surface_m2",
@@ -161,7 +161,7 @@ PHASE_CONTRACTS: Dict[str, PhaseContract] = {
         required_inputs=[
             "hull.displacement_m3",  # From hull phase
             "hull.vcb_m",            # KB from hull
-            "hull.bmt",              # BM from hull - matches HullState.bmt
+            "hull.bm_m",             # BM from hull - canonical path
             "weight.lightship_vcg_m",  # VCG from weight phase
         ],
         required_outputs=[
