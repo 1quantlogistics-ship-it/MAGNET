@@ -641,6 +641,15 @@ class ComplianceState:
     """
     # Overall status
     overall_passed: bool = False
+    status: Optional[str] = None  # "passed" | "failed" | "incomplete"
+
+    # Validator outputs (written by compliance/regulatory validator)
+    pass_count: int = 0
+    fail_count: int = 0
+    incomplete_count: int = 0
+    findings: Optional[Dict[str, Any]] = None  # Detailed findings
+    report: Optional[str] = None  # Summary report text
+    frameworks_checked: List[str] = field(default_factory=list)
 
     # Check results
     checks: List[Dict[str, Any]] = field(default_factory=list)

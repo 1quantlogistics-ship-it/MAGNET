@@ -28,6 +28,7 @@ class FallbackProposal:
     lwl_m: float
     beam_m: float
     draft_m: float
+    depth_m: float  # Moulded depth to main deck
 
     # Form coefficients
     cb: float
@@ -47,7 +48,7 @@ class FallbackProposal:
     def is_complete(self) -> bool:
         """All parameters are valid positive numbers."""
         return all(v > 0 for v in [
-            self.lwl_m, self.beam_m, self.draft_m,
+            self.lwl_m, self.beam_m, self.draft_m, self.depth_m,
             self.cb, self.cp, self.cm, self.cwp
         ])
 
@@ -57,6 +58,7 @@ class FallbackProposal:
             "hull.lwl": self.lwl_m,
             "hull.beam": self.beam_m,
             "hull.draft": self.draft_m,
+            "hull.depth": self.depth_m,
             "hull.cb": self.cb,
             "hull.cp": self.cp,
             "hull.cm": self.cm,
@@ -100,6 +102,7 @@ def create_fallback_proposal(
     # Scale other dimensions from ratios
     beam = lwl / prior["lwl_beam"]
     draft = beam / prior["beam_draft"]
+    depth = draft * 1.6  # depth ≈ draft + 0.6*draft (typical freeboard ratio)
 
     # Get coefficients from prior
     cb = prior["cb"]
@@ -114,6 +117,7 @@ def create_fallback_proposal(
         lwl_m=lwl,
         beam_m=beam,
         draft_m=draft,
+        depth_m=depth,
         cb=cb,
         cp=cp,
         cm=cm,
