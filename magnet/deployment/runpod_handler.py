@@ -196,25 +196,60 @@ def _handle_run_phase(app: "MAGNETApp", parameters: Dict[str, Any]) -> Dict[str,
 
 
 def _handle_run_full_design(app: "MAGNETApp", parameters: Dict[str, Any]) -> Dict[str, Any]:
-    """Handle full design run."""
-    phases = parameters.get("phases")
-    max_iterations = parameters.get("max_iterations", 5)
+    """
+    Handle full design run.
 
-    try:
-        from magnet.kernel.conductor import Conductor
+    v1.2: Fixed to use existing Conductor methods (run_phase/run_all_phases)
+    instead of non-existent run_full_design() method.
+    """
+    phases = parameters.get("phases", ["hull", "weight", "stability", "compliance"])
 
-        conductor = app.container.resolve(Conductor)
-        run = conductor.run_full_design(phases=phases, max_iterations=max_iterations)
+    from magnet.kernel.conductor import Conductor
 
-        return {
-            "run_id": run.run_id if hasattr(run, 'run_id') else "runpod-run",
-            "status": run.final_status if hasattr(run, 'final_status') else "completed",
-            "phases_completed": run.phases_completed if hasattr(run, 'phases_completed') else [],
-            "state": _export_state(app),
-        }
-    except Exception as e:
-        logger.error(f"Full design run failed: {e}")
-        raise
+    conductor = app.container.resolve(Conductor)
+
+    # Create session for this design run
+    conductor.create_session("runpod-design")
+
+    # Run phases using existing methods
+    results = []
+    phases_completed = []
+
+    if phases:
+        # Specific phases requested - run each in order
+        for phase in phases:
+            result = conductor.run_phase(phase)
+            results.append(result)
+            if result.status.value == "completed":
+                phases_completed.append(phase)
+            elif result.status.value in ["failed", "blocked"]:
+                # Stop on failure
+                break
+    else:
+        # Run all phases in registry order
+        results = conductor.run_all_phases(stop_on_failure=True)
+        phases_completed = [r.phase_name for r in results if r.status.value == "completed"]
+
+    # Determine final status
+    final_status = "completed" if all(r.status.value == "completed" for r in results) else "failed"
+
+    return {
+        "run_id": conductor._session.session_id if conductor._session else "runpod-run",
+        "status": final_status,
+        "phases_completed": phases_completed,
+        "phase_results": [
+            {
+                "phase": r.phase_name,
+                "status": r.status.value,
+                "validators_run": r.validators_run,
+                "validators_passed": r.validators_passed,
+                "validators_failed": r.validators_failed,
+                "errors": r.errors,
+            }
+            for r in results
+        ],
+        "state": _export_state(app),
+    }
 
 
 def _handle_validate(app: "MAGNETApp", parameters: Dict[str, Any]) -> Dict[str, Any]:
