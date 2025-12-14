@@ -17,6 +17,8 @@ from magnet.agents.clarification import (
     ClarificationManager,
 )
 from magnet.agents.api_endpoints import create_agents_router
+from magnet.agents.llm_client import LLMClient
+from magnet.agents.factory import AgentFactory
 
 __all__ = [
     'AckType',
@@ -24,4 +26,6 @@ __all__ = [
     'ClarificationAck',
     'ClarificationManager',
     'create_agents_router',
+    'LLMClient',
+    'AgentFactory',
 ]
