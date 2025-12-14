@@ -69,6 +69,7 @@ class SynthesisProposal:
     lwl_m: float
     beam_m: float
     draft_m: float
+    depth_m: float  # Moulded depth to main deck
 
     # Form coefficients (ALL required)
     cb: float
@@ -88,7 +89,7 @@ class SynthesisProposal:
     def is_complete(self) -> bool:
         """All parameters are valid positive numbers."""
         return all(v > 0 for v in [
-            self.lwl_m, self.beam_m, self.draft_m,
+            self.lwl_m, self.beam_m, self.draft_m, self.depth_m,
             self.cb, self.cp, self.cm, self.cwp
         ])
 
@@ -100,6 +101,7 @@ class SynthesisProposal:
             "hull.lwl": self.lwl_m,
             "hull.beam": self.beam_m,
             "hull.draft": self.draft_m,
+            "hull.depth": self.depth_m,
             "hull.cb": self.cb,
             "hull.cp": self.cp,
             "hull.cm": self.cm,
@@ -362,6 +364,8 @@ class HullSynthesizer:
 
         beam = lwl / prior["lwl_beam"]
         draft = beam / prior["beam_draft"]
+        # Depth = draft + freeboard, typical freeboard ratio 0.6-0.8 × draft for small craft
+        depth = draft * 1.6  # depth ≈ draft + 0.6*draft
         cb = prior["cb"]
         displacement_m3 = lwl * beam * draft * cb
 
@@ -369,6 +373,7 @@ class HullSynthesizer:
             lwl_m=lwl,
             beam_m=beam,
             draft_m=draft,
+            depth_m=depth,
             cb=cb,
             cp=prior["cp"],
             cm=prior["cm"],
@@ -463,12 +468,14 @@ class HullSynthesizer:
         lwl = proposal.lwl_m * (1 + delta_lwl)
         beam = proposal.beam_m * (1 + delta_beam)
         draft = proposal.draft_m * (1 + delta_draft)
+        depth = draft * 1.6  # Maintain depth/draft ratio
         displacement_m3 = lwl * beam * draft * proposal.cb
 
         return SynthesisProposal(
             lwl_m=lwl,
             beam_m=beam,
             draft_m=draft,
+            depth_m=depth,
             cb=proposal.cb,
             cp=proposal.cp,
             cm=proposal.cm,
@@ -496,6 +503,7 @@ class HullSynthesizer:
             lwl_m=fallback.lwl_m,
             beam_m=fallback.beam_m,
             draft_m=fallback.draft_m,
+            depth_m=fallback.depth_m,
             cb=fallback.cb,
             cp=fallback.cp,
             cm=fallback.cm,

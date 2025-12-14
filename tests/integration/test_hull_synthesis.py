@@ -101,6 +101,7 @@ class TestSynthesisProposal:
             lwl_m=23.75,
             beam_m=5.0,
             draft_m=1.5,
+            depth_m=2.4,
             cb=0.45,
             cp=0.62,
             cm=0.82,
@@ -119,6 +120,7 @@ class TestSynthesisProposal:
             lwl_m=25.0,
             beam_m=5.5,
             draft_m=1.6,
+            depth_m=2.56,
             cb=0.45,
             cp=0.62,
             cm=0.82,
@@ -132,6 +134,7 @@ class TestSynthesisProposal:
         assert state_dict["hull.lwl"] == 25.0
         assert state_dict["hull.beam"] == 5.5
         assert state_dict["hull.cb"] == 0.45
+        assert state_dict["hull.depth"] == 2.56
         assert "hull.displacement_m3" in state_dict
 
 
