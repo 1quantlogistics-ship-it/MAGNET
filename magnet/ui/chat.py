@@ -280,7 +280,10 @@ Only include fields that are explicitly mentioned or clearly implied."""
         if not self.conductor:
             return []
 
-        self.conductor.create_session("chat_design")
+        # Create unique session per request to avoid state pollution
+        import uuid
+        session_id = f"chat_design_{uuid.uuid4().hex[:8]}"
+        self.conductor.create_session(session_id)
         phases = ["mission", "hull", "weight", "stability"]  # Golden path only
         results = []
 
@@ -333,8 +336,7 @@ Only include fields that are explicitly mentioned or clearly implied."""
         # Corrected: weight.lightship_mt is the actual path
         lightship = (
             self.state.get("weight.lightship_mt") or
-            self.state.get("weight.lightship_weight_mt") or
-            self.state.get("weight.lightship")
+            self.state.get("weight.lightship_weight_mt")
         )
         # Try multiple GM paths (gm_m works, gm_transverse_m is also valid)
         gm = self.state.get("stability.gm_m") or self.state.get("stability.gm_transverse_m")
