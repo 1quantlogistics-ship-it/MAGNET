@@ -8,18 +8,21 @@ v1.1: Aligned with Conductor v1.1 API for agent orchestration.
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Type, TYPE_CHECKING
 from datetime import datetime, timezone
 from enum import Enum
 import re
 import uuid
 import logging
 
+from pydantic import BaseModel, Field
+
 from .utils import get_state_value, set_state_value, get_phase_status
 
 if TYPE_CHECKING:
     from magnet.core.state_manager import StateManager
     from magnet.kernel.conductor import Conductor
+    from magnet.agents.llm_client import LLMClient
 
 logger = logging.getLogger("ui.chat")
 
@@ -88,6 +91,15 @@ class ChatSession:
         }
 
 
+class MissionUpdate(BaseModel):
+    """Parameters extracted from natural language design request."""
+    vessel_type: Optional[str] = Field(None, description="workboat/patrol/ferry/planing/catamaran")
+    max_speed_kts: Optional[float] = Field(None, description="Max speed in knots")
+    loa_m: Optional[float] = Field(None, description="LOA in meters (convert feet: ft * 0.3048)")
+    crew: Optional[int] = Field(None, description="Crew count")
+    range_nm: Optional[float] = Field(None, description="Range in nautical miles")
+
+
 class ChatHandler:
     """
     Handles chat interactions with the design system.
@@ -115,6 +127,7 @@ class ChatHandler:
         self,
         state: Optional["StateManager"] = None,
         conductor: Optional["Conductor"] = None,
+        llm: Optional["LLMClient"] = None,
     ):
         """
         Initialize chat handler.
@@ -122,9 +135,11 @@ class ChatHandler:
         Args:
             state: StateManager instance
             conductor: Conductor instance for agent orchestration
+            llm: LLMClient for natural language intent parsing
         """
         self.state = state
         self.conductor = conductor
+        self.llm = llm
         self.session = ChatSession()
         self._command_handlers: Dict[str, Callable] = {
             "status": self._cmd_status,
@@ -184,7 +199,46 @@ class ChatHandler:
         return self._handle_unrecognized(text)
 
     def _handle_unrecognized(self, text: str) -> str:
-        """Handle unrecognized input."""
+        """Handle unrecognized input - attempt LLM parsing for design requests."""
+
+        # If no LLM, fall back to help text
+        if not self.llm:
+            return self._help_text(text)
+
+        # Try to parse as design request (handle async properly)
+        import asyncio
+        try:
+            # Python 3.10+ compatible async handling
+            try:
+                loop = asyncio.get_running_loop()
+                # Already in async context - use thread pool
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    params = pool.submit(
+                        asyncio.run, self._parse_design_request(text)
+                    ).result()
+            except RuntimeError:
+                # No running loop - safe to use asyncio.run()
+                params = asyncio.run(self._parse_design_request(text))
+        except Exception as e:
+            logger.warning(f"LLM parse failed: {e}")
+            return self._help_text(text)
+
+        # If nothing extracted, show help
+        if not any([params.vessel_type, params.max_speed_kts, params.loa_m, params.crew, params.range_nm]):
+            return self._help_text(text)
+
+        # Seed state with extracted parameters
+        self._seed_mission(params)
+
+        # Run design pipeline
+        results = self._run_design_pipeline()
+
+        # Return summary
+        return self._format_design_summary(params, results)
+
+    def _help_text(self, text: str) -> str:
+        """Original help message for unrecognized input."""
         return (
             f"I didn't understand '{text}'. "
             "Try 'help' for available commands, or use commands like:\n"
@@ -193,6 +247,117 @@ class ChatHandler:
             "  - get <path> - Get a value\n"
             "  - set <path> <value> - Set a value"
         )
+
+    async def _parse_design_request(self, text: str) -> MissionUpdate:
+        """Use LLM to extract mission parameters from natural language."""
+        prompt = f"""Extract ship design parameters from this request.
+Convert feet to meters (ft × 0.3048). Only include explicitly mentioned values.
+
+User: {text}
+
+Return JSON with fields: vessel_type, max_speed_kts, loa_m, crew, range_nm
+Only include fields that are explicitly mentioned or clearly implied."""
+
+        return await self.llm.complete_json(prompt, MissionUpdate)
+
+    def _seed_mission(self, params: MissionUpdate) -> None:
+        """Apply extracted parameters to state."""
+        if params.vessel_type:
+            self.state.set("mission.vessel_type", params.vessel_type, "chat")
+            self.state.set("hull.hull_type", params.vessel_type, "chat")
+        if params.max_speed_kts:
+            self.state.set("mission.max_speed_kts", params.max_speed_kts, "chat")
+        if params.loa_m:
+            # Note: state expects meters, MissionUpdate already converts ft→m
+            self.state.set("mission.loa", params.loa_m, "chat")
+        if params.crew:
+            self.state.set("mission.crew_berthed", params.crew, "chat")
+        if params.range_nm:
+            self.state.set("mission.range_nm", params.range_nm, "chat")
+
+    def _run_design_pipeline(self) -> list:
+        """Run the golden path phases using adaptive conductor API."""
+        if not self.conductor:
+            return []
+
+        self.conductor.create_session("chat_design")
+        phases = ["mission", "hull", "weight", "stability"]  # Golden path only
+        results = []
+
+        # Match existing _cmd_run() pattern - use adaptive API
+        if hasattr(self.conductor, 'run_full_design'):
+            # Preferred: run all phases at once
+            result = self.conductor.run_full_design(phases=phases)
+            final_status = getattr(result, 'final_status', 'done')
+            for phase in phases:
+                results.append((phase, final_status))
+        else:
+            # Fallback: run phases individually
+            for phase in phases:
+                result = self.conductor.run_phase(phase)
+                status = result.status.value if hasattr(result.status, 'value') else str(result.status)
+                results.append((phase, status))
+
+        return results
+
+    def _format_design_summary(self, params: MissionUpdate, results: list) -> str:
+        """Format design results as conversational summary."""
+        lines = ["**Design Created**\n"]
+
+        # Show what was extracted
+        extracted = []
+        if params.vessel_type:
+            extracted.append(f"Type: {params.vessel_type}")
+        if params.max_speed_kts:
+            extracted.append(f"Speed: {params.max_speed_kts} kts")
+        if params.loa_m:
+            extracted.append(f"LOA: {params.loa_m:.1f} m")
+        if params.crew:
+            extracted.append(f"Crew: {params.crew}")
+        if params.range_nm:
+            extracted.append(f"Range: {params.range_nm} nm")
+
+        if extracted:
+            lines.append("Mission: " + ", ".join(extracted))
+
+        # Show phase results
+        lines.append("\n**Phases:**")
+        for phase, status in results:
+            icon = "✓" if "completed" in status.lower() or "done" in status.lower() else "✗"
+            lines.append(f"  {icon} {phase}: {status}")
+
+        # Show key outputs from state (corrected paths)
+        lwl = self.state.get("hull.lwl")
+        beam = self.state.get("hull.beam")
+        draft = self.state.get("hull.draft")
+        # Corrected: weight.lightship_mt is the actual path
+        lightship = (
+            self.state.get("weight.lightship_mt") or
+            self.state.get("weight.lightship_weight_mt") or
+            self.state.get("weight.lightship")
+        )
+        # Try multiple GM paths (gm_m works, gm_transverse_m is also valid)
+        gm = self.state.get("stability.gm_m") or self.state.get("stability.gm_transverse_m")
+        if gm is None:
+            kb = self.state.get("stability.kb_m") or 0
+            bm = self.state.get("stability.bm_m") or 0
+            kg = self.state.get("stability.kg_m") or 0
+            if kb and bm and kg:
+                gm = kb + bm - kg
+
+        lines.append("\n**Results:**")
+        if lwl:
+            lines.append(f"  LWL: {lwl:.2f} m")
+        if beam:
+            lines.append(f"  Beam: {beam:.2f} m")
+        if draft:
+            lines.append(f"  Draft: {draft:.2f} m")
+        if lightship:
+            lines.append(f"  Lightship: {lightship:.1f} tonnes")
+        if gm:
+            lines.append(f"  GM: {gm:.3f} m")
+
+        return "\n".join(lines)
 
     def _cmd_status(self) -> str:
         """Get design status using unified accessors."""
