@@ -28,6 +28,7 @@ from magnet.validators.taxonomy import (
     ValidatorCategory,
     ValidatorPriority,
     ResourceRequirements,
+    GateRequirement,  # v1.4
 )
 
 from .hydrostatics import HydrostaticsCalculator, HYDROSTATICS_OUTPUTS
@@ -188,7 +189,7 @@ class HydrostaticsValidator(ValidatorInterface):
                 ))
                 state = ValidatorState.WARNING
 
-            # Check for negative freeboard
+            # Check for negative freeboard (v1.3: with adjustment hint)
             if results.freeboard_m < 0:
                 findings.append(ValidationFinding(
                     finding_id=str(uuid.uuid4())[:8],
@@ -197,6 +198,74 @@ class HydrostaticsValidator(ValidatorInterface):
                     parameter_path="hull.freeboard",
                     actual_value=results.freeboard_m,
                     suggestion="Increase hull depth or reduce draft",
+                    adjustment={"path": "hull.draft", "direction": "decrease", "magnitude": 0.05},
+                ))
+                state = ValidatorState.WARNING
+
+            # v1.3: L/B ratio check with structured adjustment
+            l_b_ratio = lwl / beam if beam > 0 else 0
+            if l_b_ratio < 4.0:
+                findings.append(ValidationFinding(
+                    finding_id=str(uuid.uuid4())[:8],
+                    severity=ResultSeverity.WARNING,
+                    message=f"L/B ratio {l_b_ratio:.2f} is low - vessel may be unstable",
+                    parameter_path="hull.lwl",
+                    actual_value=l_b_ratio,
+                    expected_value="4.0-7.0",
+                    suggestion="Increase length or decrease beam for better stability",
+                    adjustment={"path": "hull.lwl", "direction": "increase", "magnitude": 0.05},
+                ))
+                state = ValidatorState.WARNING
+            elif l_b_ratio > 7.0:
+                findings.append(ValidationFinding(
+                    finding_id=str(uuid.uuid4())[:8],
+                    severity=ResultSeverity.WARNING,
+                    message=f"L/B ratio {l_b_ratio:.2f} is high - structural concerns",
+                    parameter_path="hull.lwl",
+                    actual_value=l_b_ratio,
+                    expected_value="4.0-7.0",
+                    suggestion="Decrease length or increase beam for structural efficiency",
+                    adjustment={"path": "hull.lwl", "direction": "decrease", "magnitude": 0.05},
+                ))
+                state = ValidatorState.WARNING
+
+            # v1.3: BM stability check with adjustment
+            if results.bm_m < 0.5:
+                findings.append(ValidationFinding(
+                    finding_id=str(uuid.uuid4())[:8],
+                    severity=ResultSeverity.WARNING,
+                    message=f"BM {results.bm_m:.3f}m is low - stability concern",
+                    parameter_path="hull.bm_m",
+                    actual_value=results.bm_m,
+                    expected_value=">0.5m",
+                    suggestion="Increase beam to improve transverse stability",
+                    adjustment={"path": "hull.beam", "direction": "increase", "magnitude": 0.05},
+                ))
+                state = ValidatorState.WARNING
+
+            # v1.3: Block coefficient check
+            if cb < 0.35:
+                findings.append(ValidationFinding(
+                    finding_id=str(uuid.uuid4())[:8],
+                    severity=ResultSeverity.WARNING,
+                    message=f"Block coefficient {cb:.3f} is very low - fine-lined hull",
+                    parameter_path="hull.cb",
+                    actual_value=cb,
+                    expected_value="0.35-0.65",
+                    suggestion="Consider if displacement is sufficient for payload requirements",
+                    adjustment={"path": "hull.cb", "direction": "increase", "magnitude": 0.02},
+                ))
+                state = ValidatorState.WARNING
+            elif cb > 0.65:
+                findings.append(ValidationFinding(
+                    finding_id=str(uuid.uuid4())[:8],
+                    severity=ResultSeverity.WARNING,
+                    message=f"Block coefficient {cb:.3f} is high - full-bodied hull",
+                    parameter_path="hull.cb",
+                    actual_value=cb,
+                    expected_value="0.35-0.65",
+                    suggestion="May have high resistance at speed",
+                    adjustment={"path": "hull.cb", "direction": "decrease", "magnitude": 0.02},
                 ))
                 state = ValidatorState.WARNING
 
@@ -376,8 +445,9 @@ class ResistanceValidator(ValidatorInterface):
                 ))
                 state = ValidatorState.WARNING
 
-            # Add specific warning for high Froude number
+            # v1.3: Froude number checks with structured adjustments
             if results.froude_number > 0.5:
+                # High Froude - suggest longer hull to reduce Fn
                 findings.append(ValidationFinding(
                     finding_id=str(uuid.uuid4())[:8],
                     severity=ResultSeverity.WARNING,
@@ -385,9 +455,55 @@ class ResistanceValidator(ValidatorInterface):
                             "Results less accurate in semi-planing/planing regime",
                     parameter_path="resistance.froude_number",
                     actual_value=results.froude_number,
-                    suggestion="Consider planing hull resistance methods for high-speed vessels",
+                    expected_value="<0.5 for displacement hull methods",
+                    suggestion="Consider planing hull resistance methods or increase hull length",
+                    adjustment={"path": "hull.lwl", "direction": "increase", "magnitude": 0.05},
                 ))
                 state = ValidatorState.WARNING
+            elif results.froude_number < 0.2:
+                # Low Froude - hull may be oversized for speed
+                findings.append(ValidationFinding(
+                    finding_id=str(uuid.uuid4())[:8],
+                    severity=ResultSeverity.INFO,
+                    message=f"Froude number {results.froude_number:.3f} < 0.2: "
+                            "Hull may be oversized for speed requirement",
+                    parameter_path="resistance.froude_number",
+                    actual_value=results.froude_number,
+                    expected_value="0.2-0.5 for efficient displacement hull",
+                    suggestion="Consider shorter hull to improve Froude number efficiency",
+                    adjustment={"path": "hull.lwl", "direction": "decrease", "magnitude": 0.05},
+                ))
+
+            # v1.3: Specific resistance check (resistance per unit displacement)
+            specific_resistance = results.total_kn / (displacement_mt * 9.81 / 1000) if displacement_mt > 0 else 0
+            if specific_resistance > 0.1:
+                findings.append(ValidationFinding(
+                    finding_id=str(uuid.uuid4())[:8],
+                    severity=ResultSeverity.WARNING,
+                    message=f"High specific resistance: {specific_resistance:.4f} (Rt/Δ)",
+                    parameter_path="resistance.total_kn",
+                    actual_value=specific_resistance,
+                    expected_value="<0.1",
+                    suggestion="Slenderer hull (higher L/B) would reduce resistance",
+                    adjustment={"path": "hull.lwl", "direction": "increase", "magnitude": 0.03},
+                ))
+                state = ValidatorState.WARNING
+
+            # v1.3: Power efficiency check
+            if displacement_mt > 0 and results.effective_power_kw > 0:
+                power_per_tonne = results.effective_power_kw / displacement_mt
+                if power_per_tonne > 50:  # High power requirement
+                    findings.append(ValidationFinding(
+                        finding_id=str(uuid.uuid4())[:8],
+                        severity=ResultSeverity.WARNING,
+                        message=f"High power requirement: {power_per_tonne:.1f} kW/tonne displacement",
+                        parameter_path="resistance.effective_power_kw",
+                        actual_value=power_per_tonne,
+                        expected_value="<50 kW/tonne",
+                        suggestion="Consider hull form optimization or reduce speed requirement",
+                        adjustment={"path": "hull.lwl", "direction": "increase", "magnitude": 0.04},
+                    ))
+                    state = ValidatorState.WARNING
 
             # Create success result
             elapsed_ms = int((time.perf_counter() - start_time) * 1000)
@@ -432,6 +548,266 @@ class ResistanceValidator(ValidatorInterface):
             # Code failure - raise for retry
             logger.exception(f"Resistance validator error: {e}")
             raise
+
+
+# =============================================================================
+# PROPORTIONAL HARMONY VALIDATOR (v1.4)
+# =============================================================================
+
+class ProportionalHarmonyValidator(ValidatorInterface):
+    """
+    Engineering-grounded proportional harmony checks for hull form (v1.4).
+
+    Uses PREFERENCE severity for "could be better but not wrong" findings.
+    All checks are grounded in naval architecture principles with explicit
+    engineering basis and confidence levels in metadata.
+
+    This validator never blocks phase advancement - it provides advisory
+    guidance to improve hull form harmony.
+
+    Checks performed:
+    1. L/B ratio vs. Froude regime envelope
+    2. Coefficient consistency: Cb = Cp × Cm
+    3. Freeboard ratio concept envelope (simplified ICLL approximation)
+    """
+
+    def __init__(self, definition: Optional[ValidatorDefinition] = None):
+        """Initialize with optional custom definition."""
+        if definition is None:
+            definition = get_proportional_harmony_definition()
+        super().__init__(definition)
+
+    def validate(
+        self,
+        state_manager: "StateManager",
+        context: Dict[str, Any]
+    ) -> ValidationResult:
+        """
+        Run proportional harmony checks and write results to state.
+
+        All findings use PREFERENCE severity - advisory only.
+
+        Args:
+            state_manager: StateManager instance for reading/writing
+            context: Execution context (unused currently)
+
+        Returns:
+            ValidationResult with preference-level findings
+        """
+        started_at = datetime.utcnow()
+        start_time = time.perf_counter()
+        findings: List[ValidationFinding] = []
+        state = ValidatorState.PASSED
+
+        try:
+            # Read required inputs
+            lwl = state_manager.get("hull.lwl")
+            beam = state_manager.get("hull.beam")
+            draft = state_manager.get("hull.draft")
+            depth = state_manager.get("hull.depth")
+            cb = state_manager.get("hull.cb")
+            cp = state_manager.get("hull.cp")
+            cm = state_manager.get("hull.cm")
+            speed_kts = state_manager.get("mission.max_speed_kts")
+            displacement_m3 = state_manager.get("hull.displacement_m3")
+
+            # Validate required inputs present
+            if lwl is None or beam is None or draft is None:
+                # Can't proceed without basic dimensions - but don't block
+                return self._create_skipped_result(started_at, start_time,
+                    "Missing required hull dimensions for proportional checks")
+
+            source = "bounds/proportional_harmony"
+
+            # =================================================================
+            # CHECK 1: L/B Ratio vs. Froude Regime Envelope
+            # =================================================================
+            lb_ratio = lwl / beam if beam > 0 else 0
+            state_manager.set("bounds.lb_ratio_actual", lb_ratio, source)
+
+            # Froude-based L/B envelope (engineering basis: wave-making and stability)
+            # Higher speed → higher Froude → need longer, slenderer hull
+            froude = 0.0
+            if lwl > 0 and speed_kts is not None:
+                g = 9.81
+                speed_ms = speed_kts * 0.5144
+                froude = speed_ms / (g * lwl) ** 0.5
+
+            # L/B envelope based on Froude regime
+            # Low Froude (displacement): L/B 4-6 typical
+            # High Froude (planing): L/B 3-5 typical (shorter, wider for stability)
+            if froude < 0.35:
+                lb_min, lb_max = 4.0, 7.0
+                regime = "displacement"
+            elif froude < 0.55:
+                lb_min, lb_max = 4.5, 6.5
+                regime = "semi-displacement"
+            elif froude < 1.0:
+                lb_min, lb_max = 4.0, 6.0
+                regime = "semi-planing"
+            else:
+                lb_min, lb_max = 3.0, 5.5
+                regime = "planing"
+
+            state_manager.set("bounds.lb_envelope_min", lb_min, source)
+            state_manager.set("bounds.lb_envelope_max", lb_max, source)
+
+            if lb_ratio < lb_min:
+                findings.append(ValidationFinding(
+                    finding_id=str(uuid.uuid4())[:8],
+                    severity=ResultSeverity.PREFERENCE,
+                    message=f"L/B ratio {lb_ratio:.2f} below {regime} regime envelope ({lb_min}-{lb_max}). "
+                            f"Vessel may experience excessive wave-making or stability concerns.",
+                    parameter_path="hull.lwl",
+                    actual_value=lb_ratio,
+                    expected_value=f"{lb_min}-{lb_max} for Fn={froude:.2f}",
+                    suggestion=f"Consider increasing L/B by lengthening hull or reducing beam",
+                    reference="General naval architecture - Froude regime L/B correlations",
+                    adjustment={"path": "hull.lwl", "direction": "increase", "magnitude": 0.03},
+                ))
+                state = ValidatorState.WARNING
+            elif lb_ratio > lb_max:
+                findings.append(ValidationFinding(
+                    finding_id=str(uuid.uuid4())[:8],
+                    severity=ResultSeverity.PREFERENCE,
+                    message=f"L/B ratio {lb_ratio:.2f} above {regime} regime envelope ({lb_min}-{lb_max}). "
+                            f"Vessel may have structural concerns or reduced transverse stability.",
+                    parameter_path="hull.beam",
+                    actual_value=lb_ratio,
+                    expected_value=f"{lb_min}-{lb_max} for Fn={froude:.2f}",
+                    suggestion=f"Consider decreasing L/B by widening beam or shortening hull",
+                    reference="General naval architecture - structural efficiency limits",
+                    adjustment={"path": "hull.beam", "direction": "increase", "magnitude": 0.03},
+                ))
+                state = ValidatorState.WARNING
+
+            # =================================================================
+            # CHECK 2: Coefficient Consistency (Cb = Cp × Cm)
+            # =================================================================
+            if cb is not None and cp is not None and cm is not None and cp > 0:
+                cb_implied = cp * cm
+                cb_error = abs(cb - cb_implied) / cb if cb > 0 else 0
+                is_consistent = cb_error < 0.05  # 5% tolerance
+
+                state_manager.set("bounds.coefficient_consistency", is_consistent, source)
+
+                if not is_consistent:
+                    findings.append(ValidationFinding(
+                        finding_id=str(uuid.uuid4())[:8],
+                        severity=ResultSeverity.PREFERENCE,
+                        message=f"Coefficient inconsistency: Cb={cb:.3f} but Cp×Cm={cb_implied:.3f} "
+                                f"(error: {cb_error*100:.1f}%). Implies geometrically inconsistent hull.",
+                        parameter_path="hull.cb",
+                        actual_value=cb,
+                        expected_value=f"{cb_implied:.3f} (= Cp × Cm)",
+                        suggestion="Adjust Cb to match Cp×Cm for geometric consistency",
+                        reference="Naval architecture definition: Cb = Cp × Cm",
+                        adjustment={"path": "hull.cb", "direction": "decrease" if cb > cb_implied else "increase",
+                                   "magnitude": abs(cb - cb_implied) / 2},
+                    ))
+                    state = ValidatorState.WARNING
+            else:
+                state_manager.set("bounds.coefficient_consistency", None, source)
+
+            # =================================================================
+            # CHECK 3: Freeboard Ratio Concept Envelope (Simplified ICLL)
+            # =================================================================
+            # NOTE: This is NOT ICLL class determination - just concept envelope
+            if depth is not None and draft is not None and depth > 0:
+                freeboard = depth - draft
+                freeboard_ratio = freeboard / depth
+
+                state_manager.set("bounds.freeboard_ratio_actual", freeboard_ratio, source)
+
+                # Simplified freeboard envelope based on vessel size
+                # Actual ICLL requires tabular lookup - this is concept-level only
+                if lwl < 25:
+                    fb_min_ratio = 0.20  # Small craft need proportionally more freeboard
+                elif lwl < 50:
+                    fb_min_ratio = 0.18
+                else:
+                    fb_min_ratio = 0.15
+
+                state_manager.set("bounds.freeboard_envelope_min", fb_min_ratio, source)
+
+                if freeboard_ratio < fb_min_ratio:
+                    # NOTE: This is a low-confidence check - ICLL concept envelope only
+                    findings.append(ValidationFinding(
+                        finding_id=str(uuid.uuid4())[:8],
+                        severity=ResultSeverity.PREFERENCE,
+                        message=f"Freeboard ratio {freeboard_ratio:.2f} is low (concept min: {fb_min_ratio}). "
+                                f"Freeboard={freeboard:.2f}m for depth={depth:.2f}m. "
+                                f"[Low confidence - simplified ICLL approximation, NOT class determination]",
+                        parameter_path="hull.depth",
+                        actual_value=freeboard_ratio,
+                        expected_value=f">{fb_min_ratio} (concept envelope)",
+                        suggestion="Consider increasing depth or decreasing draft for adequate freeboard. "
+                                   "Actual ICLL requires tabular lookup.",
+                        reference="ICLL concept envelope (NOT class determination)",
+                        adjustment={"path": "hull.depth", "direction": "increase", "magnitude": 0.03},
+                    ))
+                    state = ValidatorState.WARNING
+
+            # Create success result
+            elapsed_ms = int((time.perf_counter() - start_time) * 1000)
+            result = ValidationResult(
+                validator_id=self.definition.validator_id,
+                state=state,
+                started_at=started_at,
+                completed_at=datetime.utcnow(),
+                execution_time_ms=elapsed_ms,
+            )
+
+            # Add summary finding
+            checks_count = 3
+            preference_count = len([f for f in findings if f.severity == ResultSeverity.PREFERENCE])
+            if preference_count == 0:
+                findings.append(ValidationFinding(
+                    finding_id=str(uuid.uuid4())[:8],
+                    severity=ResultSeverity.PASSED,
+                    message=f"Proportional harmony: {checks_count} checks passed. "
+                            f"L/B={lb_ratio:.2f}, Fn={froude:.3f} ({regime})",
+                ))
+            else:
+                findings.append(ValidationFinding(
+                    finding_id=str(uuid.uuid4())[:8],
+                    severity=ResultSeverity.INFO,
+                    message=f"Proportional harmony: {preference_count} improvement suggestions. "
+                            f"L/B={lb_ratio:.2f}, Fn={froude:.3f} ({regime})",
+                ))
+
+            for finding in findings:
+                result.add_finding(finding)
+
+            return result
+
+        except Exception as e:
+            # This validator is advisory - log and return passed to not block
+            logger.warning(f"Proportional harmony check error (non-blocking): {e}")
+            return self._create_skipped_result(started_at, start_time,
+                f"Proportional check skipped due to error: {e}")
+
+    def _create_skipped_result(
+        self,
+        started_at: datetime,
+        start_time: float,
+        message: str
+    ) -> ValidationResult:
+        """Create a non-blocking skipped result."""
+        elapsed_ms = int((time.perf_counter() - start_time) * 1000)
+        result = ValidationResult(
+            validator_id=self.definition.validator_id,
+            state=ValidatorState.PASSED,  # Don't block on advisory validator
+            started_at=started_at,
+            completed_at=datetime.utcnow(),
+            execution_time_ms=elapsed_ms,
+        )
+        result.add_finding(ValidationFinding(
+            finding_id=str(uuid.uuid4())[:8],
+            severity=ResultSeverity.INFO,
+            message=message,
+        ))
+        return result
 
 
 # =============================================================================
@@ -502,6 +878,46 @@ def get_resistance_definition() -> ValidatorDefinition:
     )
 
 
+def get_proportional_harmony_definition() -> ValidatorDefinition:
+    """
+    Get the validator definition for proportional harmony (v1.4).
+
+    This validator is advisory only - it uses PREFERENCE severity
+    and never blocks phase advancement.
+    """
+    return ValidatorDefinition(
+        validator_id="bounds/proportional_harmony",
+        name="Proportional Harmony Validator",
+        description=(
+            "Engineering-grounded proportional checks for hull form harmony (v1.4). "
+            "Uses PREFERENCE severity - suggests improvements without blocking."
+        ),
+        category=ValidatorCategory.BOUNDS,
+        priority=ValidatorPriority.LOW,  # Non-blocking advisory
+        phase="hull",
+        is_gate_condition=False,  # Never blocks advancement
+        gate_requirement=GateRequirement.INFORMATIONAL,  # Advisory only
+        gate_severity=ResultSeverity.WARNING,
+        depends_on_validators=["physics/hydrostatics"],
+        depends_on_parameters=[
+            "hull.lwl", "hull.beam", "hull.draft", "hull.depth",
+            "hull.cb", "hull.cp", "hull.cm",
+            "mission.max_speed_kts", "hull.displacement_m3",
+        ],
+        produces_parameters=[
+            "bounds.lb_ratio_actual",
+            "bounds.lb_envelope_min",
+            "bounds.lb_envelope_max",
+            "bounds.freeboard_ratio_actual",
+            "bounds.freeboard_envelope_min",
+            "bounds.coefficient_consistency",
+        ],
+        timeout_seconds=30,
+        resource_requirements=ResourceRequirements(cpu_cores=1, ram_gb=0.1),
+        tags=["bounds", "proportional", "harmony", "preference", "v1.4"],
+    )
+
+
 # =============================================================================
 # REGISTRATION HELPER
 # =============================================================================
@@ -509,6 +925,8 @@ def get_resistance_definition() -> ValidatorDefinition:
 def register_physics_validators(registry) -> None:
     """
     Register all physics validators with a validator registry.
+
+    v1.4: Added proportional harmony validator.
 
     Args:
         registry: ValidatorRegistry instance from magnet.validators.registry
@@ -521,4 +939,9 @@ def register_physics_validators(registry) -> None:
     res_def = get_resistance_definition()
     registry.register(res_def, ResistanceValidator)
 
-    logger.info(f"Registered physics validators: {hydro_def.validator_id}, {res_def.validator_id}")
+    # v1.4: Register proportional harmony
+    prop_def = get_proportional_harmony_definition()
+    registry.register(prop_def, ProportionalHarmonyValidator)
+
+    logger.info(f"Registered physics validators: {hydro_def.validator_id}, "
+                f"{res_def.validator_id}, {prop_def.validator_id}")

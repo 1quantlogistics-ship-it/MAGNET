@@ -30,6 +30,9 @@ class PhaseResult:
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
 
+    # v1.2: Synthesis audit trail (hull phase only)
+    synthesis_audit: Optional[Dict[str, Any]] = None
+
     @property
     def duration_s(self) -> float:
         """Get phase duration in seconds."""
@@ -45,7 +48,7 @@ class PhaseResult:
         return self.validators_passed / self.validators_run
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             "phase_name": self.phase_name,
             "status": self.status.value,
             "started_at": self.started_at.isoformat() if self.started_at else None,
@@ -58,6 +61,10 @@ class PhaseResult:
             "errors": self.errors,
             "warnings": self.warnings,
         }
+        # Only include synthesis_audit if present (hull phase)
+        if self.synthesis_audit:
+            result["synthesis_audit"] = self.synthesis_audit
+        return result
 
 
 @dataclass

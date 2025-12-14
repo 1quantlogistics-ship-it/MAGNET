@@ -131,14 +131,21 @@ class Conductor:
 
         # v1.2: Hull synthesis hook - MUST run BEFORE input contract check
         # (synthesis generates the hull dimensions that contracts require)
+        # v1.3: Capture synthesis audit for debugging
+        synthesis_audit = None
         if phase_name == "hull" and not self._hull_exists():
             synthesis_result = self._run_hull_synthesis()
-            if synthesis_result and not synthesis_result.is_usable:
-                return PhaseResult(
-                    phase_name=phase_name,
-                    status=PhaseStatus.FAILED,
-                    errors=[f"Hull synthesis failed: {synthesis_result.termination_message}"],
-                )
+            if synthesis_result:
+                # Build audit trail for debugging
+                synthesis_audit = self._build_synthesis_audit(synthesis_result)
+
+                if not synthesis_result.is_usable:
+                    return PhaseResult(
+                        phase_name=phase_name,
+                        status=PhaseStatus.FAILED,
+                        errors=[f"Hull synthesis failed: {synthesis_result.termination_message}"],
+                        synthesis_audit=synthesis_audit,
+                    )
             # If synthesis succeeded, continue to input contract check
             # (synthesis should have populated hull.lwl, hull.beam, etc.)
 
@@ -158,6 +165,10 @@ class Conductor:
         else:
             # Fallback to legacy execution (for backwards compatibility)
             result = self._execute_phase(phase, context or {})
+
+        # v1.3: Attach synthesis audit to hull phase result
+        if phase_name == "hull" and synthesis_audit:
+            result.synthesis_audit = synthesis_audit
 
         # Check phase output contract (Guardrail #1)
         from ..validators.contracts import check_phase_contract
@@ -504,6 +515,35 @@ class Conductor:
             range_nm=range_nm,
             gm_min_m=gm_min_m,
         )
+
+    def _build_synthesis_audit(self, result: 'SynthesisResult') -> Dict[str, Any]:
+        """
+        Build synthesis audit dict from SynthesisResult.
+
+        v1.3: Exposes full synthesis trail for debugging.
+
+        Returns:
+            Dict with termination, iterations, score_history, warnings, proposal.
+        """
+        return {
+            "termination": result.termination.value,
+            "termination_message": result.termination_message,
+            "iterations_used": result.iterations_used,
+            "score_history": result.score_history,
+            "validators_run": result.validator_results,
+            "warnings": result.warnings,
+            "is_fallback": result.is_fallback,
+            "final_proposal": {
+                "lwl_m": result.proposal.lwl_m,
+                "beam_m": result.proposal.beam_m,
+                "draft_m": result.proposal.draft_m,
+                "depth_m": result.proposal.depth_m,
+                "displacement_m3": result.proposal.displacement_m3,
+                "cb": result.proposal.cb,
+                "confidence": result.proposal.confidence,
+                "source": result.proposal.source,
+            },
+        }
 
     def _run_hull_synthesis(self) -> Optional['SynthesisResult']:
         """

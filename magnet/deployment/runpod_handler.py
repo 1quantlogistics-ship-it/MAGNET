@@ -162,7 +162,11 @@ def _handle_operation(app: "MAGNETApp", operation: str, parameters: Dict[str, An
 
 
 def _handle_run_phase(app: "MAGNETApp", parameters: Dict[str, Any]) -> Dict[str, Any]:
-    """Handle phase execution."""
+    """
+    Handle phase execution.
+
+    v1.3: Include synthesis_audit for hull phase debugging.
+    """
     phase = parameters.get("phase")
     if not phase:
         raise ValueError("Missing 'phase' parameter")
@@ -173,11 +177,23 @@ def _handle_run_phase(app: "MAGNETApp", parameters: Dict[str, Any]) -> Dict[str,
         conductor = app.container.resolve(Conductor)
         result = conductor.run_phase(phase)
 
-        return {
+        response = {
             "phase": phase,
-            "status": result.status if hasattr(result, 'status') else "completed",
+            "status": result.status.value if hasattr(result.status, 'value') else str(result.status),
+            "validators_run": result.validators_run if hasattr(result, 'validators_run') else 0,
+            "validators_passed": result.validators_passed if hasattr(result, 'validators_passed') else 0,
+            "validators_failed": result.validators_failed if hasattr(result, 'validators_failed') else 0,
+            "errors": result.errors if hasattr(result, 'errors') else [],
+            "warnings": result.warnings if hasattr(result, 'warnings') else [],
             "state": _export_state(app),
         }
+
+        # v1.3: Include synthesis audit for hull phase
+        if phase == "hull" and hasattr(result, 'synthesis_audit') and result.synthesis_audit:
+            response["synthesis_audit"] = result.synthesis_audit
+
+        return response
+
     except Exception as e:
         logger.warning(f"Phase execution failed: {e}")
 
@@ -264,21 +280,28 @@ def _handle_run_full_design(app: "MAGNETApp", parameters: Dict[str, Any]) -> Dic
     # Determine final status
     final_status = "completed" if all(r.status.value == "completed" for r in results) else "failed"
 
+    # v1.4: Build phase_results with synthesis_audit for hull
+    phase_results = []
+    for r in results:
+        phase_result = {
+            "phase": r.phase_name,
+            "status": r.status.value,
+            "validators_run": r.validators_run,
+            "validators_passed": r.validators_passed,
+            "validators_failed": r.validators_failed,
+            "errors": r.errors,
+            "warnings": r.warnings if hasattr(r, 'warnings') else [],
+        }
+        # Include synthesis audit for hull phase
+        if r.phase_name == "hull" and hasattr(r, 'synthesis_audit') and r.synthesis_audit:
+            phase_result["synthesis_audit"] = r.synthesis_audit
+        phase_results.append(phase_result)
+
     return {
         "run_id": conductor._session.session_id if conductor._session else "runpod-run",
         "status": final_status,
         "phases_completed": phases_completed,
-        "phase_results": [
-            {
-                "phase": r.phase_name,
-                "status": r.status.value,
-                "validators_run": r.validators_run,
-                "validators_passed": r.validators_passed,
-                "validators_failed": r.validators_failed,
-                "errors": r.errors,
-            }
-            for r in results
-        ],
+        "phase_results": phase_results,
         "state": _export_state(app),
     }
 

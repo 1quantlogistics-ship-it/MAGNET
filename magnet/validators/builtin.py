@@ -776,6 +776,46 @@ REPORTING_VALIDATORS = [
 
 
 # =============================================================================
+# PROPORTIONAL VALIDATORS (v1.4: Engineering-grounded harmony checks)
+# =============================================================================
+
+PROPORTIONAL_VALIDATORS = [
+    ValidatorDefinition(
+        validator_id="bounds/proportional_harmony",
+        name="Proportional Harmony Validator",
+        description=(
+            "Engineering-grounded proportional checks for hull form harmony (v1.4). "
+            "Uses PREFERENCE severity - suggests improvements without blocking."
+        ),
+        category=ValidatorCategory.BOUNDS,
+        priority=ValidatorPriority.LOW,  # Non-blocking advisory
+        phase="hull",
+        is_gate_condition=False,  # Never blocks advancement
+        gate_requirement=GateRequirement.INFORMATIONAL,  # Advisory only
+        gate_severity=ResultSeverity.WARNING,
+        depends_on_validators=["physics/hydrostatics"],
+        depends_on_parameters=[
+            "hull.lwl", "hull.beam", "hull.draft", "hull.depth",
+            "hull.cb", "hull.cp", "hull.cm",
+            "mission.max_speed_kts", "hull.displacement_m3",
+        ],
+        # v1.4: Outputs store computed bounds for transparency
+        produces_parameters=[
+            "bounds.lb_ratio_actual",          # Actual L/B
+            "bounds.lb_envelope_min",          # Family-appropriate minimum
+            "bounds.lb_envelope_max",          # Family-appropriate maximum
+            "bounds.freeboard_ratio_actual",   # Actual freeboard/depth
+            "bounds.freeboard_envelope_min",   # Concept envelope minimum
+            "bounds.coefficient_consistency",  # Cb = Cp × Cm check
+        ],
+        timeout_seconds=30,
+        resource_requirements=ResourceRequirements(cpu_cores=1, ram_gb=0.1),
+        tags=["bounds", "proportional", "harmony", "preference", "v1.4"],
+    ),
+]
+
+
+# =============================================================================
 # VALIDATOR REGISTRY
 # =============================================================================
 
@@ -791,7 +831,8 @@ ALL_VALIDATORS = (
     COMPLIANCE_VALIDATORS +
     COST_VALIDATORS +
     OPTIMIZATION_VALIDATORS +
-    REPORTING_VALIDATORS
+    REPORTING_VALIDATORS +
+    PROPORTIONAL_VALIDATORS  # v1.4
 )
 
 
