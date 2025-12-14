@@ -72,11 +72,26 @@ class ValidatorState(Enum):
 
 
 class ResultSeverity(Enum):
-    """Severity of validation findings."""
+    """
+    Severity of validation findings.
+
+    v1.4: Added PREFERENCE for "could be better but not wrong" guidance.
+    """
     ERROR = "error"              # Blocks phase advancement
     WARNING = "warning"          # Advisory, doesn't block
+    PREFERENCE = "preference"    # v1.4: Could be better, but not wrong
     INFO = "info"                # Informational only
     PASSED = "passed"            # Check passed
+
+
+# v1.4: Severity ordering for comparison (higher = more severe)
+SEVERITY_ORDER = {
+    "passed": 0,
+    "info": 1,
+    "preference": 2,
+    "warning": 3,
+    "error": 4,
+}
 
 
 class GateRequirement(Enum):
@@ -300,7 +315,12 @@ class ValidatorDefinition:
 
 @dataclass
 class ValidationFinding:
-    """A single finding from a validator."""
+    """
+    A single finding from a validator.
+
+    v1.2: Added `adjustment` field for structured optimization hints.
+    The synthesis loop can use these to guide hull mutations.
+    """
     finding_id: str
     severity: ResultSeverity
     message: str
@@ -310,8 +330,12 @@ class ValidationFinding:
     suggestion: Optional[str] = None
     reference: Optional[str] = None  # e.g., "ABS Rule 3-2-1/5.1"
 
+    # v1.2: Structured adjustment hint for synthesis optimization
+    # Format: {"path": "hull.lwl", "direction": "increase"|"decrease", "magnitude": 0.05}
+    adjustment: Optional[Dict[str, Any]] = None
+
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             "finding_id": self.finding_id,
             "severity": self.severity.value,
             "message": self.message,
@@ -321,6 +345,9 @@ class ValidationFinding:
             "suggestion": self.suggestion,
             "reference": self.reference,
         }
+        if self.adjustment:
+            result["adjustment"] = self.adjustment
+        return result
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ValidationFinding":
@@ -333,6 +360,7 @@ class ValidationFinding:
             actual_value=data.get("actual_value"),
             suggestion=data.get("suggestion"),
             reference=data.get("reference"),
+            adjustment=data.get("adjustment"),
         )
 
 
@@ -350,6 +378,7 @@ class ValidationResult:
     # Summary counts
     error_count: int = 0
     warning_count: int = 0
+    preference_count: int = 0  # v1.4: "could be better" findings
     info_count: int = 0
 
     # Execution metadata
@@ -401,6 +430,8 @@ class ValidationResult:
             self.error_count += 1
         elif finding.severity == ResultSeverity.WARNING:
             self.warning_count += 1
+        elif finding.severity == ResultSeverity.PREFERENCE:
+            self.preference_count += 1
         elif finding.severity == ResultSeverity.INFO:
             self.info_count += 1
 
@@ -414,6 +445,7 @@ class ValidationResult:
             "findings": [f.to_dict() for f in self.findings],
             "error_count": self.error_count,
             "warning_count": self.warning_count,
+            "preference_count": self.preference_count,  # v1.4
             "info_count": self.info_count,
             "execution_time_ms": self.execution_time_ms,
             "was_cached": self.was_cached,
@@ -441,6 +473,7 @@ class ValidationResult:
         ]
         result.error_count = data.get("error_count", 0)
         result.warning_count = data.get("warning_count", 0)
+        result.preference_count = data.get("preference_count", 0)  # v1.4
         result.info_count = data.get("info_count", 0)
         result.execution_time_ms = data.get("execution_time_ms", 0)
         result.was_cached = data.get("was_cached", False)
