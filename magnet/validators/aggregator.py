@@ -19,6 +19,7 @@ from .taxonomy import (
     ValidationResult,
     ValidationFinding,
     ResultSeverity,
+    GateRequirement,
 )
 from .executor import ExecutionState
 from .topology import ValidatorTopology
@@ -184,7 +185,15 @@ class ResultAggregator:
         phase: str,
         execution_state: ExecutionState
     ) -> GateStatus:
-        """Check if gate conditions are met for a phase."""
+        """
+        Check if gate conditions are met for a phase.
+
+        v1.1: Now uses GateRequirement for bucketing:
+        1. NOT_IMPLEMENTED validators ALWAYS skip (invariant - never block)
+        2. REQUIRED validators block gates on failure
+        3. OPTIONAL validators generate warnings only
+        4. INFORMATIONAL validators are logged only
+        """
         status = GateStatus(gate_id=phase, can_advance=True)
 
         gate_validators = self._topology.get_gate_validators_for_phase(phase)
@@ -202,43 +211,58 @@ class ResultAggregator:
             if result:
                 status.validator_results[validator_id] = result
 
-            is_required = definition.gate_severity == ResultSeverity.ERROR
+            # v1.1: Use gate_requirement for bucketing
+            gate_req = definition.gate_requirement
+
+            # INVARIANT: NOT_IMPLEMENTED validators ALWAYS skip, regardless of GateRequirement
+            # This ensures missing implementations never block progress
+            if result and result.state == ValidatorState.NOT_IMPLEMENTED:
+                logger.debug(f"Skipping NOT_IMPLEMENTED validator {validator_id}")
+                continue
+
+            # Determine if this is a required validator (for counting purposes)
+            is_required = gate_req == GateRequirement.REQUIRED
 
             if not result:
-                # FIX #7: Missing result is blocking
+                # Missing result - only REQUIRED validators block
                 if is_required:
                     status.required_failed += 1
                     status.blocking_validators.append(validator_id)
-                else:
+                elif gate_req == GateRequirement.OPTIONAL:
                     status.recommended_failed += 1
-            elif result.state == ValidatorState.NOT_IMPLEMENTED:
-                # Hole #6: Handle NOT_IMPLEMENTED separately - it's permanent
-                if is_required:
-                    status.required_failed += 1
-                    status.blocking_validators.append(validator_id)
-                    logger.warning(f"Required validator {validator_id} has no implementation")
+                # INFORMATIONAL: no tracking needed
             elif result.state in (ValidatorState.ERROR, ValidatorState.BLOCKED):
+                # Execution/blocking errors - only REQUIRED validators block
                 if is_required:
                     status.required_failed += 1
                     status.blocking_validators.append(validator_id)
+                elif gate_req == GateRequirement.OPTIONAL:
+                    status.recommended_failed += 1
+                    status.warning_validators.append(validator_id)
             elif result.state == ValidatorState.FAILED:
+                # Validation failures - bucket by GateRequirement
                 if is_required:
                     status.required_failed += 1
                     status.blocking_validators.append(validator_id)
                     status.blocking_findings.extend(
                         f for f in result.findings if f.severity == ResultSeverity.ERROR
                     )
-                else:
+                elif gate_req == GateRequirement.OPTIONAL:
                     status.recommended_failed += 1
+                    status.warning_validators.append(validator_id)
+                    status.warning_findings.extend(
+                        f for f in result.findings if f.severity == ResultSeverity.ERROR
+                    )
+                # INFORMATIONAL: logged only, no tracking
             elif result.state == ValidatorState.PASSED:
                 if is_required:
                     status.required_passed += 1
-                else:
+                elif gate_req == GateRequirement.OPTIONAL:
                     status.recommended_passed += 1
             elif result.state == ValidatorState.WARNING:
                 if is_required:
                     status.required_passed += 1
-                else:
+                elif gate_req == GateRequirement.OPTIONAL:
                     status.recommended_passed += 1
                 status.warning_validators.append(validator_id)
                 status.warning_findings.extend(

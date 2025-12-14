@@ -3,17 +3,243 @@ MAGNET StateManager
 
 Path-based state access with alias resolution, transactions, and persistence.
 Implements the StateManagerContract interface.
+
+v1.1: Added path-strict checking with MISSING sentinel, get_strict(), exists(),
+      and InvalidPathError for invalid schema paths.
 """
 
 import json
 import copy
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 from pathlib import Path
 
 from magnet.core.design_state import DesignState
 from magnet.core.field_aliases import normalize_path, get_canonical
+
+
+# =============================================================================
+# PATH-STRICT FOUNDATION (v1.1)
+# =============================================================================
+
+class _MISSING:
+    """
+    Sentinel for truly missing paths (path exists in schema but never written).
+
+    Used to distinguish:
+    - MISSING: path is valid but no value has been written yet
+    - None: path exists and was explicitly set to None
+    - InvalidPathError: path is not in schema (a bug)
+    """
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self):
+        return "<MISSING>"
+
+    def __bool__(self):
+        return False
+
+
+MISSING = _MISSING()
+
+
+class InvalidPathError(Exception):
+    """
+    Raised when accessing a path not in the schema.
+
+    This indicates a bug in the calling code (typo in path) rather than
+    missing data. Helps catch contract definition errors early.
+    """
+    pass
+
+
+# Valid paths in the MAGNET state schema
+# This is the authoritative list - anything not here raises InvalidPathError
+VALID_PATHS = frozenset([
+    # Identity
+    "design_id", "design_name", "version",
+
+    # Mission
+    "mission.vessel_type", "mission.vessel_name", "mission.hull_number",
+    "mission.max_speed_kts", "mission.cruise_speed_kts", "mission.economical_speed_kts",
+    "mission.range_nm", "mission.endurance_hours", "mission.endurance_days",
+    "mission.crew_berthed", "mission.crew_day", "mission.crew_size", "mission.crew_count",
+    "mission.passengers", "mission.passengers_seated",
+    "mission.cargo_capacity_mt", "mission.cargo_volume_m3", "mission.deck_cargo_area_m2",
+    "mission.operating_area", "mission.design_sea_state", "mission.service_notation",
+    "mission.classification_society", "mission.class_notation", "mission.flag_state",
+    "mission.special_features", "mission.operational_profile",
+    "mission.hull_type", "mission.loa", "mission.gm_required_m",
+
+    # Hull - Principal dimensions
+    "hull.loa", "hull.lwl", "hull.lbp", "hull.beam", "hull.beam_wl",
+    "hull.draft", "hull.draft_max", "hull.depth", "hull.freeboard",
+    "hull.hull_type",
+
+    # Hull - Form coefficients
+    "hull.cb", "hull.cp", "hull.cm", "hull.cwp", "hull.cvp",
+
+    # Hull - Angles
+    "hull.deadrise_deg", "hull.deadrise_midship_deg", "hull.entrance_angle_deg",
+
+    # Hull - Derived/Computed
+    "hull.displacement_m3", "hull.displacement_mt", "hull.displacement_kg",
+    "hull.wetted_surface_m2", "hull.waterplane_area_m2",
+
+    # Hull - Centroids
+    "hull.lcb_from_ap_m", "hull.lcf_from_ap_m", "hull.vcb_m",
+
+    # Hull - Hydrostatics
+    "hull.kb_m", "hull.bm_m", "hull.bmt", "hull.bml", "hull.kmt", "hull.kml",
+    "hull.tpc", "hull.mct", "hull.gm_transverse_m",
+
+    # Hull - Multi-hull
+    "hull.hull_spacing_m", "hull.demi_hull_beam_m",
+
+    # Hull - Weather criterion
+    "hull.projected_lateral_area_m2", "hull.height_of_wind_pressure_m",
+
+    # Structural design
+    "structural_design.hull_material", "structural_design.superstructure_material",
+    "structural_design.bottom_plating_mm", "structural_design.side_plating_mm",
+    "structural_design.deck_plating_mm", "structural_design.keel_plating_mm",
+    "structural_design.transom_plating_mm", "structural_design.frame_spacing_mm",
+    "structural_design.plating_zones", "structural_design.stiffeners",
+
+    # Structure aliases
+    "structure.material", "structure.frame_spacing_mm",
+
+    # Structural loads
+    "structural_loads.slamming_pressure_kpa", "structural_loads.design_bending_moment_knm",
+    "structural_loads.design_vertical_acceleration_g",
+
+    # Propulsion
+    "propulsion.propulsion_type", "propulsion.num_engines", "propulsion.num_propellers",
+    "propulsion.total_installed_power_kw", "propulsion.installed_power_kw",
+    "propulsion.engine_model", "propulsion.engine_power_kw",
+    "propulsion.propeller_diameter_m", "propulsion.propeller_pitch_m",
+    "propulsion.propeller_type", "propulsion.propulsive_efficiency",
+    "propulsion.sfc_g_kwh", "propulsion.number_of_engines",
+
+    # Weight
+    "weight.lightship_weight_mt", "weight.lightship_mt", "weight.full_load_displacement_mt",
+    "weight.deadweight_mt", "weight.hull_structure_mt", "weight.machinery_mt",
+    "weight.lightship_lcg_m", "weight.lightship_vcg_m", "weight.lightship_tcg_m",
+    "weight.group_100_mt", "weight.group_200_mt", "weight.group_300_mt",
+    "weight.group_400_mt", "weight.group_500_mt", "weight.group_600_mt",
+    "weight.margin_mt", "weight.average_confidence", "weight.summary_data",
+    "weight.estimated_gm_m", "weight.stability_ready",
+
+    # Stability
+    "stability.gm_transverse_m", "stability.gm_m", "stability.gm_solid_m",
+    "stability.gm_longitudinal_m", "stability.km_m", "stability.fsc_m",
+    "stability.kg_m", "stability.kb_m", "stability.bm_m",
+    "stability.passes_gm_criterion", "stability.gz_curve",
+    "stability.gz_max_m", "stability.gz_30_m",
+    "stability.angle_gz_max_deg", "stability.angle_of_max_gz_deg",
+    "stability.angle_vanishing_deg", "stability.angle_of_vanishing_stability_deg",
+    "stability.range_deg",
+    "stability.area_0_30_m_rad", "stability.area_0_40_m_rad", "stability.area_30_40_m_rad",
+    "stability.passes_gz_criteria",
+    "stability.damage_cases_evaluated", "stability.damage_all_pass",
+    "stability.damage_worst_case", "stability.damage_results",
+    "stability.weather_area_a_m_rad", "stability.weather_area_b_m_rad",
+    "stability.weather_ratio", "stability.weather_passes",
+
+    # Loading
+    "loading.full_load_departure", "loading.full_load_arrival",
+    "loading.minimum_operating", "loading.lightship",
+    "loading.all_conditions_pass", "loading.worst_case_gm_m", "loading.worst_case_condition",
+
+    # Arrangement
+    "arrangement.data", "arrangement.compartment_count", "arrangement.collision_bulkhead_m",
+    "arrangement.tanks", "arrangement.compartments", "arrangement.tank_summary",
+    "arrangement.total_fuel_capacity_l", "arrangement.total_fw_capacity_l",
+    "arrangement.total_ballast_capacity_l", "arrangement.num_decks",
+
+    # Compliance
+    "compliance.status", "compliance.overall_passed", "compliance.pass_count",
+    "compliance.fail_count", "compliance.incomplete_count",
+    "compliance.findings", "compliance.report", "compliance.frameworks_checked",
+    "compliance.pass_rate", "compliance.stability_status",
+    "compliance.stability_pass_count", "compliance.stability_fail_count",
+
+    # Resistance
+    "resistance.total_resistance_kn", "resistance.frictional_resistance_kn",
+    "resistance.residuary_resistance_kn", "resistance.wave_resistance_kn",
+    "resistance.air_resistance_kn", "resistance.froude_number", "resistance.reynolds_number",
+
+    # Performance
+    "performance.design_speed_kts", "performance.design_power_kw",
+    "performance.range_at_cruise_nm", "performance.endurance_at_cruise_hr",
+    "performance.bollard_pull_kn",
+
+    # Production
+    "production.material_takeoff", "production.assembly_sequence",
+    "production.build_schedule", "production.summary",
+    "production.build_hours", "production.build_duration_days",
+
+    # Cost
+    "cost.estimate", "cost.total_price", "cost.total_cost",
+    "cost.acquisition_cost", "cost.lifecycle_npv",
+    "cost.subtotal_material", "cost.subtotal_labor", "cost.subtotal_equipment",
+    "cost.material_cost", "cost.labor_cost",
+    "cost.summary", "cost.confidence",
+
+    # Optimization
+    "optimization.problem", "optimization.result", "optimization.pareto_front",
+    "optimization.selected_solution", "optimization.status",
+    "optimization.iterations", "optimization.evaluations", "optimization.metrics",
+
+    # Reports
+    "reports.available_types", "reports.generated_reports",
+    "reports.last_report_type", "reports.design_summary",
+    "reporting.available_types", "reporting.generated_reports",
+    "reporting.last_report_type", "reporting.design_summary",
+
+    # Kernel
+    "kernel.session", "kernel.status", "kernel.current_phase",
+    "kernel.phase_history", "kernel.gate_status",
+
+    # Analysis
+    "analysis.operability_index", "analysis.roll_amplitude_deg",
+    "analysis.pitch_amplitude_deg", "analysis.msi_percent", "analysis.noise_level_db",
+
+    # Systems
+    "systems.electrical_load_kw", "systems.generator_capacity_kw",
+    "systems.fuel_tank_capacity_l", "systems.fw_tank_capacity_l",
+
+    # Environmental
+    "environmental.design_sea_state", "environmental.design_wave_height_m",
+    "environmental.water_density_kg_m3",
+
+    # Seakeeping
+    "seakeeping.roll_period_s", "seakeeping.pitch_period_s",
+
+    # Maneuvering
+    "maneuvering.turning_circle_m", "maneuvering.advance_m", "maneuvering.transfer_m",
+
+    # Electrical
+    "electrical.total_connected_load_kw", "electrical.generator_sets",
+
+    # Safety
+    "safety.lifejackets", "safety.num_liferafts", "safety.epirb", "safety.fire_pumps",
+
+    # Vision/Geometry
+    "vision.geometry_generated", "vision.mesh_valid", "vision.vertex_count",
+
+    # Outfitting
+    "outfitting.berth_count", "outfitting.cabin_count", "outfitting.head_count",
+
+    # Deck equipment
+    "deck_equipment.anchor_weight_kg", "deck_equipment.windlass_type", "deck_equipment.cleats_count",
+])
 
 
 class StateManager:
@@ -76,6 +302,91 @@ class StateManager:
                 return default
 
         return obj if obj is not None else default
+
+    # ==================== Path-Strict Access (v1.1) ====================
+
+    def _is_valid_path(self, path: str) -> bool:
+        """
+        Check if a path is valid in the schema.
+
+        Args:
+            path: Canonical path to check (after alias resolution)
+
+        Returns:
+            True if path is in VALID_PATHS or is a known alias
+        """
+        # Check direct match
+        if path in VALID_PATHS:
+            return True
+
+        # Check if it's a valid prefix path (for nested access)
+        # e.g., "hull" is valid because "hull.lwl" exists
+        for valid_path in VALID_PATHS:
+            if valid_path.startswith(path + "."):
+                return True
+
+        return False
+
+    def get_strict(self, path: str) -> Union[Any, _MISSING]:
+        """
+        Get value, distinguishing missing from None (path-strict mode).
+
+        Returns:
+            - The value if set (including None if explicitly set to None)
+            - MISSING sentinel if path never written
+
+        Raises:
+            InvalidPathError: if path not in schema
+        """
+        # Resolve aliases first
+        canonical_path = normalize_path(path)
+
+        # Validate path exists in schema
+        if not self._is_valid_path(canonical_path):
+            raise InvalidPathError(
+                f"Unknown path: '{canonical_path}'. "
+                f"Check schema or add to VALID_PATHS."
+            )
+
+        # Get raw value without default substitution
+        parts = canonical_path.split(".")
+        obj: Any = self._state
+
+        for part in parts:
+            if obj is None:
+                return MISSING
+            if hasattr(obj, part):
+                obj = getattr(obj, part)
+            elif isinstance(obj, dict):
+                if part not in obj:
+                    return MISSING
+                obj = obj[part]
+            else:
+                return MISSING
+
+        # Note: obj could be None here (explicitly set to None)
+        # We only return MISSING if the path didn't exist
+        return obj
+
+    def exists(self, path: str) -> bool:
+        """
+        Check if path has been set (not just in schema).
+
+        Different from get() != None:
+        - exists("hull.lwl") = True if LWL has been written
+        - exists("hull.lwl") = False if LWL never written (even if in schema)
+
+        Args:
+            path: Path to check
+
+        Returns:
+            True if value exists at path (even if None)
+
+        Raises:
+            InvalidPathError: if path not in schema
+        """
+        value = self.get_strict(path)
+        return value is not MISSING
 
     def set(self, path: str, value: Any, source: str) -> bool:
         """

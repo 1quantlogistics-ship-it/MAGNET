@@ -29,7 +29,7 @@ class MockStateManager:
     def get(self, key, default=None):
         return self._values.get(key, default)
 
-    def set(self, key, value):
+    def set(self, key, value, source=None):
         self._values[key] = value
         self._modified[key] = datetime.utcnow()
 

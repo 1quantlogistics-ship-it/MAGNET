@@ -28,6 +28,7 @@ from magnet.validators import (
     ValidationCache,
     ResultAggregator,
     GateStatus,
+    GateRequirement,
     get_all_validators,
     get_validators_for_phase,
     get_gate_validators_for_phase,
@@ -67,8 +68,9 @@ class TestValidatorTaxonomy:
             description="A test validator",
             category=ValidatorCategory.PHYSICS,
             priority=ValidatorPriority.CRITICAL,
-            phase="hull_form",
+            phase="hull",  # Use canonical phase name
             is_gate_condition=True,
+            gate_requirement=GateRequirement.REQUIRED,  # v1.1: Required for gate blocking
         )
 
         data = defn.to_dict()
@@ -129,14 +131,14 @@ class TestValidatorRegistry:
 
     def test_get_validators_for_phase(self):
         """Test getting validators for a phase."""
-        hull_validators = get_validators_for_phase("hull_form")
+        hull_validators = get_validators_for_phase("hull")  # Use canonical phase name
         assert len(hull_validators) > 0
         for v in hull_validators:
-            assert v.phase == "hull_form"
+            assert v.phase == "hull"  # Use canonical phase name
 
     def test_get_gate_validators_for_phase(self):
         """Test getting gate validators for a phase."""
-        gate_validators = get_gate_validators_for_phase("hull_form")
+        gate_validators = get_gate_validators_for_phase("hull")  # Use canonical phase name
         assert len(gate_validators) > 0
         for v in gate_validators:
             assert v.is_gate_condition == True
@@ -219,7 +221,7 @@ class TestValidatorTopology:
         topology.add_all_validators()
         topology.build()
 
-        hull_validators = topology.get_validators_for_phase("hull_form")
+        hull_validators = topology.get_validators_for_phase("hull")  # Use canonical phase name
         assert "physics/hydrostatics" in hull_validators
         assert "physics/resistance" in hull_validators
 
@@ -365,7 +367,7 @@ class TestResultAggregator:
             started_at=datetime.utcnow(),
         )
 
-        status = aggregator.check_gate("hull_form", execution)
+        status = aggregator.check_gate("hull", execution)  # Use canonical phase name
 
         # Gate should not pass without results
         assert not status.can_advance

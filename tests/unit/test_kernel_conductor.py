@@ -30,7 +30,7 @@ class MockStateManager:
     def write(self, key, value, agent, description):
         self._data[key] = value
 
-    def set(self, key, value):
+    def set(self, key, value, source=None):
         self._data[key] = value
 
 

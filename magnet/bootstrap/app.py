@@ -87,6 +87,24 @@ class MAGNETApp:
     def context(self) -> AppContext:
         return self._context
 
+    @property
+    def conductor(self):
+        """Get Conductor from container (convenience property)."""
+        from magnet.kernel.conductor import Conductor
+        return self._context.container.resolve(Conductor)
+
+    @property
+    def topology(self):
+        """Get ValidatorTopology from container (convenience property)."""
+        from magnet.validators.topology import ValidatorTopology
+        return self._context.container.resolve(ValidatorTopology)
+
+    @property
+    def state_manager(self):
+        """Get StateManager from container (convenience property)."""
+        from magnet.core.state_manager import StateManager
+        return self._context.container.resolve(StateManager)
+
     def build(self) -> "MAGNETApp":
         """Build the application with proper DI chain."""
         self._context.state = AppState.CONFIGURING

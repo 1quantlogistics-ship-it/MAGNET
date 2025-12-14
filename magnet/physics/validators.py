@@ -151,15 +151,22 @@ class HydrostaticsValidator(ValidatorInterface):
                 deadrise_deg=deadrise_deg,
             )
 
-            # Write ALL outputs to state (v1.2: 11 outputs)
-            # Use correct field names from DesignState.HullState:
-            # - vcb_m = Vertical Center of Buoyancy (KB)
-            # - bmt = Transverse Metacentric Radius (BM transverse)
-            # - bml = Longitudinal Metacentric Radius (BM longitudinal)
+            # Write ALL outputs to state (v1.2: 11 outputs + canonical aliases)
+            # Nomenclature note:
+            # - KB = VCB = Vertical Center of Buoyancy (height above keel)
+            # - BM = BMT = Transverse Metacentric Radius
+            # - BML = Longitudinal Metacentric Radius
             source = "physics/hydrostatics"
             state_manager.set("hull.displacement_m3", results.volume_displaced_m3, source)
-            state_manager.set("hull.vcb_m", results.vcb_m, source)  # KB (vertical center of buoyancy)
-            state_manager.set("hull.bmt", results.bm_m, source)     # BMT (transverse metacentric radius)
+
+            # Canonical paths (contracts/tests expect these names)
+            state_manager.set("hull.kb_m", results.vcb_m, source)   # KB = VCB (verified in hydrostatics.py:94,298)
+            state_manager.set("hull.bm_m", results.bm_m, source)    # BM canonical
+
+            # Legacy aliases (backward compatibility for existing code)
+            state_manager.set("hull.vcb_m", results.vcb_m, source)  # Alias for KB
+            state_manager.set("hull.bmt", results.bm_m, source)     # Alias for BM
+
             state_manager.set("hull.lcb_from_ap_m", results.lcb_m, source)
             state_manager.set("hull.tpc", results.tpc, source)
             state_manager.set("hull.mct", results.mct, source)

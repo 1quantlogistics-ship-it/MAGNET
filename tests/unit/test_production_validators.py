@@ -45,6 +45,10 @@ class MockStateManager:
             "description": description,
         }
 
+    def set(self, key: str, value, source=None):
+        """Set value by dotted key."""
+        self._writes[key] = {"value": value, "agent": source or "", "description": ""}
+
     def get_written(self, key: str):
         """Get a written value."""
         if key in self._writes:

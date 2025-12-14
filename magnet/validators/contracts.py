@@ -5,6 +5,7 @@ BRAVO OWNS THIS FILE.
 
 Guardrail #1: No-Op Is Failure - phases must mutate state, not just pass validators.
 Hole #5 Fix: Input contracts - phases must have required inputs BEFORE execution.
+v1.1: Path-strict checking to catch contract definition bugs early.
 """
 from typing import Dict, List, Optional, TYPE_CHECKING
 from dataclasses import dataclass, field
@@ -14,6 +15,16 @@ if TYPE_CHECKING:
     from ..core.state_manager import StateManager
 
 logger = logging.getLogger(__name__)
+
+
+class ContractDefinitionError(Exception):
+    """
+    Raised when a contract references paths not in the state schema.
+
+    This indicates a BUG in the contract definition, not missing data.
+    Contract paths should be validated during development.
+    """
+    pass
 
 
 @dataclass
@@ -46,12 +57,30 @@ class PhaseContract:
     optional_outputs: List[str] = field(default_factory=list)  # Nice to have
 
     def check_inputs(self, state_manager: 'StateManager') -> ContractResult:
-        """Check if required inputs are present BEFORE phase execution."""
+        """
+        Check if required inputs are present BEFORE phase execution.
+
+        v1.1: Uses path-strict checking to catch contract bugs early.
+        """
+        from ..core.state_manager import MISSING, InvalidPathError
+
         missing = []
+        invalid_paths = []
+
         for path in self.required_inputs:
-            value = state_manager.get(path)
-            if value is None:
-                missing.append(path)
+            try:
+                value = state_manager.get_strict(path)
+                if value is MISSING or value is None:
+                    missing.append(path)
+            except InvalidPathError:
+                # Contract references a path not in schema - this is a BUG
+                invalid_paths.append(f"{path} (CONTRACT BUG: not in schema)")
+
+        # Surface contract definition bugs immediately
+        if invalid_paths:
+            raise ContractDefinitionError(
+                f"Phase '{self.phase_name}' contract has invalid paths: {invalid_paths}"
+            )
 
         return ContractResult(
             phase_name=self.phase_name,
@@ -61,12 +90,30 @@ class PhaseContract:
         )
 
     def check_outputs(self, state_manager: 'StateManager') -> ContractResult:
-        """Check if required outputs are present AFTER phase execution."""
+        """
+        Check if required outputs are present AFTER phase execution.
+
+        v1.1: Uses path-strict checking to catch contract bugs early.
+        """
+        from ..core.state_manager import MISSING, InvalidPathError
+
         missing = []
+        invalid_paths = []
+
         for path in self.required_outputs:
-            value = state_manager.get(path)
-            if value is None:
-                missing.append(path)
+            try:
+                value = state_manager.get_strict(path)
+                if value is MISSING or value is None:
+                    missing.append(path)
+            except InvalidPathError:
+                # Contract references a path not in schema - this is a BUG
+                invalid_paths.append(f"{path} (CONTRACT BUG: not in schema)")
+
+        # Surface contract definition bugs immediately
+        if invalid_paths:
+            raise ContractDefinitionError(
+                f"Phase '{self.phase_name}' contract has invalid paths: {invalid_paths}"
+            )
 
         return ContractResult(
             phase_name=self.phase_name,
