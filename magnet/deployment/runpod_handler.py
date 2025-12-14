@@ -201,15 +201,46 @@ def _handle_run_full_design(app: "MAGNETApp", parameters: Dict[str, Any]) -> Dic
 
     v1.2: Fixed to use existing Conductor methods (run_phase/run_all_phases)
     instead of non-existent run_full_design() method.
+    v1.3: Mark mission phase as completed when mission data was provided
+    in design_state (so hull phase dependency is satisfied).
     """
     phases = parameters.get("phases", ["hull", "weight", "stability", "compliance"])
 
     from magnet.kernel.conductor import Conductor
+    from magnet.core.state_manager import StateManager
 
     conductor = app.container.resolve(Conductor)
+    state_manager = app.container.resolve(StateManager)
 
     # Create session for this design run
     conductor.create_session("runpod-design")
+
+    # v1.3: If mission data was provided in design_state, mark mission phase as completed
+    # This satisfies the hull phase's dependency on mission
+    mission_speed = state_manager.get("mission.max_speed_kts")
+    mission_type = state_manager.get("mission.vessel_type")
+    if mission_speed is not None or mission_type is not None:
+        # Mission data exists - mark mission phase as completed
+        if conductor._session and "mission" not in conductor._session.completed_phases:
+            conductor._session.completed_phases.append("mission")
+            logger.info("Marked mission phase as completed (data provided in design_state)")
+
+    # v1.4: Mark optional intermediate phases as completed if they're dependencies of requested
+    # phases but not explicitly requested. This allows a flow like [hull, weight, stability, compliance]
+    # without requiring structure/propulsion to actually run (their contracts have no required outputs).
+    # These phases are orchestration dependencies, not data dependencies.
+    optional_phases = {"structure", "propulsion", "arrangement", "loading", "production", "cost"}
+    requested_set = set(phases) if phases else set()
+
+    for phase_name in optional_phases:
+        if phase_name not in requested_set:
+            # Check if any requested phase depends on this optional phase
+            phase_def = conductor.registry.get_phase(phase_name)
+            if phase_def:
+                # Mark as completed so it doesn't block downstream phases
+                if conductor._session and phase_name not in conductor._session.completed_phases:
+                    conductor._session.completed_phases.append(phase_name)
+                    logger.info(f"Marked optional phase {phase_name} as completed (not requested, no required outputs)")
 
     # Run phases using existing methods
     results = []
