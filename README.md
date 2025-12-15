@@ -89,6 +89,8 @@ Traditional marine design workflows require:
 | **CLI v1: Conductor.apply_refinement() with invalidation** | ✅ Complete |
 | **CLI v1: run_default_pipeline() safe subset** | ✅ Complete |
 | **CLI v1: DesignExporter.export_with_phase_report()** | ✅ Complete |
+| **CLI v1: ClarificationManager ACK lifecycle** | ✅ Complete |
+| **CLI v1: PhaseMachine internal wiring** | ✅ Complete |
 
 ### V2 — Concept-to-Preliminary Designer (Roadmap)
 

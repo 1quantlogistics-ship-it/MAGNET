@@ -20,6 +20,7 @@ from .registry import PhaseRegistry, PhaseDefinition
 
 if TYPE_CHECKING:
     from ..core.state_manager import StateManager
+    from ..core.phase_states import PhaseMachine
     from ..validators.taxonomy import ValidatorInterface
     from ..validators.executor import PipelineExecutor
     from ..validators.aggregator import ResultAggregator
@@ -59,6 +60,10 @@ class Conductor:
         # Hole #2 Fix: Design-keyed sessions instead of single _session
         self._sessions: Dict[str, SessionState] = {}
         self._session: Optional[SessionState] = None  # Backwards compat: last created session
+
+        # CLI v1: Internal PhaseMachine for invalidation support
+        from ..core.phase_states import PhaseMachine
+        self._phase_machine: Optional['PhaseMachine'] = PhaseMachine(state_manager) if state_manager else None
 
     def set_pipeline_executor(self, executor: 'PipelineExecutor') -> None:
         """Set the pipeline executor (Guardrail #2: single execution authority)."""
@@ -662,18 +667,16 @@ class Conductor:
         # 3. Set value in state with proper source
         self.state.set(path, clamped_value, "kernel/conductor:apply_refinement")
 
-        # 4. Determine affected phase and invalidate downstream
-        # Mission parameters affect hull, hull parameters affect structure
-        if path.startswith("mission."):
-            affected_phase = "hull"
-        elif path.startswith("hull."):
-            affected_phase = "structure"
-        else:
-            affected_phase = "hull"  # Default: start from hull
+        # 4. CLI v1 CORRECTION #3: Always invalidate from hull for any refinement
+        # This is conservative but safe. Future versions can use
+        # InvalidationEngine.get_affected_phases(path) for precision.
+        affected_phase = "hull"
 
         # 5. Invalidate downstream phases (P0 #1: use PhaseMachine, not direct list surgery)
-        if phase_machine and hasattr(phase_machine, 'invalidate_downstream'):
-            phase_machine.invalidate_downstream(affected_phase)
+        # Use provided phase_machine or fall back to internal instance
+        pm = phase_machine or self._phase_machine
+        if pm and hasattr(pm, 'invalidate_downstream'):
+            pm.invalidate_downstream(affected_phase)
 
         # 6. Re-run from affected phase using default pipeline
         return self.run_default_pipeline()

@@ -20,6 +20,9 @@ from pydantic import BaseModel, Field
 
 from .utils import get_state_value, set_state_value, get_phase_status
 
+# CLI v1: Import ClarificationManager for ACK lifecycle tracking
+from magnet.agents.clarification import ClarificationManager, ClarificationRequest, AckType
+
 if TYPE_CHECKING:
     from magnet.core.state_manager import StateManager
     from magnet.kernel.conductor import Conductor
@@ -141,14 +144,7 @@ class RefinementUpdate(BaseModel):
     amount: Optional[float] = Field(None, description="Amount or new value")
 
 
-@dataclass
-class PendingClarification:
-    """A clarification awaiting user response."""
-    id: str
-    parameter_path: str
-    question: str
-    options: List[Dict[str, Any]]
-    created_at: datetime
+# CLI v1: PendingClarification deleted - use ClarificationManager instead
 
 
 class ChatHandler:
@@ -160,7 +156,7 @@ class ChatHandler:
 
     # Command patterns for natural language parsing
     COMMAND_PATTERNS = {
-        "status": r"^(status|show status|what is the status)$",
+        "status": r"^(?:status|show status|what is the status)$",
         "run": r"^run\s+([\w_]+)(?:\s+phase)?$",
         "set": r"^set\s+([\w.]+)\s+(?:to\s+)?(.+)$",
         "get": r"^(?:get|show|what is)\s+([\w.]+)$",
@@ -179,6 +175,7 @@ class ChatHandler:
         state: Optional["StateManager"] = None,
         conductor: Optional["Conductor"] = None,
         llm: Optional["LLMClient"] = None,
+        clarification_manager: Optional[ClarificationManager] = None,
     ):
         """
         Initialize chat handler.
@@ -187,14 +184,16 @@ class ChatHandler:
             state: StateManager instance
             conductor: Conductor instance for agent orchestration
             llm: LLMClient for natural language intent parsing
+            clarification_manager: ClarificationManager for ACK lifecycle (DI-injected)
         """
         self.state = state
         self.conductor = conductor
         self.llm = llm
         self.session = ChatSession()
 
-        # CLI v1: Clarification queue and results storage
-        self._pending_clarification: Optional[PendingClarification] = None
+        # CLI v1: Use injected ClarificationManager or create default
+        # Correction #1: Support DI injection for testability
+        self._clarification_manager = clarification_manager or ClarificationManager()
         self._last_run_results: List[Tuple[str, str, Any]] = []  # (phase, status, result)
 
         self._command_handlers: Dict[str, Callable] = {
@@ -254,9 +253,10 @@ class ChatHandler:
         self.session.add_message(MessageRole.USER, user_input)
 
         try:
-            # Check if answering a pending clarification
-            if self._pending_clarification:
-                response = await self._handle_clarification_answer(user_input)
+            # Check if answering a pending clarification (CLI v1: use ClarificationManager)
+            pending_requests = self._clarification_manager.get_pending_requests()
+            if pending_requests:
+                response = await self._handle_clarification_answer(user_input, pending_requests[0])
             else:
                 # Normal flow - try async parsing
                 response = await self._parse_and_execute_async(user_input.strip())
@@ -380,17 +380,19 @@ If the request doesn't match any keyword, return null for keyword."""
         # Return summary
         return self._format_design_summary(params, results)
 
-    async def _handle_clarification_answer(self, text: str) -> str:
-        """Process answer to pending clarification (CLI v1 Fix #10: direct parse first)."""
+    async def _handle_clarification_answer(self, text: str, request: ClarificationRequest) -> str:
+        """Process answer to pending clarification (CLI v1: uses ClarificationManager)."""
+        # Handle skip
         if text.lower() == "skip":
-            self._pending_clarification = None
+            request.acknowledge(AckType.SKIPPED, "User skipped")
             return "Skipped. Continuing with defaults..."
 
-        pending = self._pending_clarification
-        self._pending_clarification = None
+        # Get parameter_path from request context (CLI v1 field mapping)
+        parameter_path = request.context.get("parameter_path")
+        options = request.context.get("options_full", [])
 
         # Try direct type parsing FIRST based on parameter type
-        parsed_value = self._try_direct_parse(pending.parameter_path, text)
+        parsed_value = self._try_direct_parse(parameter_path, text)
 
         if parsed_value is None and self.llm:
             # Fallback to LLM parsing only if direct parse failed
@@ -398,8 +400,8 @@ If the request doesn't match any keyword, return null for keyword."""
                 from magnet.llm.services.clarification_service import ClarificationService
                 clarifier = ClarificationService(llm=self.llm.provider)
                 intent = await clarifier.parse_user_intent(
-                    original_question=pending.question,
-                    options=pending.options,
+                    original_question=request.message,
+                    options=options,
                     user_response=text,
                 )
                 parsed_value = getattr(intent, 'parsed_value', None)
@@ -407,19 +409,20 @@ If the request doesn't match any keyword, return null for keyword."""
                 logger.warning(f"LLM clarification parse failed: {e}")
 
         if parsed_value is not None:
-            self.state.set(pending.parameter_path, parsed_value, "clarification")
+            self.state.set(parameter_path, parsed_value, "clarification")
+            # CLI v1: Record response with ACK lifecycle
+            request.set_response(text, {"parsed_value": parsed_value})
 
             # Check if there are more missing inputs
             more_clarification = await self._check_missing_inputs()
             if more_clarification:
-                return f"Set {pending.parameter_path} = {parsed_value}\n\n{more_clarification}"
+                return f"Set {parameter_path} = {parsed_value}\n\n{more_clarification}"
 
             # Run pipeline after all clarifications answered
             results = self._run_design_pipeline()
-            return f"Set {pending.parameter_path} = {parsed_value}\n\n{self._format_design_summary(None, results)}"
+            return f"Set {parameter_path} = {parsed_value}\n\n{self._format_design_summary(None, results)}"
 
-        # Re-create the clarification if we couldn't understand
-        self._pending_clarification = pending
+        # CLI v1: Request stays in manager until responded/cancelled - no restore needed
         return f"Couldn't understand '{text}'. Please try again or type 'skip'."
 
     def _try_direct_parse(self, path: str, text: str) -> Optional[Any]:
@@ -585,13 +588,15 @@ Only include fields that are explicitly mentioned or clearly implied."""
             question = f"What {name} would you like?"
             options = []
 
-        # Store pending clarification
-        self._pending_clarification = PendingClarification(
-            id=uuid.uuid4().hex[:8],
-            parameter_path=path,
-            question=question,
-            options=options,
-            created_at=datetime.now(),
+        # CLI v1: Use ClarificationManager instead of PendingClarification
+        # Extract option labels for ClarificationRequest.options (List[str])
+        option_labels = [opt.get('label', str(opt)) for opt in options] if options else []
+
+        request = self._clarification_manager.create_request(
+            agent_id="chat_handler",
+            message=question,
+            options=option_labels,
+            context={"parameter_path": path, "options_full": options},
         )
 
         # CLI v1 Fix #15: Display clarification with full context
@@ -602,11 +607,15 @@ Only include fields that are explicitly mentioned or clearly implied."""
                 for i, opt in enumerate(options)
             )
 
+        # Correction #2: Ack PRESENTED only after we're sure the message will be shown
+        # (This return value goes directly to the user via the CLI)
+        request.acknowledge(AckType.PRESENTED)
+
         return (
             f"Before I can design:\n\n"
             f"{question}"
             f"{options_text}\n\n"
-            f"[Clarification #{self._pending_clarification.id}]\n"
+            f"[Clarification #{request.request_id[:8]}]\n"
             f"(Type your answer, a number, or 'skip' to continue with defaults)"
         )
 
