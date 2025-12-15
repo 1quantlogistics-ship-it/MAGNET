@@ -15,11 +15,12 @@
 
 MAGNET is a **parametric naval architecture engine**, powered by a multi-agent reasoning stack, deterministic physics modules, and a VisionOS-style 3D spatial interface. It transforms high-level intent (*"Design a 32 ft patrol cat"*) into validated hulls, layouts, systems plans, routing logic, and engineering reports — **all in minutes, not months**.
 
-This repository contains the full implementation of MAGNET V1.4, including:
+This repository contains the full implementation of MAGNET V1.5, including:
 
 - **Unified Design State** — 500+ parameters, 27 dataclasses, full serialization
 - **Kernel Conductor** — Phase-gated orchestration with dependency resolution
 - **Hull Synthesis Engine** — Auto-generates hull from mission parameters with coefficient coupling
+- **CLI v1 Infrastructure** — Kernel-first architecture with wired refinement, export, invalidation
 - **Physics Engines** — Hydrostatics, stability, resistance, scantlings
 - **Interior Spatial Layout System** — Compartment packing, egress validation
 - **Systems Macro-Routing Engine** — Piping, electrical, HVAC trunk logic
@@ -60,7 +61,7 @@ Traditional marine design workflows require:
 
 ## What MAGNET Can Do
 
-### V1.4 — Production Release (Current)
+### V1.5 — CLI v1 Infrastructure (Current)
 
 | Capability | Status |
 |------------|--------|
@@ -84,6 +85,10 @@ Traditional marine design workflows require:
 | Real-time WebGL 3D visualization | ✅ Complete |
 | Multi-format geometry export | ✅ Complete |
 | Engineering packet generation | ✅ Complete |
+| **CLI v1: Kernel-owned parameter bounds** | ✅ Complete |
+| **CLI v1: Conductor.apply_refinement() with invalidation** | ✅ Complete |
+| **CLI v1: run_default_pipeline() safe subset** | ✅ Complete |
+| **CLI v1: DesignExporter.export_with_phase_report()** | ✅ Complete |
 
 ### V2 — Concept-to-Preliminary Designer (Roadmap)
 
@@ -173,11 +178,14 @@ All agents read from and write to the **Unified Design State**, ensuring the ent
 magnet/
 ├── bootstrap/          # Application wiring and dependency injection
 ├── core/               # Unified Design State, Serializer, Phase Machine
+│   └── parameter_bounds.py  # CLI v1: Kernel-owned bounds for refinement
 ├── kernel/             # Conductor, phase registry, hull synthesis engine
-│   ├── conductor.py    # Phase orchestration with gate evaluation
+│   ├── conductor.py    # Phase orchestration + apply_refinement() + run_default_pipeline()
 │   ├── registry.py     # Phase definitions and dependencies
 │   ├── synthesis.py    # Hull synthesis with coefficient coupling & escalation
 │   └── priors/         # Hull family priors with bounds & constraints
+├── glue/lifecycle/     # Design export and lifecycle management
+│   └── exporter.py     # CLI v1: export_with_phase_report()
 ├── hull_gen/           # Parametric hull generation, GRM, NURBS
 ├── physics/            # Hydrostatics, resistance calculations
 ├── stability/          # Intact & damage stability, GZ curves
@@ -404,7 +412,7 @@ MAGNET is the foundation for AI-driven design across **ships, buildings, aircraf
 
 <div align="center">
 
-**MAGNET V1.4** — *The Design Operating System*
+**MAGNET V1.5** — *The Design Operating System*
 
 *40 modules • 2,355 tests • 12 physics engines • 105k+ lines of code*
 

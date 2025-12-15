@@ -585,3 +585,95 @@ class Conductor:
         except Exception as e:
             logger.error(f"Hull synthesis failed: {e}")
             return None
+
+    # =========================================================================
+    # CLI v1 FOUNDATION (Wire existing infrastructure)
+    # =========================================================================
+
+    def run_default_pipeline(
+        self,
+        context: Dict[str, Any] = None,
+    ) -> List[PhaseResult]:
+        """
+        Run CLI-safe pipeline: hull → weight → stability.
+
+        Does NOT run structure/propulsion/loading/production unless explicitly requested.
+        This is the safe subset for interactive CLI usage.
+
+        Args:
+            context: Optional context for validators
+
+        Returns:
+            List of PhaseResults for each phase run
+        """
+        default_phases = ["hull", "weight", "stability"]
+        results = []
+
+        for phase in default_phases:
+            result = self.run_phase(phase, context)
+            results.append(result)
+
+            if result.status in [PhaseStatus.FAILED, PhaseStatus.BLOCKED]:
+                break
+
+        return results
+
+    def apply_refinement(
+        self,
+        path: str,
+        op: str,
+        amount: Optional[float] = None,
+        phase_machine: Optional[Any] = None,
+    ) -> List[PhaseResult]:
+        """
+        Apply refinement and re-run affected phases.
+
+        Uses PhaseMachine.invalidate_downstream() - NOT direct session manipulation.
+        Kernel owns all refinement logic: bounds, clamping, invalidation.
+
+        Args:
+            path: State path (e.g., "mission.max_speed_kts")
+            op: Operation - "increase", "decrease", or "set"
+            amount: Amount for operation (defaults to 10% for increase/decrease)
+            phase_machine: Optional PhaseMachine for invalidation
+
+        Returns:
+            List of PhaseResults from re-running affected phases
+        """
+        from magnet.core.parameter_bounds import validate_and_clamp
+
+        # 1. Compute new value
+        current = self.state.get(path) or 0
+
+        if op == "increase":
+            new_value = current + (amount if amount is not None else current * 0.1)
+        elif op == "decrease":
+            new_value = current - (amount if amount is not None else current * 0.1)
+        else:  # "set"
+            new_value = amount if amount is not None else current
+
+        # 2. Validate and clamp (kernel-owned bounds)
+        clamped_value, warnings = validate_and_clamp(path, new_value)
+
+        # Log warnings if value was clamped
+        for warning in warnings:
+            logger.warning(warning)
+
+        # 3. Set value in state with proper source
+        self.state.set(path, clamped_value, "kernel/conductor:apply_refinement")
+
+        # 4. Determine affected phase and invalidate downstream
+        # Mission parameters affect hull, hull parameters affect structure
+        if path.startswith("mission."):
+            affected_phase = "hull"
+        elif path.startswith("hull."):
+            affected_phase = "structure"
+        else:
+            affected_phase = "hull"  # Default: start from hull
+
+        # 5. Invalidate downstream phases (P0 #1: use PhaseMachine, not direct list surgery)
+        if phase_machine and hasattr(phase_machine, 'invalidate_downstream'):
+            phase_machine.invalidate_downstream(affected_phase)
+
+        # 6. Re-run from affected phase using default pipeline
+        return self.run_default_pipeline()
