@@ -152,8 +152,9 @@ conductor.run_default_pipeline()  # hull → weight → stability
 | `magnet/core/parameter_bounds.py` | NEW: Kernel-owned bounds |
 | `magnet/kernel/conductor.py` | ADDED: `run_default_pipeline()`, `apply_refinement()` |
 | `magnet/glue/lifecycle/exporter.py` | ADDED: `export_with_phase_report()` |
-| `magnet/ui/chat.py` | DELETED: `REFINEMENT_CONSTRAINTS`, `phase_report_from_result()`. WIRED: to Conductor |
+| `magnet/ui/chat.py` | DELETED: `REFINEMENT_CONSTRAINTS`, `phase_report_from_result()`, `PendingClarification`. WIRED: to Conductor, ClarificationManager |
 | `scripts/chat_cli.py` | WIRED: export to DesignExporter |
+| `magnet/kernel/conductor.py` | ADDED: internal `_phase_machine` for automatic invalidation |
 
 ---
 
@@ -163,9 +164,9 @@ The CLI v1 work revealed 12+ orphaned systems. Here's what exists and how to use
 
 | System | Location | Status |
 |--------|----------|--------|
-| `PhaseMachine.invalidate_downstream()` | `core/phase_states.py:492-519` | **WIRED** in apply_refinement |
+| `PhaseMachine.invalidate_downstream()` | `core/phase_states.py:492-519` | **WIRED** via Conductor internal `_phase_machine` |
 | `InvalidationEngine.invalidate_parameter()` | `dependencies/invalidation.py:149-222` | Available for fine-grained invalidation |
-| `ClarificationManager` | `agents/clarification.py` | Partial - still uses PendingClarification locally |
+| `ClarificationManager` | `agents/clarification.py` | **WIRED** in ChatHandler (replaces PendingClarification) |
 | `DesignExporter.export()` | `glue/lifecycle/exporter.py` | **WIRED** in CLI export |
 | `CycleExecutor` | `glue/protocol/executor.py` | ORPHANED - propose→validate→revise loop |
 | `TransactionManager` | `glue/transactions/manager.py` | ORPHANED - ACID model |
