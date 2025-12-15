@@ -359,3 +359,39 @@ class DesignExporter:
         }
 
         return data
+
+    def export_with_phase_report(
+        self,
+        session: Optional[Any] = None,
+        config: Optional[ExportConfig] = None,
+    ) -> str:
+        """
+        Export design state with phase execution report.
+
+        CLI v1 Foundation: Uses PhaseResult.to_dict() for canonical serialization.
+        No duplicate logic - kernel owns the truth.
+
+        Args:
+            session: Optional SessionState with phase_results
+            config: Export configuration
+
+        Returns:
+            JSON string with design state and phase report
+        """
+        data = self._build_export_data(config or ExportConfig())
+
+        # Add phase report from session if available
+        if session and hasattr(session, 'phase_results') and session.phase_results:
+            data["phase_report"] = {
+                name: result.to_dict() if hasattr(result, 'to_dict') else {"status": str(result)}
+                for name, result in session.phase_results.items()
+            }
+            data["summary"] = {
+                "total_phases": len(session.phase_results),
+                "completed": len(getattr(session, 'completed_phases', [])),
+                "overall_pass_rate": getattr(session, 'overall_pass_rate', 0.0),
+            }
+
+        data["exported_at"] = datetime.now(timezone.utc).isoformat()
+
+        return json.dumps(data, indent=2, default=str)
