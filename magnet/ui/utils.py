@@ -302,6 +302,9 @@ def set_phase_status(state: Any, phase: str, status: str, source: str = "ui") ->
     """
     Set phase status.
 
+    DEPRECATED: Use PhaseMachine.transition() directly for proper state machine transitions.
+    This function is retained for backwards compatibility and will be removed in v2.0.
+
     Args:
         state: StateManager or dict
         phase: Phase name
@@ -311,6 +314,46 @@ def set_phase_status(state: Any, phase: str, status: str, source: str = "ui") ->
     Returns:
         True if successful
     """
+    import warnings
+    warnings.warn(
+        "set_phase_status() is deprecated. Use PhaseMachine.transition() instead. "
+        "This function will be removed in v2.0.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
+    # Try to use PhaseMachine.transition() if StateManager is available
+    if hasattr(state, '_state') or hasattr(state, 'get'):
+        try:
+            from magnet.core.phase_states import PhaseMachine
+            from magnet.core.enums import PhaseState
+
+            # Map UI status to PhaseState enum
+            status_map = {
+                "pending": PhaseState.PENDING,
+                "active": PhaseState.ACTIVE,
+                "completed": PhaseState.COMPLETED,
+                "approved": PhaseState.APPROVED,
+                "error": PhaseState.ERROR,
+                "skipped": PhaseState.SKIPPED,
+                "locked": PhaseState.LOCKED,
+                "draft": PhaseState.DRAFT,
+                "invalidated": PhaseState.INVALIDATED,
+            }
+
+            target_state = status_map.get(status.lower())
+            if target_state is not None:
+                machine = PhaseMachine(state)
+                result = machine.transition(phase, target_state, source, reason="via deprecated set_phase_status()")
+                if result:
+                    return True
+                # Fall through to legacy behavior if transition fails
+                logger.debug(f"PhaseMachine.transition() returned False for {phase}->{status}, using fallback")
+
+        except Exception as e:
+            logger.debug(f"PhaseMachine.transition() failed: {e}, using fallback")
+
+    # Legacy fallback for dict-based state or when transition fails
     if isinstance(state, dict) and "phase_states" not in state:
         state["phase_states"] = {}
 

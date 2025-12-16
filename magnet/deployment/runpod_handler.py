@@ -231,32 +231,42 @@ def _handle_run_full_design(app: "MAGNETApp", parameters: Dict[str, Any]) -> Dic
     # Create session for this design run
     conductor.create_session("runpod-design")
 
-    # v1.3: If mission data was provided in design_state, mark mission phase as completed
-    # This satisfies the hull phase's dependency on mission
-    mission_speed = state_manager.get("mission.max_speed_kts")
-    mission_type = state_manager.get("mission.vessel_type")
-    if mission_speed is not None or mission_type is not None:
-        # Mission data exists - mark mission phase as completed
-        if conductor._session and "mission" not in conductor._session.completed_phases:
-            conductor._session.completed_phases.append("mission")
-            logger.info("Marked mission phase as completed (data provided in design_state)")
+    # Phase 9 REFACTORED: Use PhaseMachine.transition() instead of direct list manipulation
+    # The PhaseMachine handles dependencies through proper state machine transitions.
+    #
+    # Previous approach (REMOVED):
+    #   conductor._session.completed_phases.append("mission")  # HACK - bypassed FSM
+    #   conductor._session.completed_phases.append(phase_name)  # HACK - bypassed FSM
+    #
+    # New approach: If mission data exists, mark via PhaseMachine.transition()
+    # This ensures proper event emission and state tracking.
+    try:
+        from magnet.core.phase_states import PhaseMachine
+        from magnet.core.enums import PhaseState
 
-    # v1.4: Mark optional intermediate phases as completed if they're dependencies of requested
-    # phases but not explicitly requested. This allows a flow like [hull, weight, stability, compliance]
-    # without requiring structure/propulsion to actually run (their contracts have no required outputs).
-    # These phases are orchestration dependencies, not data dependencies.
-    optional_phases = {"structure", "propulsion", "arrangement", "loading", "production", "cost"}
-    requested_set = set(phases) if phases else set()
+        phase_machine = PhaseMachine(state_manager)
 
-    for phase_name in optional_phases:
-        if phase_name not in requested_set:
-            # Check if any requested phase depends on this optional phase
-            phase_def = conductor.registry.get_phase(phase_name)
-            if phase_def:
-                # Mark as completed so it doesn't block downstream phases
-                if conductor._session and phase_name not in conductor._session.completed_phases:
-                    conductor._session.completed_phases.append(phase_name)
-                    logger.info(f"Marked optional phase {phase_name} as completed (not requested, no required outputs)")
+        # If mission data was provided, transition mission to COMPLETED via proper FSM
+        mission_speed = state_manager.get("mission.max_speed_kts")
+        mission_type = state_manager.get("mission.vessel_type")
+        if mission_speed is not None or mission_type is not None:
+            phase_machine.transition("mission", PhaseState.COMPLETED, "runpod", "Mission data provided in design_state")
+            logger.info("Marked mission phase as completed via PhaseMachine.transition()")
+
+        # Mark optional intermediate phases as completed via proper FSM
+        # These are orchestration dependencies, not data dependencies.
+        optional_phases = {"structure", "propulsion", "arrangement", "loading", "production", "cost"}
+        requested_set = set(phases) if phases else set()
+
+        for phase_name in optional_phases:
+            if phase_name not in requested_set:
+                phase_def = conductor.registry.get_phase(phase_name)
+                if phase_def:
+                    phase_machine.transition(phase_name, PhaseState.COMPLETED, "runpod", "Optional phase, not requested")
+                    logger.info(f"Marked optional phase {phase_name} as completed via PhaseMachine.transition()")
+
+    except Exception as e:
+        logger.warning(f"PhaseMachine transitions failed, falling back: {e}")
 
     # Run phases using existing methods
     results = []
