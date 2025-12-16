@@ -91,6 +91,12 @@ Traditional marine design workflows require:
 | **CLI v1: DesignExporter.export_with_phase_report()** | ✅ Complete |
 | **CLI v1: ClarificationManager ACK lifecycle** | ✅ Complete |
 | **CLI v1: PhaseMachine internal wiring** | ✅ Complete |
+| **Intent→Action Protocol foundation** | ✅ Complete |
+| **ActionPlanValidator (LLM firewall)** | ✅ Complete |
+| **REFINABLE_SCHEMA (20+ refinable paths)** | ✅ Complete |
+| **UnitConverter (44+ conversion pairs)** | ✅ Complete |
+| **design_version tracking (stale plan detection)** | ✅ Complete |
+| **Parameter locks (ephemeral mutation prevention)** | ✅ Complete |
 
 ### V2 — Concept-to-Preliminary Designer (Roadmap)
 
@@ -180,9 +186,13 @@ All agents read from and write to the **Unified Design State**, ensuring the ent
 magnet/
 ├── bootstrap/          # Application wiring and dependency injection
 ├── core/               # Unified Design State, Serializer, Phase Machine
-│   └── parameter_bounds.py  # CLI v1: Kernel-owned bounds for refinement
+│   ├── parameter_bounds.py  # CLI v1: Kernel-owned bounds for refinement
+│   ├── refinable_schema.py  # REFINABLE_SCHEMA whitelist for LLM actions
+│   └── unit_converter.py    # Deterministic unit conversion (44+ pairs)
 ├── kernel/             # Conductor, phase registry, hull synthesis engine
 │   ├── conductor.py    # Phase orchestration + apply_refinement() + run_default_pipeline()
+│   ├── intent_protocol.py  # Intent→Action Protocol types (Intent, Action, ActionPlan)
+│   ├── action_validator.py # ActionPlanValidator — firewall between LLM and kernel
 │   ├── registry.py     # Phase definitions and dependencies
 │   ├── synthesis.py    # Hull synthesis with coefficient coupling & escalation
 │   └── priors/         # Hull family priors with bounds & constraints
@@ -274,6 +284,83 @@ Each phase has:
 - **Validators** — Continuous checks during active work
 - **Exit Gates** — Criteria required to advance
 - **Rollback Support** — Safe return to previous phases
+
+---
+
+## Intent→Action Protocol
+
+MAGNET uses a typed **Intent→Action Protocol** as the firewall between LLM proposals and kernel state mutations:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       INTENT → ACTION FLOW                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   User Input         LLM                    Validator              Kernel   │
+│   "Make it faster"   Proposes ActionPlan    Validates/Clamps       Executes │
+│         │                   │                      │                  │     │
+│         ▼                   ▼                      ▼                  ▼     │
+│   ┌──────────┐       ┌─────────────┐       ┌─────────────┐    ┌──────────┐ │
+│   │  Intent  │  ───▶ │ ActionPlan  │  ───▶ │ Validation  │───▶│  State   │ │
+│   │  (raw)   │       │ (proposed)  │       │  Result     │    │ Mutation │ │
+│   └──────────┘       └─────────────┘       └─────────────┘    └──────────┘ │
+│                             │                     │                         │
+│                             │                     ▼                         │
+│                             │              ┌─────────────┐                  │
+│                             │              │  Rejected?  │                  │
+│                             │              │  Clamped?   │                  │
+│                             │              │  Warnings?  │                  │
+│                             │              └─────────────┘                  │
+│                             │                                               │
+│                    design_version_before                                    │
+│                    must match current                                       │
+│                    (stale plan detection)                                   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Core invariant: LLM never directly drives state.**
+
+### Key Components
+
+| Component | Purpose |
+|-----------|---------|
+| **Intent** | Structured representation of user's raw input |
+| **ActionPlan** | LLM's proposed list of Actions with `design_version_before` |
+| **ActionPlanValidator** | Validates against REFINABLE_SCHEMA, converts units, clamps bounds, checks locks |
+| **REFINABLE_SCHEMA** | Whitelist of 20+ state paths that can be modified via actions |
+| **UnitConverter** | Deterministic conversion (44+ pairs: MW→kW, ft→m, kts→m/s, etc.) |
+| **design_version** | Per-mutation counter enabling stale plan detection |
+| **Parameter Locks** | Ephemeral locks preventing modification during refinement |
+
+### Example Flow
+
+```python
+from magnet.kernel.intent_protocol import Action, ActionPlan, ActionType
+from magnet.kernel.action_validator import ActionPlanValidator
+
+# LLM proposes increasing power
+plan = ActionPlan(
+    plan_id="plan_001",
+    intent_id="intent_001",
+    design_id="patrol_32ft",
+    design_version_before=5,  # Must match current state
+    actions=[
+        Action(action_type=ActionType.SET, path="propulsion.total_installed_power_kw", value=2, unit="MW"),
+    ],
+    proposed_at=datetime.now(),
+)
+
+# Validator converts MW→kW, clamps to bounds, checks locks
+validator = ActionPlanValidator()
+result = validator.validate(plan, state_manager)
+
+# result.approved contains normalized actions (2 MW → 2000 kW)
+# result.rejected contains any invalid actions with reasons
+# result.warnings contains clamping notices
+```
+
+**See [docs/INTENT_ACTION_PROTOCOL.md](docs/INTENT_ACTION_PROTOCOL.md) for full architecture documentation.**
 
 ---
 
