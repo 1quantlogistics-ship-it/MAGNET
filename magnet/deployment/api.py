@@ -82,6 +82,20 @@ try:
         phase: Optional[str] = None
         validators: Optional[List[str]] = None
 
+    class ActionSubmit(BaseModel):
+        """Request model for submitting an ActionPlan."""
+        plan_id: str
+        intent_id: str
+        design_version_before: int
+        actions: List[Dict[str, Any]]
+
+        @field_validator('actions')
+        @classmethod
+        def validate_actions(cls, v):
+            if not v:
+                raise ValueError('actions list cannot be empty')
+            return v
+
     _PYDANTIC_AVAILABLE = True
 
 except ImportError:
@@ -98,6 +112,8 @@ except ImportError:
     class JobSubmit:
         pass
     class ValidationRun:
+        pass
+    class ActionSubmit:
         pass
 
 
@@ -153,6 +169,29 @@ def create_fastapi_app(context: "AppContext" = None):
 
     # WebSocket manager
     ws_manager = get_connection_manager()
+
+    # =========================================================================
+    # Wire Geometry Router (Intent→Action Protocol integration)
+    # =========================================================================
+
+    try:
+        from magnet.webgl.api_endpoints import create_geometry_router
+
+        def state_manager_getter(design_id: str):
+            """Get StateManager for geometry endpoints."""
+            if context and context.container:
+                try:
+                    from magnet.core.state_manager import StateManager
+                    return context.container.resolve(StateManager)
+                except Exception as e:
+                    logger.warning(f"Could not resolve StateManager for geometry: {e}")
+            return None
+
+        geometry_router = create_geometry_router(state_manager_getter)
+        app.include_router(geometry_router)
+        logger.info("Geometry router wired successfully")
+    except Exception as e:
+        logger.warning(f"Could not wire geometry router: {e}")
 
     # =========================================================================
     # Dependencies
@@ -222,6 +261,42 @@ def create_fastapi_app(context: "AppContext" = None):
                 return context.container.resolve(ResultAggregator)
             except Exception as e:
                 logger.warning(f"Could not resolve ResultAggregator: {e}")
+        return None
+
+    def get_action_validator():
+        """Get ActionPlanValidator for action validation."""
+        try:
+            from magnet.kernel.action_validator import ActionPlanValidator
+            return ActionPlanValidator()
+        except Exception as e:
+            logger.warning(f"Could not create ActionPlanValidator: {e}")
+        return None
+
+    def get_action_executor():
+        """Get ActionExecutor for action execution."""
+        state_manager = get_state_manager()
+        if not state_manager:
+            return None
+        try:
+            from magnet.kernel.action_executor import ActionExecutor
+            from magnet.kernel.event_dispatcher import EventDispatcher
+            dispatcher = EventDispatcher(design_id=getattr(state_manager._state, 'design_id', ''))
+            return ActionExecutor(state_manager, dispatcher)
+        except Exception as e:
+            logger.warning(f"Could not create ActionExecutor: {e}")
+        return None
+
+    def get_event_dispatcher():
+        """Get EventDispatcher instance."""
+        state_manager = get_state_manager()
+        design_id = ""
+        if state_manager:
+            design_id = getattr(state_manager._state, 'design_id', '')
+        try:
+            from magnet.kernel.event_dispatcher import EventDispatcher
+            return EventDispatcher(design_id=design_id)
+        except Exception as e:
+            logger.warning(f"Could not create EventDispatcher: {e}")
         return None
 
     # =========================================================================
@@ -437,6 +512,137 @@ def create_fastapi_app(context: "AppContext" = None):
         ))
 
         return {"status": "deleted", "design_id": design_id}
+
+    # =========================================================================
+    # Actions Endpoint (Intent→Action Protocol)
+    # =========================================================================
+
+    @app.post("/api/v1/designs/{design_id}/actions")
+    async def submit_actions(
+        design_id: str,
+        action_submit: ActionSubmit,
+        state_manager=Depends(get_state_manager),
+        validator=Depends(get_action_validator),
+        executor=Depends(get_action_executor),
+    ):
+        """
+        Submit an ActionPlan for validation and execution.
+
+        This is the REST interface to the Intent→Action Protocol.
+        All actions are validated against REFINABLE_SCHEMA before execution.
+
+        Returns:
+            Execution result with design_version_before/after
+        """
+        from magnet.ui.utils import get_state_value
+
+        if not state_manager:
+            raise HTTPException(status_code=503, detail="StateManager not available")
+        if not validator:
+            raise HTTPException(status_code=503, detail="ActionPlanValidator not available")
+        if not executor:
+            raise HTTPException(status_code=503, detail="ActionExecutor not available")
+
+        # Verify design exists
+        current_id = get_state_value(state_manager, "metadata.design_id")
+        if current_id != design_id:
+            raise HTTPException(status_code=404, detail="Design not found")
+
+        try:
+            from magnet.kernel.intent_protocol import Action, ActionPlan, ActionType
+            from magnet.kernel.action_validator import StalePlanError
+
+            # Convert raw action dicts to Action objects
+            actions = []
+            for action_dict in action_submit.actions:
+                action_type_str = action_dict.get("action_type", "set")
+                try:
+                    action_type = ActionType(action_type_str)
+                except ValueError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid action_type: {action_type_str}"
+                    )
+
+                action = Action(
+                    action_type=action_type,
+                    path=action_dict.get("path"),
+                    value=action_dict.get("value"),
+                    amount=action_dict.get("amount"),
+                    unit=action_dict.get("unit"),
+                    phases=action_dict.get("phases"),
+                    format=action_dict.get("format"),
+                    message=action_dict.get("message"),
+                )
+                actions.append(action)
+
+            # Create ActionPlan
+            plan = ActionPlan(
+                plan_id=action_submit.plan_id,
+                intent_id=action_submit.intent_id,
+                design_id=design_id,
+                design_version_before=action_submit.design_version_before,
+                actions=actions,
+                proposed_at=datetime.now(timezone.utc),
+            )
+
+            # Validate the plan
+            try:
+                validation_result = validator.validate(plan, state_manager)
+            except StalePlanError as e:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "stale_plan",
+                        "message": str(e),
+                        "current_design_version": state_manager.design_version,
+                    }
+                )
+
+            # Check for rejections
+            if validation_result.has_rejections:
+                return {
+                    "success": False,
+                    "plan_id": plan.plan_id,
+                    "design_version": state_manager.design_version,
+                    "approved_count": len(validation_result.approved),
+                    "rejected_count": len(validation_result.rejected),
+                    "rejections": [
+                        {"path": action.path, "reason": reason}
+                        for action, reason in validation_result.rejected
+                    ],
+                    "warnings": validation_result.warnings,
+                }
+
+            # Execute approved actions
+            exec_result = executor.execute(validation_result.approved, plan)
+
+            # Notify WebSocket clients
+            ws_manager.queue_message(WSMessage(
+                type="actions_executed",
+                design_id=design_id,
+                payload={
+                    "plan_id": plan.plan_id,
+                    "actions_executed": exec_result.actions_executed,
+                    "design_version": exec_result.design_version_after,
+                },
+            ))
+
+            return {
+                "success": exec_result.success,
+                "plan_id": plan.plan_id,
+                "actions_executed": exec_result.actions_executed,
+                "design_version_before": exec_result.design_version_before,
+                "design_version_after": exec_result.design_version_after,
+                "warnings": validation_result.warnings + exec_result.warnings,
+                "errors": exec_result.errors,
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Action submission failed: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
     # =========================================================================
     # Phase Endpoints with PhaseMachine integration (fixes blocker #11)
