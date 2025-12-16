@@ -547,4 +547,48 @@ from magnet.core.unit_converter import (
 
 ---
 
+## Migration Notes
+
+### Phase 8: set_phase_status() Deprecation
+
+The `set_phase_status()` function in `magnet/ui/utils.py` is **deprecated** as of v1.5.
+
+**Old approach:**
+```python
+from magnet.ui.utils import set_phase_status
+set_phase_status(state_manager, "hull", "completed", "my_source")  # DEPRECATED
+```
+
+**New approach:**
+```python
+from magnet.core.phase_states import PhaseMachine
+from magnet.core.enums import PhaseState
+
+phase_machine = PhaseMachine(state_manager)
+phase_machine.transition("hull", PhaseState.COMPLETED, "my_source", "Reason for transition")
+```
+
+The deprecated function now:
+1. Emits a `DeprecationWarning`
+2. Attempts to use `PhaseMachine.transition()` internally
+3. Falls back to legacy behavior for dict-based state
+
+**Will be removed in v2.0.**
+
+### Phase 9: Removed Hacks
+
+The following patterns have been removed:
+
+```python
+# REMOVED from chat.py and runpod_handler.py:
+conductor._session.completed_phases.append("mission")  # BAD - bypassed FSM
+
+# REPLACED WITH:
+phase_machine.transition("mission", PhaseState.COMPLETED, source, reason)  # GOOD - proper FSM
+```
+
+The `_run_design_pipeline()` method in `chat.py` now delegates to `conductor.run_default_pipeline()` instead of manually iterating phases.
+
+---
+
 **The kernel owns truth. The LLM proposes. The validator decides.**
