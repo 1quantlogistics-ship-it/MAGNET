@@ -597,12 +597,18 @@ class StateManager:
 
         Returns:
             True if commit successful.
+
+        Note:
+            Prefer using commit() which is the canonical commit path.
         """
         if txn_id not in self._transactions:
             return False
 
         if self._current_txn != txn_id:
             return False
+
+        # Increment design_version (ONLY place this happens)
+        self._state.design_version += 1
 
         # Clear transaction data
         del self._transactions[txn_id]
@@ -613,9 +619,32 @@ class StateManager:
             "timestamp": datetime.utcnow().isoformat(),
             "action": "transaction_commit",
             "txn_id": txn_id,
+            "design_version": self._state.design_version,
         })
 
         return True
+
+    def commit(self) -> int:
+        """
+        Canonical commit path. Commits active transaction and increments design_version.
+
+        This is the ONLY place design_version should increment.
+
+        Returns:
+            New design_version after commit.
+
+        Raises:
+            RuntimeError: If no active transaction.
+        """
+        if self._current_txn is None:
+            raise RuntimeError("No active transaction to commit")
+
+        txn_id = self._current_txn
+        success = self.commit_transaction(txn_id)
+        if not success:
+            raise RuntimeError(f"Failed to commit transaction {txn_id}")
+
+        return self._state.design_version
 
     def rollback_transaction(self, txn_id: str) -> bool:
         """
@@ -658,6 +687,58 @@ class StateManager:
             True if a transaction is active.
         """
         return self._current_txn is not None
+
+    # ==================== design_version Property ====================
+
+    @property
+    def design_version(self) -> int:
+        """
+        Current design_version (mutation counter).
+
+        This is a read-only property. Increments only happen in commit().
+        """
+        return self._state.design_version
+
+    # ==================== Parameter Locks ====================
+
+    def is_locked(self, path: str) -> bool:
+        """
+        Check if a parameter path is locked.
+
+        Args:
+            path: State path (e.g., "hull.loa")
+
+        Returns:
+            True if the path is locked.
+        """
+        return path in self._state.locked_parameters
+
+    def lock_parameter(self, path: str) -> None:
+        """
+        Lock a parameter, preventing modification.
+
+        Args:
+            path: State path to lock.
+        """
+        self._state.locked_parameters.add(path)
+
+    def unlock_parameter(self, path: str) -> None:
+        """
+        Unlock a parameter, allowing modification.
+
+        Args:
+            path: State path to unlock.
+        """
+        self._state.locked_parameters.discard(path)
+
+    def get_locked_parameters(self) -> set:
+        """
+        Get all locked parameter paths.
+
+        Returns:
+            Set of locked paths.
+        """
+        return self._state.locked_parameters.copy()
 
     # ==================== Internal API for Phase Machine ====================
 

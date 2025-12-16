@@ -6,7 +6,7 @@ Implements the DesignStateContract interface.
 """
 
 from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 from datetime import datetime
 import uuid
 import copy
@@ -77,7 +77,8 @@ class DesignState:
     # ==================== Identity ====================
     design_id: Optional[str] = None
     design_name: Optional[str] = None
-    version: str = DESIGN_STATE_VERSION
+    version: str = DESIGN_STATE_VERSION  # Schema version (e.g., "1.19.0")
+    design_version: int = 0  # Per-mutation counter (monotonic, increments on commit)
 
     # ==================== 27 State Sections ====================
 
@@ -168,6 +169,9 @@ class DesignState:
     updated_at: Optional[str] = None
     created_by: Optional[str] = None
 
+    # ==================== Parameter Locks ====================
+    locked_parameters: Set[str] = field(default_factory=set)  # Paths that cannot be modified
+
     def __post_init__(self):
         """Initialize design_id and timestamps if not set."""
         if self.design_id is None:
@@ -217,6 +221,7 @@ class DesignState:
             "design_id": self.design_id,
             "design_name": self.design_name,
             "version": self.version,
+            "design_version": self.design_version,
             # Timestamps
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -231,6 +236,8 @@ class DesignState:
             # Metadata
             "metadata": self.metadata,
             "history": self.history,
+            # Parameter locks
+            "locked_parameters": list(self.locked_parameters),
         }
 
         # Serialize all 27 sections
@@ -280,7 +287,7 @@ class DesignState:
         kwargs = {}
 
         # Extract identity fields
-        for key in ["design_id", "design_name", "version", "created_at", "updated_at", "created_by"]:
+        for key in ["design_id", "design_name", "version", "design_version", "created_at", "updated_at", "created_by"]:
             if key in data:
                 kwargs[key] = data[key]
 
@@ -288,6 +295,10 @@ class DesignState:
         for key in ["phase_states", "phase_metadata", "agents", "orchestration", "decisions", "metadata", "history"]:
             if key in data:
                 kwargs[key] = data[key]
+
+        # Extract locked_parameters (convert list back to set)
+        if "locked_parameters" in data:
+            kwargs["locked_parameters"] = set(data["locked_parameters"])
 
         # Deserialize sections
         for section_name, section_class in section_classes.items():
