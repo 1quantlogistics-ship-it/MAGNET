@@ -404,18 +404,79 @@ class DesignState:
 | unit_converter.py | 22 | tests/unit/test_unit_converter.py |
 | design_version + locks | 17 | tests/unit/test_state_manager.py |
 
-**Total: 109+ tests** for Intent→Action Protocol foundation.
+**Total: 163+ tests** for Intent→Action Protocol.
 
 ---
 
-## Remaining Work
+## REST API Endpoint
 
-| Component | Status | Purpose |
-|-----------|--------|---------|
-| `EventDispatcher` | Pending | Emit typed events on state changes |
-| `events.py` | Pending | Typed event schemas |
-| `ActionExecutor` | Pending | Execute validated actions |
-| `/actions` endpoint | Pending | REST API for action submission |
+### POST /api/v1/designs/{design_id}/actions
+
+Submit an ActionPlan for validation and execution.
+
+**Request Body:**
+
+```json
+{
+    "plan_id": "plan_001",
+    "intent_id": "intent_001",
+    "design_version_before": 5,
+    "actions": [
+        {
+            "action_type": "set",
+            "path": "hull.loa",
+            "value": 100,
+            "unit": "m"
+        },
+        {
+            "action_type": "set",
+            "path": "propulsion.total_installed_power_kw",
+            "value": 2,
+            "unit": "MW"
+        }
+    ]
+}
+```
+
+**Success Response (200):**
+
+```json
+{
+    "success": true,
+    "plan_id": "plan_001",
+    "actions_executed": 2,
+    "design_version_before": 5,
+    "design_version_after": 6,
+    "warnings": ["propulsion.total_installed_power_kw converted from MW to kW"],
+    "errors": []
+}
+```
+
+**Stale Plan Response (409):**
+
+```json
+{
+    "error": "stale_plan",
+    "message": "Plan is stale: expected design_version=5, current=7",
+    "current_design_version": 7
+}
+```
+
+**Rejection Response (200 with success=false):**
+
+```json
+{
+    "success": false,
+    "plan_id": "plan_001",
+    "design_version": 5,
+    "approved_count": 1,
+    "rejected_count": 1,
+    "rejections": [
+        {"path": "invalid.path", "reason": "Path not refinable: invalid.path"}
+    ],
+    "warnings": []
+}
+```
 
 ---
 
@@ -424,16 +485,38 @@ class DesignState:
 ### Import All Types
 
 ```python
+# Intent Protocol Types
 from magnet.kernel.intent_protocol import (
     Intent, IntentType,
     Action, ActionType,
     ActionPlan, ActionResult,
 )
+
+# Validation
 from magnet.kernel.action_validator import (
     ActionPlanValidator,
     ValidationResult,
     StalePlanError,
 )
+
+# Execution
+from magnet.kernel.action_executor import (
+    ActionExecutor,
+    ExecutionResult,
+)
+
+# Events
+from magnet.kernel.event_dispatcher import EventDispatcher
+from magnet.kernel.events import (
+    KernelEventType,
+    KernelEvent,
+    ActionExecutedEvent,
+    StateMutatedEvent,
+    PhaseCompletedEvent,
+    # ... 20+ event types
+)
+
+# Schema & Units
 from magnet.core.refinable_schema import (
     REFINABLE_SCHEMA,
     RefinableField,
@@ -447,6 +530,20 @@ from magnet.core.unit_converter import (
     clamp_to_bounds,
 )
 ```
+
+---
+
+## Module Summary
+
+| Module | Location | LOC | Tests |
+|--------|----------|-----|-------|
+| intent_protocol.py | kernel/ | ~220 | 24 |
+| action_validator.py | kernel/ | ~320 | 25 |
+| action_executor.py | kernel/ | ~270 | 23 |
+| event_dispatcher.py | kernel/ | ~200 | 25 |
+| events.py | kernel/ | ~350 | 23 |
+| refinable_schema.py | core/ | ~230 | 21 |
+| unit_converter.py | core/ | ~175 | 22 |
 
 ---
 
