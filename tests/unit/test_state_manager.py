@@ -258,3 +258,142 @@ class TestStateManagerUtilities:
         summary = manager.summary()
         assert isinstance(summary, str)
         assert "Summary Test" in summary
+
+
+class TestDesignVersion:
+    """Test design_version increments and commit path."""
+
+    def test_design_version_starts_at_zero(self):
+        """New StateManager starts with design_version = 0."""
+        manager = StateManager()
+        assert manager.design_version == 0
+        assert manager.state.design_version == 0
+
+    def test_design_version_increments_on_commit(self):
+        """design_version increments exactly once per commit."""
+        manager = StateManager()
+        assert manager.design_version == 0
+
+        manager.begin_transaction()
+        manager.set("hull.loa", 100, source="test")
+        manager.commit()
+
+        assert manager.design_version == 1
+
+    def test_design_version_single_increment_per_transaction(self):
+        """Multiple sets within same transaction = single increment."""
+        manager = StateManager()
+        assert manager.design_version == 0
+
+        manager.begin_transaction()
+        manager.set("hull.loa", 100, source="test")
+        manager.set("hull.beam", 20, source="test")
+        manager.set("hull.draft", 5, source="test")
+        manager.commit()
+
+        # Only ONE increment, not three
+        assert manager.design_version == 1
+
+    def test_design_version_not_incremented_on_rollback(self):
+        """Rollback does not increment design_version."""
+        manager = StateManager()
+        assert manager.design_version == 0
+
+        txn_id = manager.begin_transaction()
+        manager.set("hull.loa", 100, source="test")
+        manager.rollback_transaction(txn_id)
+
+        assert manager.design_version == 0
+
+    def test_commit_raises_without_transaction(self):
+        """commit() raises if no active transaction."""
+        manager = StateManager()
+        with pytest.raises(RuntimeError, match="No active transaction"):
+            manager.commit()
+
+    def test_commit_returns_new_version(self):
+        """commit() returns the new design_version."""
+        manager = StateManager()
+        manager.begin_transaction()
+        manager.set("hull.loa", 100, source="test")
+        new_version = manager.commit()
+        assert new_version == 1
+
+    def test_design_version_survives_roundtrip(self):
+        """design_version is serialized and deserialized correctly."""
+        manager = StateManager()
+        manager.begin_transaction()
+        manager.set("hull.loa", 100, source="test")
+        manager.commit()
+
+        # Serialize and restore
+        data = manager.to_dict()
+        assert data["design_version"] == 1
+
+        restored = StateManager()
+        restored.from_dict(data)
+        assert restored.design_version == 1
+
+
+class TestParameterLocks:
+    """Test parameter locking functionality."""
+
+    def test_lock_parameter(self):
+        """Can lock a parameter path."""
+        manager = StateManager()
+        assert not manager.is_locked("hull.loa")
+
+        manager.lock_parameter("hull.loa")
+        assert manager.is_locked("hull.loa")
+
+    def test_unlock_parameter(self):
+        """Can unlock a locked parameter."""
+        manager = StateManager()
+        manager.lock_parameter("hull.loa")
+        assert manager.is_locked("hull.loa")
+
+        manager.unlock_parameter("hull.loa")
+        assert not manager.is_locked("hull.loa")
+
+    def test_unlock_nonexistent_is_safe(self):
+        """Unlocking a non-locked parameter doesn't error."""
+        manager = StateManager()
+        manager.unlock_parameter("hull.loa")  # Should not raise
+        assert not manager.is_locked("hull.loa")
+
+    def test_get_locked_parameters(self):
+        """Can get all locked parameters."""
+        manager = StateManager()
+        manager.lock_parameter("hull.loa")
+        manager.lock_parameter("hull.beam")
+
+        locked = manager.get_locked_parameters()
+        assert "hull.loa" in locked
+        assert "hull.beam" in locked
+        assert len(locked) == 2
+
+    def test_locked_parameters_is_copy(self):
+        """get_locked_parameters returns a copy, not the internal set."""
+        manager = StateManager()
+        manager.lock_parameter("hull.loa")
+
+        locked = manager.get_locked_parameters()
+        locked.add("hull.beam")  # Modify the copy
+
+        # Original should be unchanged
+        assert not manager.is_locked("hull.beam")
+
+    def test_locked_parameters_survives_roundtrip(self):
+        """locked_parameters are serialized and deserialized correctly."""
+        manager = StateManager()
+        manager.lock_parameter("hull.loa")
+        manager.lock_parameter("hull.beam")
+
+        # Serialize and restore
+        data = manager.to_dict()
+        assert set(data["locked_parameters"]) == {"hull.loa", "hull.beam"}
+
+        restored = StateManager()
+        restored.from_dict(data)
+        assert restored.is_locked("hull.loa")
+        assert restored.is_locked("hull.beam")
