@@ -182,6 +182,15 @@ async def get_hull_geometry(
             allow_visual_only=allow_visual_only,
         )
 
+        # Compute hull_hash for cache invalidation tracking
+        hull_hash = None
+        try:
+            from magnet.contracts.domain_hashes import GeometryHashProvider
+            hash_provider = GeometryHashProvider(sm)
+            hull_hash = hash_provider.compute_hash(design_id)
+        except Exception as e:
+            logger.debug(f"Could not compute hull_hash: {e}")
+
         return {
             "success": True,
             "geometry_mode": mode.value,
@@ -189,6 +198,7 @@ async def get_hull_geometry(
             "vertex_count": mesh.vertex_count,
             "face_count": mesh.face_count,
             "mesh_id": mesh.mesh_id,
+            "hull_hash": hull_hash,
             "data": mesh.to_dict(),
         }
 

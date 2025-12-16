@@ -531,7 +531,14 @@ Only include fields that are explicitly mentioned or clearly implied."""
         return await self.llm.complete_json(prompt, MissionUpdate)
 
     def _seed_mission(self, params: MissionUpdate) -> None:
-        """Apply extracted parameters to state."""
+        """Apply extracted parameters to state via StateManager.
+
+        Note: This function sets values directly in state rather than going through
+        the Intent→Action Protocol. For LLM-driven refinements, use ActionPlan
+        submission via POST /api/v1/designs/{id}/actions instead.
+
+        See docs/INTENT_ACTION_PROTOCOL.md for the proper refinement flow.
+        """
         if params.vessel_type:
             self.state.set("mission.vessel_type", params.vessel_type, "chat")
             self.state.set("hull.hull_type", params.vessel_type, "chat")
@@ -620,10 +627,14 @@ Only include fields that are explicitly mentioned or clearly implied."""
         )
 
     def _run_design_pipeline(self) -> list:
-        """Run safe default pipeline. Mission is seed-only, not run as phase.
+        """Run safe default pipeline using Conductor.run_default_pipeline().
 
-        CLI v1 Fix #9: Only run phases that transform state: hull → weight → stability
-        Don't call run_phase("mission") - it may be flaky or unnecessary.
+        REFACTORED (Phase 9): Delegates to Conductor.run_default_pipeline() which
+        runs the CLI-safe subset: hull → weight → stability.
+
+        The mission phase is NOT run - mission data is seeded directly via
+        _seed_mission() which sets state values. The kernel's phase machine
+        handles dependency tracking through proper transitions.
         """
         if not self.conductor:
             return []
@@ -632,22 +643,18 @@ Only include fields that are explicitly mentioned or clearly implied."""
         session_id = f"chat_design_{uuid.uuid4().hex[:8]}"
         self.conductor.create_session(session_id)
 
-        # CLI v1 Fix: Mark mission as completed since we seeded state directly
-        # This satisfies hull's dependency on mission without running the phase
-        if hasattr(self.conductor, '_session') and self.conductor._session:
-            if "mission" not in self.conductor._session.completed_phases:
-                self.conductor._session.completed_phases.append("mission")
+        # REMOVED: completed_phases.append("mission") hack
+        # The conductor.run_default_pipeline() handles dependencies properly.
+        # Mission data is already in state from _seed_mission().
 
-        # CLI v1: Run phases in dependency order
-        # hull → structure → propulsion → weight → stability
-        # (weight depends on hull, structure, propulsion; stability depends on weight)
-        phases = ["hull", "structure", "propulsion", "weight", "stability"]
+        # Delegate to conductor's canonical pipeline
+        phase_results = self.conductor.run_default_pipeline()
+
+        # Convert to legacy (phase, status, result) tuple format for compatibility
         results = []
-
-        for phase in phases:
-            result = self.conductor.run_phase(phase)
+        for result in phase_results:
             status = result.status.value if hasattr(result.status, 'value') else str(result.status)
-            results.append((phase, status, result))  # Keep full PhaseResult for reporting
+            results.append((result.phase_name, status, result))
 
         # Store for export command
         self._last_run_results = results
