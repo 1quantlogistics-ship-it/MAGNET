@@ -97,6 +97,12 @@ Traditional marine design workflows require:
 | **UnitConverter (44+ conversion pairs)** | ✅ Complete |
 | **design_version tracking (stale plan detection)** | ✅ Complete |
 | **Parameter locks (ephemeral mutation prevention)** | ✅ Complete |
+| **EventDispatcher (20+ typed kernel events)** | ✅ Complete |
+| **ActionExecutor (transactional execution)** | ✅ Complete |
+| **POST /actions endpoint (LLM refinement API)** | ✅ Complete |
+| **Geometry router wiring + hull_hash** | ✅ Complete |
+| **set_phase_status() deprecation with PhaseMachine wrapper** | ✅ Complete |
+| **Kill list cleanup (removed phase append hacks)** | ✅ Complete |
 
 ### V2 — Concept-to-Preliminary Designer (Roadmap)
 
