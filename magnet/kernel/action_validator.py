@@ -164,36 +164,27 @@ class ActionPlanValidator:
         Returns:
             ActionValidation result
         """
-        match action.action_type:
-            case ActionType.SET:
-                return self._validate_set(action, state_manager, pending_locks)
-
-            case ActionType.INCREASE | ActionType.DECREASE:
-                return self._validate_delta(action, state_manager, pending_locks)
-
-            case ActionType.LOCK:
-                return self._validate_lock(action, state_manager)
-
-            case ActionType.UNLOCK:
-                return self._validate_unlock(action, state_manager)
-
-            case ActionType.RUN_PHASES:
-                return self._validate_run_phases(action)
-
-            case ActionType.EXPORT:
-                return ActionValidation(approved=True, action=action)
-
-            case ActionType.REQUEST_CLARIFICATION:
-                return ActionValidation(approved=True, action=action)
-
-            case ActionType.NOOP:
-                return ActionValidation(approved=True, action=action)
-
-            case _:
-                return ActionValidation(
-                    approved=False,
-                    reason=f"Unknown action type: {action.action_type}"
-                )
+        if action.action_type == ActionType.SET:
+            return self._validate_set(action, state_manager, pending_locks)
+        elif action.action_type in (ActionType.INCREASE, ActionType.DECREASE):
+            return self._validate_delta(action, state_manager, pending_locks)
+        elif action.action_type == ActionType.LOCK:
+            return self._validate_lock(action, state_manager)
+        elif action.action_type == ActionType.UNLOCK:
+            return self._validate_unlock(action, state_manager)
+        elif action.action_type == ActionType.RUN_PHASES:
+            return self._validate_run_phases(action)
+        elif action.action_type == ActionType.EXPORT:
+            return ActionValidation(approved=True, action=action)
+        elif action.action_type == ActionType.REQUEST_CLARIFICATION:
+            return ActionValidation(approved=True, action=action)
+        elif action.action_type == ActionType.NOOP:
+            return ActionValidation(approved=True, action=action)
+        else:
+            return ActionValidation(
+                approved=False,
+                reason=f"Unknown action type: {action.action_type}"
+            )
 
     def _validate_set(
         self,

@@ -230,24 +230,27 @@ class TestDesignEndpoints:
         assert response.status_code == 422  # Validation error
 
     def test_update_design_valid_path_prefixes(self, client):
-        """Test that valid path prefixes pass validation.
+        """Test that valid refinable paths pass Pydantic validation and reach StateManager check.
 
         v1.2: Forward reference bug fixed - Pydantic models moved to module level.
-        Now correctly returns 503 (StateManager unavailable) for valid prefixes.
+        v1.3: Module 62 added is_refinable() boundary check - only refinable paths reach StateManager.
+        Now returns 503 (StateManager unavailable) for refinable paths that pass boundary check.
         """
-        valid_prefixes = [
-            "metadata", "mission", "hull", "structure", "propulsion",
-            "systems", "weight", "stability", "compliance", "phase_states",
-            "production", "outfitting", "arrangement"
+        # Only test refinable paths (non-refinable paths are rejected at boundary)
+        refinable_paths = [
+            "hull.loa",
+            "hull.beam",
+            "mission.max_speed_kts",
+            "propulsion.num_engines",
         ]
 
-        for prefix in valid_prefixes:
+        for path in refinable_paths:
             response = client.patch("/api/v1/designs/TEST-001", json={
-                "path": f"{prefix}.test_value",
+                "path": path,
                 "value": 123
             })
-            # v1.2: Bug fixed - now correctly returns 503 for unavailable StateManager
-            assert response.status_code == 503, f"Prefix '{prefix}' should return 503 (StateManager unavailable)"
+            # v1.3: Refinable paths pass boundary check, then hit StateManager unavailable
+            assert response.status_code == 503, f"Refinable path '{path}' should return 503 (StateManager unavailable)"
 
     def test_delete_design_no_state_manager(self, client):
         """Test deleting design without state manager returns 503."""
@@ -478,10 +481,13 @@ class TestErrorHandling:
         assert response.status_code == 503, "Should return 503 for unavailable StateManager"
 
     def test_patch_with_body_works_after_fix(self, client):
-        """Verify PATCH endpoints with body work correctly after v1.2 fix."""
+        """Verify PATCH endpoints with body work correctly after v1.2 fix.
+
+        v1.3: Module 62 added is_refinable() boundary check - must use refinable path.
+        """
         response = client.patch("/api/v1/designs/TEST", json={
-            "path": "mission.test",
-            "value": 1
+            "path": "hull.loa",  # Use refinable path to pass boundary check
+            "value": 50.0
         })
         # Bug fixed: now correctly returns 503 (StateManager unavailable)
         assert response.status_code == 503
@@ -524,6 +530,87 @@ class TestCORS:
         )
         # Should allow the request
         assert response.status_code in [200, 405]
+
+
+# =============================================================================
+# PATCH BOUNDARY ENFORCEMENT TESTS (Audit P0-4)
+# =============================================================================
+
+class TestPatchBoundaryEnforcement:
+    """Test PATCH endpoint rejects non-refinable paths at boundary."""
+
+    @pytest.fixture
+    def patch_client(self, mock_app_with_context):
+        """Client with proper mocked context for PATCH tests."""
+        return TestClient(mock_app_with_context)
+
+    def test_patch_rejects_non_refinable_path(self, patch_client):
+        """PATCH should reject paths not in REFINABLE_SCHEMA."""
+        # mission.vessel_type is a valid path but NOT refinable
+        response = patch_client.patch(
+            "/api/v1/designs/TEST-001",
+            json={"path": "mission.vessel_type", "value": "patrol"}
+        )
+        assert response.status_code == 400
+        data = response.json()
+        assert data["detail"]["error"] == "not_refinable"
+        assert "mission.vessel_type" in data["detail"]["path"]
+
+    def test_patch_rejects_phase_states_path(self, patch_client):
+        """PATCH should reject phase_states paths."""
+        response = patch_client.patch(
+            "/api/v1/designs/TEST-001",
+            json={"path": "phase_states.hull", "value": {"state": "locked"}}
+        )
+        assert response.status_code == 400
+        data = response.json()
+        assert data["detail"]["error"] == "not_refinable"
+
+    def test_patch_rejects_metadata_path(self, patch_client):
+        """PATCH should reject metadata paths."""
+        response = patch_client.patch(
+            "/api/v1/designs/TEST-001",
+            json={"path": "metadata.design_id", "value": "hijacked"}
+        )
+        assert response.status_code == 400
+        data = response.json()
+        assert data["detail"]["error"] == "not_refinable"
+
+    def test_patch_rejects_computed_path(self, patch_client):
+        """PATCH should reject computed output paths like weight.*."""
+        response = patch_client.patch(
+            "/api/v1/designs/TEST-001",
+            json={"path": "weight.lightship_weight_mt", "value": 9999.0}
+        )
+        assert response.status_code == 400
+        data = response.json()
+        assert data["detail"]["error"] == "not_refinable"
+
+    def test_patch_rejects_arbitrary_path(self, patch_client):
+        """PATCH should reject arbitrary/invalid paths within valid namespaces."""
+        # mission.foo is a valid prefix but not a real refinable path
+        response = patch_client.patch(
+            "/api/v1/designs/TEST-001",
+            json={"path": "mission.non_existent_field", "value": 123}
+        )
+        assert response.status_code == 400
+        data = response.json()
+        assert data["detail"]["error"] == "not_refinable"
+
+    def test_patch_accepts_refinable_hull_path(self, patch_client):
+        """PATCH should allow refinable hull paths (boundary check passes)."""
+        # Note: This test checks boundary passes; may fail later in validation/execution
+        # depending on mock setup. The key is boundary check doesn't reject hull.loa.
+        response = patch_client.patch(
+            "/api/v1/designs/TEST-001",
+            json={"path": "hull.loa", "value": 50.0}
+        )
+        # Should NOT be 400 with "not_refinable" error
+        # May be other errors (503, 500) depending on mock setup, but NOT boundary rejection
+        if response.status_code == 400:
+            data = response.json()
+            assert data["detail"].get("error") != "not_refinable", \
+                "hull.loa should pass boundary check"
 
 
 if __name__ == "__main__":

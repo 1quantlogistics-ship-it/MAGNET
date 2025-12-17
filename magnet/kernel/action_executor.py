@@ -218,41 +218,33 @@ class ActionExecutor:
             ExecutionResult for this action
         """
         try:
-            match action.action_type:
-                case ActionType.SET:
-                    return self._execute_set(action, design_id)
-
-                case ActionType.LOCK:
-                    return self._execute_lock(action, design_id)
-
-                case ActionType.UNLOCK:
-                    return self._execute_unlock(action, design_id)
-
-                case ActionType.RUN_PHASES:
-                    return self._execute_run_phases(action, design_id)
-
-                case ActionType.EXPORT:
-                    return self._execute_export(action, design_id)
-
-                case ActionType.REQUEST_CLARIFICATION:
-                    return self._execute_clarification(action, design_id)
-
-                case ActionType.NOOP:
-                    return ExecutionResult(
-                        success=True,
-                        actions_executed=1,
-                        design_version_before=0,
-                        design_version_after=0,
-                    )
-
-                case _:
-                    return ExecutionResult(
-                        success=False,
-                        actions_executed=0,
-                        design_version_before=0,
-                        design_version_after=0,
-                        errors=[f"Unknown action type: {action.action_type}"],
-                    )
+            if action.action_type == ActionType.SET:
+                return self._execute_set(action, design_id)
+            elif action.action_type == ActionType.LOCK:
+                return self._execute_lock(action, design_id)
+            elif action.action_type == ActionType.UNLOCK:
+                return self._execute_unlock(action, design_id)
+            elif action.action_type == ActionType.RUN_PHASES:
+                return self._execute_run_phases(action, design_id)
+            elif action.action_type == ActionType.EXPORT:
+                return self._execute_export(action, design_id)
+            elif action.action_type == ActionType.REQUEST_CLARIFICATION:
+                return self._execute_clarification(action, design_id)
+            elif action.action_type == ActionType.NOOP:
+                return ExecutionResult(
+                    success=True,
+                    actions_executed=1,
+                    design_version_before=0,
+                    design_version_after=0,
+                )
+            else:
+                return ExecutionResult(
+                    success=False,
+                    actions_executed=0,
+                    design_version_before=0,
+                    design_version_after=0,
+                    errors=[f"Unknown action type: {action.action_type}"],
+                )
 
         except Exception as e:
             logger.error(f"Action execution failed: {e}")

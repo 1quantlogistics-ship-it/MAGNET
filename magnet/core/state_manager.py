@@ -11,12 +11,15 @@ v1.1: Added path-strict checking with MISSING sentinel, get_strict(), exists(),
 import json
 import copy
 import uuid
+import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
 from pathlib import Path
 
 from magnet.core.design_state import DesignState
 from magnet.core.field_aliases import normalize_path, get_canonical
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -57,6 +60,19 @@ class InvalidPathError(Exception):
     missing data. Helps catch contract definition errors early.
     """
     pass
+
+
+class MutationEnforcementError(Exception):
+    """
+    Raised when a mutation is attempted outside the allowed context.
+
+    Refinable paths (hull.loa, mission.max_speed_kts, etc.) require an active
+    transaction via the ActionPlan → ActionExecutor pipeline. Direct calls
+    to StateManager.set() on refinable paths will raise this exception.
+    """
+    pass
+
+
 
 
 # Valid paths in the MAGNET state schema
@@ -392,6 +408,9 @@ class StateManager:
         """
         Set a value in the state using dot-notation path.
 
+        ENFORCEMENT: Refinable paths require an active transaction.
+        Use ActionPlan → ActionPlanValidator → ActionExecutor pipeline.
+
         Args:
             path: Dot-notation path to set.
             value: New value to assign.
@@ -399,9 +418,26 @@ class StateManager:
 
         Returns:
             True if successful, False otherwise.
+
+        Raises:
+            MutationEnforcementError: If refinable path written outside transaction.
         """
         # Resolve aliases
         canonical_path = normalize_path(path)
+
+        # === MUTATION ENFORCEMENT (Module 62 P0.3) ===
+        # Refinable-first enforcement: only refinable paths need transactions.
+        # Non-refinable paths (kernel, metadata, phase_states, etc.) are always allowed.
+        from magnet.core.refinable_schema import is_refinable
+        if is_refinable(canonical_path):
+            if self._current_txn is None:
+                raise MutationEnforcementError(
+                    f"Refinable path '{canonical_path}' requires active transaction. "
+                    f"Use ActionPlan → ActionExecutor pipeline. "
+                    f"Source '{source}' attempted direct write."
+                )
+        # === END ENFORCEMENT ===
+
         parts = canonical_path.split(".")
 
         if len(parts) == 0:
