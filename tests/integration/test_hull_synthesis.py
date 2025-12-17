@@ -3,10 +3,13 @@ Hull Synthesis Integration Tests
 
 Tests the hull synthesis engine as a kernel primitive.
 Verifies propose→validate→mutate loop and fallback paths.
+
+Module 62.4: Uses refinable_write_context for transaction-wrapped writes.
 """
 
 import pytest
 from magnet.core.state_manager import StateManager, MISSING, InvalidPathError
+from tests.conftest import refinable_write_context
 from magnet.kernel.conductor import Conductor
 from magnet.kernel.synthesis import (
     HullSynthesizer,
@@ -283,9 +286,11 @@ class TestConductorIntegration:
 
         assert not conductor._hull_exists()
 
-        sm.set("hull.lwl", 25.0, "test")
-        sm.set("hull.beam", 5.0, "test")
-        sm.set("hull.draft", 1.5, "test")
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(sm):
+            sm.set("hull.lwl", 25.0, "test")
+            sm.set("hull.beam", 5.0, "test")
+            sm.set("hull.draft", 1.5, "test")
 
         assert conductor._hull_exists()
 
@@ -298,9 +303,10 @@ class TestConductorIntegration:
         request = conductor._build_synthesis_request()
         assert request is None
 
-        # With max_speed_kts, should build request
-        sm.set("mission.max_speed_kts", 30.0, "test")
-        sm.set("hull.hull_type", "patrol", "test")
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(sm):
+            sm.set("mission.max_speed_kts", 30.0, "test")
+            sm.set("hull.hull_type", "patrol", "test")
 
         request = conductor._build_synthesis_request()
         assert request is not None
@@ -312,8 +318,10 @@ class TestConductorIntegration:
         sm = StateManager()
         conductor = Conductor(sm)
 
-        sm.set("mission.max_speed_kts", 25.0, "test")
-        sm.set("hull.hull_type", "workboat", "test")
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(sm):
+            sm.set("mission.max_speed_kts", 25.0, "test")
+            sm.set("hull.hull_type", "workboat", "test")
 
         result = conductor._run_hull_synthesis()
 

@@ -23,10 +23,15 @@ from magnet.validators.taxonomy import ValidatorState
 
 
 class MockStateManager:
-    """Mock state manager for integration testing."""
+    """Mock state manager for integration testing.
+
+    Module 62.4: Added phase state methods required by PhaseMachine.
+    """
 
     def __init__(self):
         self._data = {}
+        self._phase_states = {}
+        self._current_txn = None
 
     def get(self, key, default=None):
         return self._data.get(key, default)
@@ -45,6 +50,35 @@ class MockStateManager:
 
     def set(self, key, value, source=None):
         self._data[key] = value
+
+    # Module 62.4: Phase state methods required by PhaseMachine
+    def _get_phase_states_internal(self) -> dict:
+        """Return phase states for PhaseMachine."""
+        return self._phase_states.copy()
+
+    def _set_phase_state_internal(
+        self, phase: str, state: str, entered_by: str, metadata: dict = None
+    ) -> None:
+        """Set a phase state."""
+        self._phase_states[phase] = {
+            "state": state,
+            "entered_by": entered_by,
+            "metadata": metadata or {},
+        }
+
+    def _set_phase_states_internal(self, phase_states: dict) -> None:
+        """Set all phase states."""
+        self._phase_states = phase_states.copy()
+
+    # Module 62.4: Transaction methods (no-op for mock)
+    def begin_transaction(self):
+        self._current_txn = "mock_txn"
+
+    def commit(self):
+        self._current_txn = None
+
+    def rollback(self):
+        self._current_txn = None
 
 
 class MockPassingValidator:
