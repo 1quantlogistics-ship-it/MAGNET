@@ -211,6 +211,25 @@ class ChatHandler:
             "snapshot": self._cmd_snapshot,
         }
 
+    # =========================================================================
+    # Module 62 P0.2: Lazy-load ActionPlan dependencies
+    # =========================================================================
+
+    def _get_protocol_services(self):
+        """Get Intent→Action protocol services via kernel factory."""
+        from magnet.kernel.services import get_intent_protocol_services
+        return get_intent_protocol_services(self.state)
+
+    def _get_validator(self):
+        """Get ActionPlanValidator via kernel services factory."""
+        validator, _ = self._get_protocol_services()
+        return validator
+
+    def _get_executor(self):
+        """Get ActionExecutor via kernel services factory."""
+        _, executor = self._get_protocol_services()
+        return executor
+
     def process_message(self, user_input: str) -> str:
         """
         Process a user message and return response (sync wrapper).
@@ -409,7 +428,38 @@ If the request doesn't match any keyword, return null for keyword."""
                 logger.warning(f"LLM clarification parse failed: {e}")
 
         if parsed_value is not None:
-            self.state.set(parameter_path, parsed_value, "clarification")
+            # Module 62 P0.2.2: Route through ActionPlan instead of direct set()
+            from magnet.kernel.intent_protocol import Action, ActionPlan, ActionType
+
+            action = Action(
+                action_type=ActionType.SET,
+                path=parameter_path,
+                value=parsed_value,
+            )
+
+            design_id = self.state.get("metadata.design_id") if self.state else "default"
+            plan = ActionPlan(
+                plan_id=f"clarify_{uuid.uuid4().hex[:8]}",
+                intent_id=request.request_id,
+                design_id=design_id or "default",
+                design_version_before=self.state.design_version if self.state else 0,
+                actions=[action],
+                proposed_at=datetime.now(timezone.utc),
+            )
+
+            validator = self._get_validator()
+            executor = self._get_executor()
+
+            validation_result = validator.validate(plan, self.state)
+
+            if validation_result.has_rejections:
+                rejection = validation_result.rejected[0]
+                return f"Could not set {parameter_path}: {rejection[1]}"
+
+            exec_result = executor.execute(validation_result.approved, plan)
+            if not exec_result.success:
+                return f"Failed to set {parameter_path}: {exec_result.errors}"
+
             # CLI v1: Record response with ACK lifecycle
             request.set_response(text, {"parsed_value": parsed_value})
 
@@ -531,27 +581,60 @@ Only include fields that are explicitly mentioned or clearly implied."""
         return await self.llm.complete_json(prompt, MissionUpdate)
 
     def _seed_mission(self, params: MissionUpdate) -> None:
-        """Apply extracted parameters to state via StateManager.
+        """Apply extracted parameters via Intent→Action Protocol.
 
-        Note: This function sets values directly in state rather than going through
-        the Intent→Action Protocol. For LLM-driven refinements, use ActionPlan
-        submission via POST /api/v1/designs/{id}/actions instead.
-
-        See docs/INTENT_ACTION_PROTOCOL.md for the proper refinement flow.
+        Module 62 P0.2.1: Closed bypass route - no longer uses self.state.set()
+        Routes through ActionPlanValidator → ActionExecutor pipeline.
         """
+        from magnet.kernel.intent_protocol import Action, ActionPlan, ActionType
+
+        actions = []
+
         if params.vessel_type:
-            self.state.set("mission.vessel_type", params.vessel_type, "chat")
-            self.state.set("hull.hull_type", params.vessel_type, "chat")
+            actions.append(Action(action_type=ActionType.SET, path="mission.vessel_type", value=params.vessel_type))
+            actions.append(Action(action_type=ActionType.SET, path="hull.hull_type", value=params.vessel_type))
+
         if params.max_speed_kts:
-            self.state.set("mission.max_speed_kts", params.max_speed_kts, "chat")
+            actions.append(Action(action_type=ActionType.SET, path="mission.max_speed_kts", value=params.max_speed_kts, unit="kts"))
+
         if params.loa_m:
             # Note: state expects meters, MissionUpdate already converts ft→m
-            # Use hull.loa since mission.loa is not in MissionConfig dataclass
-            self.state.set("hull.loa", params.loa_m, "chat")
+            actions.append(Action(action_type=ActionType.SET, path="hull.loa", value=params.loa_m, unit="m"))
+
         if params.crew:
-            self.state.set("mission.crew_berthed", params.crew, "chat")
+            actions.append(Action(action_type=ActionType.SET, path="mission.crew_berthed", value=params.crew))
+
         if params.range_nm:
-            self.state.set("mission.range_nm", params.range_nm, "chat")
+            actions.append(Action(action_type=ActionType.SET, path="mission.range_nm", value=params.range_nm, unit="nm"))
+
+        if not actions:
+            return
+
+        # Build ActionPlan
+        design_id = self.state.get("metadata.design_id") if self.state else "default"
+        plan = ActionPlan(
+            plan_id=f"seed_{uuid.uuid4().hex[:8]}",
+            intent_id=f"seed_intent_{uuid.uuid4().hex[:8]}",
+            design_id=design_id or "default",
+            design_version_before=self.state.design_version if self.state else 0,
+            actions=actions,
+            proposed_at=datetime.now(timezone.utc),
+        )
+
+        # Validate and execute
+        validator = self._get_validator()
+        executor = self._get_executor()
+
+        validation_result = validator.validate(plan, self.state)
+
+        if validation_result.has_rejections:
+            for action, reason in validation_result.rejected:
+                logger.warning(f"Seed action rejected: {action.path} - {reason}")
+
+        if validation_result.approved:
+            result = executor.execute(validation_result.approved, plan)
+            for warning in result.warnings:
+                logger.info(f"Seed warning: {warning}")
 
     async def _check_missing_inputs(self) -> Optional[str]:
         """Check for missing required inputs and generate clarification question.

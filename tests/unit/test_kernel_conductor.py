@@ -23,6 +23,7 @@ class MockStateManager:
 
     def __init__(self):
         self._data = {}
+        self._phase_states = {}
 
     def get(self, key, default=None):
         return self._data.get(key, default)
@@ -32,6 +33,24 @@ class MockStateManager:
 
     def set(self, key, value, source=None):
         self._data[key] = value
+
+    def _get_phase_states_internal(self) -> dict:
+        """Return phase states for PhaseMachine."""
+        return self._phase_states.copy()
+
+    def _set_phase_state_internal(
+        self, phase: str, state: str, entered_by: str, metadata: dict = None
+    ) -> None:
+        """Set a phase state."""
+        self._phase_states[phase] = {
+            "state": state,
+            "entered_by": entered_by,
+            "metadata": metadata or {},
+        }
+
+    def _set_phase_states_internal(self, phase_states: dict) -> None:
+        """Set all phase states."""
+        self._phase_states = phase_states.copy()
 
 
 class TestConductorCreation:

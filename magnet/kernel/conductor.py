@@ -73,6 +73,25 @@ class Conductor:
         """Set the result aggregator."""
         self._result_aggregator = aggregator
 
+    # =========================================================================
+    # Module 62 P0.2.3: Lazy-load ActionPlan dependencies
+    # =========================================================================
+
+    def _get_protocol_services(self):
+        """Get Intent→Action protocol services via kernel factory."""
+        from magnet.kernel.services import get_intent_protocol_services
+        return get_intent_protocol_services(self.state)
+
+    def _get_validator(self):
+        """Get ActionPlanValidator via kernel services factory."""
+        validator, _ = self._get_protocol_services()
+        return validator
+
+    def _get_executor(self):
+        """Get ActionExecutor via kernel services factory."""
+        _, executor = self._get_protocol_services()
+        return executor
+
     def register_validator(
         self,
         validator_id: str,
@@ -631,7 +650,10 @@ class Conductor:
         phase_machine: Optional[Any] = None,
     ) -> List[PhaseResult]:
         """
-        Apply refinement and re-run affected phases.
+        Apply refinement via Intent→Action Protocol and re-run affected phases.
+
+        Module 62 P0.2.3: Closed bypass route - no longer uses self.state.set()
+        Routes through ActionPlanValidator → ActionExecutor pipeline.
 
         Uses PhaseMachine.invalidate_downstream() - NOT direct session manipulation.
         Kernel owns all refinement logic: bounds, clamping, invalidation.
@@ -645,38 +667,68 @@ class Conductor:
         Returns:
             List of PhaseResults from re-running affected phases
         """
-        from magnet.core.parameter_bounds import validate_and_clamp
+        from magnet.kernel.intent_protocol import Action, ActionPlan, ActionType
 
-        # 1. Compute new value
-        current = self.state.get(path) or 0
+        # 1. Map op to ActionType
+        action_type_map = {
+            "increase": ActionType.INCREASE,
+            "decrease": ActionType.DECREASE,
+            "set": ActionType.SET,
+        }
+        action_type = action_type_map.get(op, ActionType.SET)
 
-        if op == "increase":
-            new_value = current + (amount if amount is not None else current * 0.1)
-        elif op == "decrease":
-            new_value = current - (amount if amount is not None else current * 0.1)
-        else:  # "set"
-            new_value = amount if amount is not None else current
+        # 2. Build Action based on operation type
+        if action_type == ActionType.SET:
+            # For SET, the amount is the absolute value
+            action = Action(action_type=ActionType.SET, path=path, value=amount)
+        else:
+            # For INCREASE/DECREASE, compute amount if not provided
+            if amount is None:
+                current = self.state.get(path) or 0
+                amount = current * 0.1  # Default 10%
+            action = Action(action_type=action_type, path=path, amount=amount)
 
-        # 2. Validate and clamp (kernel-owned bounds)
-        clamped_value, warnings = validate_and_clamp(path, new_value)
+        # 3. Build ActionPlan
+        design_id = self.state.get("metadata.design_id") if self.state else "default"
+        plan = ActionPlan(
+            plan_id=f"refine_{uuid.uuid4().hex[:8]}",
+            intent_id=f"refine_intent_{uuid.uuid4().hex[:8]}",
+            design_id=design_id or "default",
+            design_version_before=self.state.design_version if self.state else 0,
+            actions=[action],
+            proposed_at=datetime.now(timezone.utc),
+        )
 
-        # Log warnings if value was clamped
-        for warning in warnings:
+        # 4. Validate and execute through ActionPlan pipeline
+        validator = self._get_validator()
+        executor = self._get_executor()
+
+        validation_result = validator.validate(plan, self.state)
+
+        if validation_result.has_rejections:
+            rejection = validation_result.rejected[0]
+            logger.warning(f"Refinement rejected: {rejection[0].path} - {rejection[1]}")
+            return []
+
+        exec_result = executor.execute(validation_result.approved, plan)
+
+        if not exec_result.success:
+            logger.error(f"Refinement execution failed: {exec_result.errors}")
+            return []
+
+        for warning in exec_result.warnings:
             logger.warning(warning)
 
-        # 3. Set value in state with proper source
-        self.state.set(path, clamped_value, "kernel/conductor:apply_refinement")
-
-        # 4. CLI v1 CORRECTION #3: Always invalidate from hull for any refinement
+        # 5. CLI v1 CORRECTION #3: Always invalidate from hull for any refinement
         # This is conservative but safe. Future versions can use
         # InvalidationEngine.get_affected_phases(path) for precision.
         affected_phase = "hull"
 
-        # 5. Invalidate downstream phases (P0 #1: use PhaseMachine, not direct list surgery)
+        # 6. Invalidate downstream phases (P0 #1: use PhaseMachine, not direct list surgery)
         # Use provided phase_machine or fall back to internal instance
         pm = phase_machine or self._phase_machine
         if pm and hasattr(pm, 'invalidate_downstream'):
             pm.invalidate_downstream(affected_phase)
 
-        # 6. Re-run from affected phase using default pipeline
+        # 7. Re-run from affected phase using default pipeline
         return self.run_default_pipeline()

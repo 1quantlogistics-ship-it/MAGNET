@@ -75,12 +75,14 @@ class TestPhaseTransitions:
         assert "gate" in reason.lower() or "conditions" in reason.lower() or "failed" in reason.lower()
 
     def test_transition_to_locked_with_gate_met(self):
-        """Test transitioning to LOCKED with gate conditions met."""
+        """Test transitioning to LOCKED with gate conditions met (requires transaction)."""
         manager = StateManager()
 
-        # Set required mission fields
+        # Set required mission fields (refinable paths require transaction)
+        manager.begin_transaction()
         manager.set("mission.vessel_type", "patrol", source="test")
         manager.set("mission.max_speed_kts", 30.0, source="test")
+        manager.commit()
 
         machine = PhaseMachine(manager)
 
@@ -131,10 +133,12 @@ class TestGateConditions:
         assert len(failed_list) > 0
 
     def test_check_gate_mission_complete(self):
-        """Test gate check for complete mission."""
+        """Test gate check for complete mission (requires transaction)."""
         manager = StateManager()
+        manager.begin_transaction()
         manager.set("mission.vessel_type", "patrol", source="test")
         manager.set("mission.max_speed_kts", 30.0, source="test")
+        manager.commit()
 
         machine = PhaseMachine(manager)
         passed, passed_list, failed_list = machine.check_gate_conditions("mission")
@@ -150,13 +154,15 @@ class TestCascadeInvalidation:
     """Test cascade invalidation."""
 
     def test_invalidate_downstream(self):
-        """Test downstream invalidation."""
+        """Test downstream invalidation (requires transaction)."""
         manager = StateManager()
+        manager.begin_transaction()
         manager.set("mission.vessel_type", "patrol", source="test")
         manager.set("mission.max_speed_kts", 30.0, source="test")
         manager.set("hull.loa", 25.0, source="test")
         manager.set("hull.beam", 6.0, source="test")
         manager.set("hull.draft", 1.5, source="test")
+        manager.commit()
 
         machine = PhaseMachine(manager)
 
@@ -178,10 +184,12 @@ class TestPhaseApproval:
     """Test phase approval."""
 
     def test_approve_locked_phase(self):
-        """Test approving a locked phase."""
+        """Test approving a locked phase (requires transaction)."""
         manager = StateManager()
+        manager.begin_transaction()
         manager.set("mission.vessel_type", "patrol", source="test")
         manager.set("mission.max_speed_kts", 30.0, source="test")
+        manager.commit()
 
         machine = PhaseMachine(manager)
 

@@ -57,9 +57,11 @@ class TestStateManagerPathAccess:
         assert manager.state.mission.vessel_type == "ferry"
 
     def test_set_numeric_value(self):
-        """Test setting numeric value."""
+        """Test setting numeric value (refinable paths require transaction)."""
         manager = StateManager()
+        manager.begin_transaction()
         manager.set("hull.loa", 25.0, source="test")
+        manager.commit()
         assert manager.get("hull.loa") == 25.0
 
     def test_set_records_history(self):
@@ -82,9 +84,11 @@ class TestStateManagerAliases:
         assert result == 30.0
 
     def test_set_with_alias(self):
-        """Test setting value using alias."""
+        """Test setting value using alias (refinable paths require transaction)."""
         manager = StateManager()
+        manager.begin_transaction()
         manager.set("mission.max_speed_knots", 35.0, source="test")
+        manager.commit()
         assert manager.state.mission.max_speed_kts == 35.0
 
 
@@ -202,14 +206,16 @@ class TestStateManagerPatch:
     """Test patch method."""
 
     def test_patch_multiple(self):
-        """Test patching multiple values."""
+        """Test patching multiple values (refinable paths require transaction)."""
         manager = StateManager()
         updates = {
             "mission.vessel_type": "patrol",
             "hull.loa": 25.0,
             "propulsion.num_engines": 2,
         }
+        manager.begin_transaction()
         modified = manager.patch(updates, source="test")
+        manager.commit()
         assert len(modified) == 3
         assert manager.get("mission.vessel_type") == "patrol"
         assert manager.get("hull.loa") == 25.0

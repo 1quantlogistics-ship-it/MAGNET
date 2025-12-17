@@ -450,23 +450,91 @@ def create_fastapi_app(context: "AppContext" = None):
         update: DesignUpdate,
         state_manager=Depends(get_state_manager),
         phase_machine=Depends(get_phase_machine),
+        validator=Depends(get_action_validator),
+        executor=Depends(get_action_executor),
     ):
-        """Update design value with dependency invalidation."""
-        from magnet.ui.utils import set_state_value, get_state_value
+        """
+        Update design value via Intent→Action Protocol.
 
+        Routes through:
+        1. ActionPlanValidator (REFINABLE_SCHEMA check, unit conversion, bounds)
+        2. ActionExecutor (transactional execution, event emission)
+        3. StateManager.commit() (design_version increment)
+
+        Module 62 P0.1: Closed bypass route - no longer uses set_state_value()
+        """
+        import uuid
+        from magnet.ui.utils import get_state_value
+        from magnet.kernel.intent_protocol import Action, ActionPlan, ActionType
+        from magnet.kernel.action_validator import StalePlanError
+
+        # === BOUNDARY CHECK: Reject non-refinable paths at API level ===
+        # Audit P0-4: Fail fast FIRST, before any other checks
+        from magnet.core.refinable_schema import is_refinable
+        if not is_refinable(update.path):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "not_refinable", "path": update.path,
+                        "message": f"Path '{update.path}' is not refinable via PATCH. "
+                                   f"Only paths in REFINABLE_SCHEMA can be modified."}
+            )
+        # === END BOUNDARY CHECK ===
+
+        # Verify dependencies
         if not state_manager:
             raise HTTPException(status_code=503, detail="StateManager not available")
+        if not validator:
+            raise HTTPException(status_code=503, detail="ActionPlanValidator not available")
+        if not executor:
+            raise HTTPException(status_code=503, detail="ActionExecutor not available")
 
+        # Verify design exists
         current_id = get_state_value(state_manager, "metadata.design_id")
         if current_id != design_id:
             raise HTTPException(status_code=404, detail="Design not found")
 
-        success = set_state_value(state_manager, update.path, update.value, "api")
+        # Build Action from PATCH payload
+        action = Action(
+            action_type=ActionType.SET,
+            path=update.path,
+            value=update.value,
+        )
 
-        if not success:
-            raise HTTPException(status_code=400, detail="Failed to update")
+        # Create ActionPlan
+        plan = ActionPlan(
+            plan_id=f"patch_{uuid.uuid4().hex[:8]}",
+            intent_id=f"patch_intent_{uuid.uuid4().hex[:8]}",
+            design_id=design_id,
+            design_version_before=state_manager.design_version,
+            actions=[action],
+            proposed_at=datetime.now(timezone.utc),
+        )
 
-        # v1.1: Trigger dependency invalidation (fixes blocker #11)
+        # Validate through ActionPlanValidator
+        try:
+            validation_result = validator.validate(plan, state_manager)
+        except StalePlanError as e:
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "stale_plan", "message": str(e)}
+            )
+
+        if validation_result.has_rejections:
+            rejection = validation_result.rejected[0]
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "validation_failed", "path": rejection[0].path, "reason": rejection[1]}
+            )
+
+        # Execute through ActionExecutor (owns transaction)
+        exec_result = executor.execute(validation_result.approved, plan)
+        if not exec_result.success:
+            raise HTTPException(
+                status_code=500,
+                detail={"error": "execution_failed", "errors": exec_result.errors}
+            )
+
+        # Trigger dependency invalidation
         affected_phases = []
         if phase_machine:
             try:
@@ -480,10 +548,21 @@ def create_fastapi_app(context: "AppContext" = None):
         ws_manager.queue_message(WSMessage(
             type="design_updated",
             design_id=design_id,
-            payload={"path": update.path, "affected_phases": affected_phases},
+            payload={
+                "path": update.path,
+                "design_version": exec_result.design_version_after,
+                "affected_phases": affected_phases,
+            },
         ))
 
-        return {"path": update.path, "value": update.value, "affected_phases": affected_phases}
+        return {
+            "path": update.path,
+            "value": update.value,
+            "design_version_before": exec_result.design_version_before,
+            "design_version_after": exec_result.design_version_after,
+            "affected_phases": affected_phases,
+            "warnings": validation_result.warnings,
+        }
 
     @app.delete("/api/v1/designs/{design_id}")
     async def delete_design(
