@@ -2,6 +2,8 @@
 Integration tests for state serialization roundtrip.
 
 Tests full serialize/deserialize cycle across all modules.
+
+Module 62.4: Uses refinable_write_context for transaction-wrapped writes.
 """
 
 import pytest
@@ -10,6 +12,7 @@ import tempfile
 import os
 from magnet.core.design_state import DesignState
 from magnet.core.state_manager import StateManager
+from tests.conftest import refinable_write_context
 
 
 class TestFullRoundtrip:
@@ -156,9 +159,12 @@ class TestStateManagerRoundtrip:
     def test_manager_to_dict_roundtrip(self):
         """Test roundtrip through StateManager dict methods."""
         manager = StateManager()
-        manager.set("mission.vessel_type", "patrol", source="test")
-        manager.set("hull.loa", 30.0, source="test")
-        manager.set("propulsion.num_engines", 2, source="test")
+
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(manager):
+            manager.set("mission.vessel_type", "patrol", source="test")
+            manager.set("hull.loa", 30.0, source="test")
+            manager.set("propulsion.num_engines", 2, source="test")
 
         data = manager.to_dict()
 

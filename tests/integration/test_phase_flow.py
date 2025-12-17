@@ -2,6 +2,8 @@
 Integration tests for phase flow progression.
 
 Tests complete phase progression from mission to production.
+
+Module 62.4: Uses refinable_write_context for transaction-wrapped writes.
 """
 
 import pytest
@@ -9,6 +11,7 @@ from magnet.core.design_state import DesignState
 from magnet.core.state_manager import StateManager
 from magnet.core.phase_states import PhaseMachine
 from magnet.core.enums import PhaseState
+from tests.conftest import refinable_write_context
 
 
 class TestPhaseProgression:
@@ -37,11 +40,13 @@ class TestPhaseProgression:
         assert machine.transition("mission", PhaseState.ACTIVE, "test", "Starting design")
         assert machine.get_phase_status("mission") == PhaseState.ACTIVE
 
-        # Populate required mission data
-        manager.set("mission.vessel_type", "patrol", source="test")
-        manager.set("mission.max_speed_kts", 35.0, source="test")
-        manager.set("mission.range_nm", 500.0, source="test")
-        manager.set("mission.crew_berthed", 6, source="test")
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(manager):
+            # Populate required mission data
+            manager.set("mission.vessel_type", "patrol", source="test")
+            manager.set("mission.max_speed_kts", 35.0, source="test")
+            manager.set("mission.range_nm", 500.0, source="test")
+            manager.set("mission.crew_berthed", 6, source="test")
 
         # Complete mission phase
         assert machine.transition("mission", PhaseState.LOCKED, "test", "Mission defined")
@@ -55,9 +60,11 @@ class TestPhaseProgression:
         """Test hull_form phase gate conditions."""
         manager = StateManager()
 
-        # Set mission data first to satisfy dependencies
-        manager.set("mission.vessel_type", "patrol", source="test")
-        manager.set("mission.max_speed_kts", 35.0, source="test")
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(manager):
+            # Set mission data first to satisfy dependencies
+            manager.set("mission.vessel_type", "patrol", source="test")
+            manager.set("mission.max_speed_kts", 35.0, source="test")
 
         machine = PhaseMachine(manager)
 
@@ -73,11 +80,13 @@ class TestPhaseProgression:
         assert not satisfied
         assert len(missing) > 0
 
-        # Add required hull data
-        manager.set("hull.loa", 25.0, source="test")
-        manager.set("hull.beam", 6.0, source="test")
-        manager.set("hull.draft", 1.5, source="test")
-        manager.set("hull.cb", 0.45, source="test")
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(manager):
+            # Add required hull data
+            manager.set("hull.loa", 25.0, source="test")
+            manager.set("hull.beam", 6.0, source="test")
+            manager.set("hull.draft", 1.5, source="test")
+            manager.set("hull.cb", 0.45, source="test")
 
         # Check gate conditions after data
         satisfied, _, missing = machine.check_gate_conditions("hull_form")
@@ -89,14 +98,16 @@ class TestPhaseProgression:
         """Test downstream cascade invalidation."""
         manager = StateManager()
 
-        # Set all required data
-        manager.set("mission.vessel_type", "patrol", source="test")
-        manager.set("mission.max_speed_kts", 35.0, source="test")
-        manager.set("hull.loa", 25.0, source="test")
-        manager.set("hull.beam", 6.0, source="test")
-        manager.set("hull.draft", 1.5, source="test")
-        manager.set("structural_design.hull_material", "aluminum", source="test")
-        manager.set("structural_design.bottom_plating_mm", 8.0, source="test")
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(manager):
+            # Set all required data
+            manager.set("mission.vessel_type", "patrol", source="test")
+            manager.set("mission.max_speed_kts", 35.0, source="test")
+            manager.set("hull.loa", 25.0, source="test")
+            manager.set("hull.beam", 6.0, source="test")
+            manager.set("hull.draft", 1.5, source="test")
+            manager.set("structural_design.hull_material", "aluminum", source="test")
+            manager.set("structural_design.bottom_plating_mm", 8.0, source="test")
 
         machine = PhaseMachine(manager)
 
@@ -125,19 +136,23 @@ class TestPhaseProgression:
 
         # Phase 1: Mission
         machine.transition("mission", PhaseState.ACTIVE, "user", "Start")
-        manager.set("mission.vessel_type", "patrol", source="user")
-        manager.set("mission.max_speed_kts", 35.0, source="user")
-        manager.set("mission.range_nm", 500.0, source="user")
-        manager.set("mission.crew_berthed", 6, source="user")
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(manager):
+            manager.set("mission.vessel_type", "patrol", source="user")
+            manager.set("mission.max_speed_kts", 35.0, source="user")
+            manager.set("mission.range_nm", 500.0, source="user")
+            manager.set("mission.crew_berthed", 6, source="user")
         machine.transition("mission", PhaseState.LOCKED, "user", "Mission complete")
 
         # Phase 2: Hull Form
         machine.transition("hull_form", PhaseState.ACTIVE, "naval_architect", "Start")
-        manager.set("hull.loa", 25.0, source="naval_architect")
-        manager.set("hull.beam", 6.0, source="naval_architect")
-        manager.set("hull.draft", 1.5, source="naval_architect")
-        manager.set("hull.cb", 0.45, source="naval_architect")
-        manager.set("hull.displacement_m3", 180.0, source="naval_architect")
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(manager):
+            manager.set("hull.loa", 25.0, source="naval_architect")
+            manager.set("hull.beam", 6.0, source="naval_architect")
+            manager.set("hull.draft", 1.5, source="naval_architect")
+            manager.set("hull.cb", 0.45, source="naval_architect")
+            manager.set("hull.displacement_m3", 180.0, source="naval_architect")
         machine.transition("hull_form", PhaseState.LOCKED, "naval_architect", "Hull designed")
 
         # Verify phases are locked
@@ -164,14 +179,16 @@ class TestPhaseTransitionRules:
         """Test that invalidated phases can be restarted."""
         manager = StateManager()
 
-        # Setup data
-        manager.set("mission.vessel_type", "patrol", source="test")
-        manager.set("mission.max_speed_kts", 30.0, source="test")
-        manager.set("hull.loa", 25.0, source="test")
-        manager.set("hull.beam", 6.0, source="test")
-        manager.set("hull.draft", 1.5, source="test")
-        manager.set("structural_design.hull_material", "aluminum", source="test")
-        manager.set("structural_design.bottom_plating_mm", 8.0, source="test")
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(manager):
+            # Setup data
+            manager.set("mission.vessel_type", "patrol", source="test")
+            manager.set("mission.max_speed_kts", 30.0, source="test")
+            manager.set("hull.loa", 25.0, source="test")
+            manager.set("hull.beam", 6.0, source="test")
+            manager.set("hull.draft", 1.5, source="test")
+            manager.set("structural_design.hull_material", "aluminum", source="test")
+            manager.set("structural_design.bottom_plating_mm", 8.0, source="test")
 
         machine = PhaseMachine(manager)
 
@@ -214,9 +231,11 @@ class TestPhaseStateManagerIntegration:
         """Test that state changes affect gate condition checking."""
         manager = StateManager()
 
-        # Setup mission first
-        manager.set("mission.vessel_type", "patrol", source="test")
-        manager.set("mission.max_speed_kts", 30.0, source="test")
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(manager):
+            # Setup mission first
+            manager.set("mission.vessel_type", "patrol", source="test")
+            manager.set("mission.max_speed_kts", 30.0, source="test")
 
         machine = PhaseMachine(manager)
 
@@ -228,11 +247,13 @@ class TestPhaseStateManagerIntegration:
         satisfied, _, _ = machine.check_gate_conditions("hull_form")
         assert not satisfied
 
-        # Add data via StateManager
-        manager.set("hull.loa", 25.0, source="test")
-        manager.set("hull.beam", 6.0, source="test")
-        manager.set("hull.draft", 1.5, source="test")
-        manager.set("hull.cb", 0.45, source="test")
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(manager):
+            # Add data via StateManager
+            manager.set("hull.loa", 25.0, source="test")
+            manager.set("hull.beam", 6.0, source="test")
+            manager.set("hull.draft", 1.5, source="test")
+            manager.set("hull.cb", 0.45, source="test")
 
         # Check required gate conditions now pass
         satisfied, passed_list, failed_list = machine.check_gate_conditions("hull_form")
@@ -243,9 +264,11 @@ class TestPhaseStateManagerIntegration:
         """Test that transaction rollback preserves phase state consistency."""
         manager = StateManager()
 
-        # Setup mission first
-        manager.set("mission.vessel_type", "patrol", source="test")
-        manager.set("mission.max_speed_kts", 30.0, source="test")
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(manager):
+            # Setup mission first
+            manager.set("mission.vessel_type", "patrol", source="test")
+            manager.set("mission.max_speed_kts", 30.0, source="test")
 
         machine = PhaseMachine(manager)
 
@@ -259,7 +282,7 @@ class TestPhaseStateManagerIntegration:
         # Begin transaction (returns txn_id)
         txn_id = manager.begin_transaction()
 
-        # Set some hull values
+        # Set some hull values (inside transaction, so OK)
         manager.set("hull.loa", 25.0, source="test")
         manager.set("hull.beam", 6.0, source="test")
 
