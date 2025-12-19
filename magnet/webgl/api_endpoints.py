@@ -165,15 +165,10 @@ async def get_hull_geometry(
     """
     try:
         from .geometry_service import GeometryService
-        from .interfaces import StateGeometryAdapter
 
         sm = get_state_manager(design_id)
-        adapter = StateGeometryAdapter(sm)
 
-        service = GeometryService(
-            input_provider=adapter,
-            design_id=design_id,
-        )
+        service = GeometryService(state_manager=sm)
 
         lod_level = LODLevel(lod) if lod in [l.value for l in LODLevel] else LODLevel.MEDIUM
 
@@ -235,15 +230,10 @@ async def get_scene(
     """
     try:
         from .geometry_service import GeometryService
-        from .interfaces import StateGeometryAdapter
 
         sm = get_state_manager(design_id)
-        adapter = StateGeometryAdapter(sm)
 
-        service = GeometryService(
-            input_provider=adapter,
-            design_id=design_id,
-        )
+        service = GeometryService(state_manager=sm)
 
         lod_level = LODLevel(lod) if lod in [l.value for l in LODLevel] else LODLevel.MEDIUM
 
@@ -293,12 +283,8 @@ async def get_binary_geometry(
         from .serializer import serialize_mesh
 
         sm = get_state_manager(design_id)
-        adapter = StateGeometryAdapter(sm)
 
-        service = GeometryService(
-            input_provider=adapter,
-            design_id=design_id,
-        )
+        service = GeometryService(state_manager=sm)
 
         lod_level = LODLevel(lod) if lod in [l.value for l in LODLevel] else LODLevel.MEDIUM
 
@@ -354,12 +340,8 @@ async def create_section_cut(
         from .section_cuts import SectionPlane
 
         sm = get_state_manager(design_id)
-        adapter = StateGeometryAdapter(sm)
 
-        service = GeometryService(
-            input_provider=adapter,
-            design_id=design_id,
-        )
+        service = GeometryService(state_manager=sm)
 
         # Map plane string to enum
         plane_map = {
@@ -421,12 +403,8 @@ async def get_transverse_sections(
         from .section_cuts import SectionPlane
 
         sm = get_state_manager(design_id)
-        adapter = StateGeometryAdapter(sm)
 
-        service = GeometryService(
-            input_provider=adapter,
-            design_id=design_id,
-        )
+        service = GeometryService(state_manager=sm)
 
         lod_level = LODLevel(lod) if lod in [l.value for l in LODLevel] else LODLevel.MEDIUM
 
@@ -494,12 +472,8 @@ async def export_geometry(
         from .exporter import GeometryExporter, ExportFormat
 
         sm = get_state_manager(design_id)
-        adapter = StateGeometryAdapter(sm)
 
-        service = GeometryService(
-            input_provider=adapter,
-            design_id=design_id,
-        )
+        service = GeometryService(state_manager=sm)
 
         # Map format string to enum
         format_map = {
@@ -615,12 +589,8 @@ async def export_with_options(
             )
 
         sm = get_state_manager(design_id)
-        adapter = StateGeometryAdapter(sm)
 
-        service = GeometryService(
-            input_provider=adapter,
-            design_id=design_id,
-        )
+        service = GeometryService(state_manager=sm)
 
         lod_level = LODLevel(request.lod) if request.lod in [l.value for l in LODLevel] else LODLevel.MEDIUM
 
