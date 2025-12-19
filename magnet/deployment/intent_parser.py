@@ -236,3 +236,271 @@ def get_guidance_message() -> str:
         "  • set max speed to 25 kts\n"
         "  • change power to 500 kW"
     )
+
+
+# =============================================================================
+# Module 65.1: Compound Intent Extraction
+# =============================================================================
+
+# Enum mappings for broad-first extraction
+# Maps enum value strings to their state paths
+ENUM_TO_PATH: Dict[str, Tuple[str, str]] = {
+    # HullType enum → hull.hull_type
+    "monohull": ("hull.hull_type", "monohull"),
+    "catamaran": ("hull.hull_type", "catamaran"),
+    "trimaran": ("hull.hull_type", "trimaran"),
+    "swath": ("hull.hull_type", "swath"),
+    "planing": ("hull.hull_type", "planing"),
+    "semi_planing": ("hull.hull_type", "semi_planing"),
+    "displacement": ("hull.hull_type", "displacement"),
+    "semi_displacement": ("hull.hull_type", "semi_displacement"),
+    "foil_assisted": ("hull.hull_type", "foil_assisted"),
+    "air_cushion": ("hull.hull_type", "air_cushion"),
+    # MaterialType enum → structural_design.hull_material
+    "aluminum": ("structural_design.hull_material", "aluminum"),
+    "aluminium": ("structural_design.hull_material", "aluminum"),  # UK spelling
+    "steel": ("structural_design.hull_material", "steel"),
+    "composite": ("structural_design.hull_material", "composite"),
+    "frp": ("structural_design.hull_material", "frp"),
+    "grp": ("structural_design.hull_material", "grp"),
+    "cfrp": ("structural_design.hull_material", "cfrp"),
+    "wood": ("structural_design.hull_material", "wood"),
+    "titanium": ("structural_design.hull_material", "titanium"),
+    # VesselType enum → mission.vessel_type
+    "patrol": ("mission.vessel_type", "patrol"),
+    "ferry": ("mission.vessel_type", "ferry"),
+    "workboat": ("mission.vessel_type", "workboat"),
+    "yacht": ("mission.vessel_type", "yacht"),
+    "fishing": ("mission.vessel_type", "fishing"),
+    "cargo": ("mission.vessel_type", "cargo"),
+    "military": ("mission.vessel_type", "military"),
+    "research": ("mission.vessel_type", "research"),
+    "tug": ("mission.vessel_type", "tug"),
+    "passenger": ("mission.vessel_type", "passenger"),
+    "offshore": ("mission.vessel_type", "offshore"),
+    "pilot": ("mission.vessel_type", "pilot"),
+    "sar": ("mission.vessel_type", "sar"),
+    "crew_boat": ("mission.vessel_type", "crew_boat"),
+    "landing_craft": ("mission.vessel_type", "landing_craft"),
+}
+
+# Known unsupported concepts (for user feedback)
+UNSUPPORTED_CONCEPTS = {
+    "pod": "ext.payload.pods",
+    "pods": "ext.payload.pods",
+    "container": "ext.cargo.containers",
+    "containers": "ext.cargo.containers",
+    "teu": "ext.cargo.teu",
+    "lane": "ext.cargo.lane_meters",
+    "lanes": "ext.cargo.lane_meters",
+    "vehicle": "ext.cargo.vehicles",
+    "vehicles": "ext.cargo.vehicles",
+    "car": "ext.cargo.vehicles",
+    "cars": "ext.cargo.vehicles",
+    "truck": "ext.cargo.vehicles",
+    "trucks": "ext.cargo.vehicles",
+}
+
+
+def extract_compound_intent(text: str) -> Dict:
+    """
+    Extract all recognizable parameters from broad user input.
+
+    Module 65.1: Multi-pass extraction for compound mode.
+    Parser is single-action internally; we run multiple passes.
+
+    Args:
+        text: Natural language input (e.g., "60m aluminum catamaran ferry")
+
+    Returns:
+        Dict with:
+          - proposed_actions: List of Action-like dicts
+          - unsupported_mentions: List of detected but unsupported concepts
+    """
+    text_lower = text.lower().strip()
+    proposed_actions = []
+    used_paths = set()
+
+    # Pass 1: Explicit patterns ("set X to Y", "make X Y")
+    explicit_actions = _extract_explicit_patterns(text_lower)
+    for action in explicit_actions:
+        if action.path not in used_paths:
+            proposed_actions.append(action)
+            used_paths.add(action.path)
+
+    # Pass 2: Implicit numeric patterns ("60m", "12 meters", "25 knots")
+    numeric_actions = _extract_all_numeric_patterns(text_lower)
+    for action in numeric_actions:
+        if action.path not in used_paths:
+            proposed_actions.append(action)
+            used_paths.add(action.path)
+
+    # Pass 3: Enum values ("catamaran", "aluminum", "ferry")
+    enum_actions = _extract_all_enum_mentions(text_lower)
+    for action in enum_actions:
+        if action.path not in used_paths:
+            proposed_actions.append(action)
+            used_paths.add(action.path)
+
+    # Detect unsupported concepts
+    unsupported = _detect_unsupported_mentions(text_lower, used_paths)
+
+    return {
+        "proposed_actions": proposed_actions,
+        "unsupported_mentions": unsupported,
+    }
+
+
+def _extract_explicit_patterns(text: str) -> List[Action]:
+    """
+    Extract all explicit set/make/change patterns.
+
+    Returns list of all matches (not just first).
+    """
+    actions = []
+    patterns = [
+        r"(?:set|make|change)\s+(.+?)\s+to\s+([\d.]+)\s*(\w*)",
+        r"(.+?)\s*=\s*([\d.]+)\s*(\w*)",
+    ]
+
+    for pattern in patterns:
+        for match in re.finditer(pattern, text):
+            param_text, value_str, unit_str = match.groups()
+            path = _find_path(param_text)
+            if path:
+                value = _parse_value(value_str, path)
+                unit = _parse_unit(unit_str)
+                actions.append(Action(
+                    action_type=ActionType.SET,
+                    path=path,
+                    value=value,
+                    unit=unit,
+                ))
+
+    return actions
+
+
+def _extract_all_numeric_patterns(text: str) -> List[Action]:
+    """
+    Extract all implicit numeric patterns like "60m", "12 meters", "25 knots".
+
+    Numeric patterns have precedence over enum patterns.
+    """
+    actions = []
+
+    # Pattern: number followed by unit (e.g., "60m", "12 meters", "25 kts")
+    # This catches standalone measurements
+    pattern = r"(\d+(?:\.\d+)?)\s*(m|meters?|ft|feet|kts|knots?|kw|mw|hp|nm|km)\b"
+
+    for match in re.finditer(pattern, text, re.IGNORECASE):
+        value_str, unit_str = match.groups()
+        unit = _parse_unit(unit_str)
+
+        # Determine path based on unit
+        path = _infer_path_from_unit(unit, text)
+        if path:
+            value = _parse_value(value_str, path)
+            actions.append(Action(
+                action_type=ActionType.SET,
+                path=path,
+                value=value,
+                unit=unit,
+            ))
+
+    return actions
+
+
+def _infer_path_from_unit(unit: str, context: str) -> Optional[str]:
+    """
+    Infer which path to set based on unit and context.
+
+    For Module 65.1: Simple heuristics, no LLM.
+    """
+    context_lower = context.lower()
+
+    if unit == "m":
+        # Check context for hints
+        if "length" in context_lower or "loa" in context_lower:
+            return "hull.loa"
+        if "beam" in context_lower or "width" in context_lower:
+            return "hull.beam"
+        if "draft" in context_lower or "draught" in context_lower:
+            return "hull.draft"
+        if "depth" in context_lower:
+            return "hull.depth"
+        # Default: length is most common first mention
+        return "hull.loa"
+
+    if unit == "ft":
+        # Same logic for feet
+        if "length" in context_lower or "loa" in context_lower:
+            return "hull.loa"
+        if "beam" in context_lower or "width" in context_lower:
+            return "hull.beam"
+        if "draft" in context_lower or "draught" in context_lower:
+            return "hull.draft"
+        if "depth" in context_lower:
+            return "hull.depth"
+        return "hull.loa"
+
+    if unit in ("kts", "knots"):
+        if "cruise" in context_lower or "cruising" in context_lower:
+            return "mission.cruise_speed_kts"
+        return "mission.max_speed_kts"
+
+    if unit in ("kW", "MW", "hp"):
+        return "propulsion.total_installed_power_kw"
+
+    if unit == "nm":
+        return "mission.range_nm"
+
+    if unit == "km":
+        return "mission.range_nm"  # Will need conversion
+
+    return None
+
+
+def _extract_all_enum_mentions(text: str) -> List[Action]:
+    """
+    Extract all enum value mentions like "catamaran", "aluminum", "ferry".
+
+    Processed after numeric patterns (lower precedence).
+    """
+    actions = []
+
+    for enum_value, (path, canonical_value) in ENUM_TO_PATH.items():
+        # Word boundary match to avoid partial matches
+        pattern = rf"\b{re.escape(enum_value)}\b"
+        if re.search(pattern, text, re.IGNORECASE):
+            actions.append(Action(
+                action_type=ActionType.SET,
+                path=path,
+                value=canonical_value,
+                unit=None,
+            ))
+
+    return actions
+
+
+def _detect_unsupported_mentions(text: str, used_paths: set) -> List[Dict]:
+    """
+    Detect concepts mentioned in text that aren't supported in schema.
+
+    Returns list of {text, concept, status, future} dicts.
+    """
+    unsupported = []
+
+    for keyword, future_path in UNSUPPORTED_CONCEPTS.items():
+        # Look for keyword with optional number before/after
+        pattern = rf"(\d+\s*)?\b{re.escape(keyword)}\b(\s*\d+)?"
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            matched_text = match.group(0).strip()
+            unsupported.append({
+                "text": matched_text,
+                "concept": keyword,
+                "status": "no_schema_field",
+                "future": future_path,
+            })
+
+    return unsupported

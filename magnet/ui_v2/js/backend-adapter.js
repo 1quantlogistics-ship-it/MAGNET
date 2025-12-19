@@ -364,42 +364,104 @@ class MAGNETBackendAdapter {
                 return;
             }
 
-            // Natural language → preview via Intent API
+            // Natural language → preview via Intent API (Module 65.1: compound mode)
             try {
                 const preview = await this.post(
                     `/api/v1/designs/${this.designId}/intent/preview`,
-                    { text: command }
+                    { text: command, mode: 'compound' }
                 );
 
-                if (!preview.approved?.length) {
-                    MagnetStudio.terminal.info(preview.guidance || 'No actions recognized');
-                    MagnetStudio.terminal.info('Try: "set hull length to 30 meters"');
-                    MagnetStudio.setStatus('Ready');
-                    MagnetStudio.terminal.cursor();
-                    return;
-                }
+                // Module 65.1: Handle compound mode response
+                if (preview.intent_mode === 'compound') {
+                    // Check if we have any proposed actions
+                    if (!preview.proposed_actions?.length && !preview.approved?.length) {
+                        MagnetStudio.terminal.info(preview.guidance || 'No actions recognized');
+                        MagnetStudio.terminal.info('Try: "60m aluminum catamaran ferry"');
+                        MagnetStudio.setStatus('Ready');
+                        MagnetStudio.terminal.cursor();
+                        return;
+                    }
 
-                // Show preview
-                MagnetStudio.terminal.info('Preview:');
-                preview.approved.forEach(a => {
-                    MagnetStudio.terminal.data([
-                        { key: a.path, value: `${a.value}${a.unit ? ' ' + a.unit : ''}` }
-                    ]);
-                });
+                    // 1. Show "MAGNET understood" (approved actions)
+                    const understood = preview.approved || [];
+                    if (understood.length) {
+                        MagnetStudio.terminal.info('MAGNET understood:');
+                        understood.forEach(a => {
+                            MagnetStudio.terminal.data([
+                                { key: a.path, value: `${a.value}${a.unit ? ' ' + a.unit : ''}` }
+                            ]);
+                        });
+                    }
 
-                if (preview.rejected?.length) {
-                    preview.rejected.forEach(r => {
-                        MagnetStudio.terminal.error(`${r.action.path}: ${r.reason}`);
+                    // Show rejected if any
+                    if (preview.rejected?.length) {
+                        MagnetStudio.terminal.info('');
+                        preview.rejected.forEach(r => {
+                            MagnetStudio.terminal.error(`${r.action?.path || 'unknown'}: ${r.reason}`);
+                        });
+                    }
+
+                    // 2. Show "MAGNET needs" (missing_required)
+                    if (preview.missing_required?.length) {
+                        MagnetStudio.terminal.info('');
+                        MagnetStudio.terminal.info('MAGNET needs:');
+                        preview.missing_required.forEach(m => {
+                            MagnetStudio.terminal.info(`  ○ ${m.path}: ${m.reason}`);
+                        });
+                    }
+
+                    // 3. Show "Can't yet model" (unsupported_mentions)
+                    if (preview.unsupported_mentions?.length) {
+                        MagnetStudio.terminal.info('');
+                        MagnetStudio.terminal.info("MAGNET can't yet model:");
+                        preview.unsupported_mentions.forEach(u => {
+                            MagnetStudio.terminal.info(`  "${u.text}" → ${u.future || 'future support'}`);
+                        });
+                    }
+
+                    // Show warnings
+                    if (preview.warnings?.length) {
+                        preview.warnings.forEach(w => MagnetStudio.terminal.info(`⚠ ${w}`));
+                    }
+
+                    // 4. Store for apply and show prompt
+                    this._pendingPreview = preview;
+                    MagnetStudio.terminal.info('');
+                    if (preview.intent_status === 'complete') {
+                        MagnetStudio.terminal.success('All requirements met');
+                    }
+                    MagnetStudio.terminal.info('Type "apply" to execute, or add missing fields');
+
+                } else {
+                    // Legacy single-action mode fallback
+                    if (!preview.approved?.length) {
+                        MagnetStudio.terminal.info(preview.guidance || 'No actions recognized');
+                        MagnetStudio.terminal.info('Try: "set hull length to 30 meters"');
+                        MagnetStudio.setStatus('Ready');
+                        MagnetStudio.terminal.cursor();
+                        return;
+                    }
+
+                    MagnetStudio.terminal.info('Preview:');
+                    preview.approved.forEach(a => {
+                        MagnetStudio.terminal.data([
+                            { key: a.path, value: `${a.value}${a.unit ? ' ' + a.unit : ''}` }
+                        ]);
                     });
-                }
 
-                if (preview.warnings?.length) {
-                    preview.warnings.forEach(w => MagnetStudio.terminal.info(`⚠ ${w}`));
-                }
+                    if (preview.rejected?.length) {
+                        preview.rejected.forEach(r => {
+                            MagnetStudio.terminal.error(`${r.action.path}: ${r.reason}`);
+                        });
+                    }
 
-                // Store for apply
-                this._pendingPreview = preview;
-                MagnetStudio.terminal.info('Type "apply" to execute, or "cancel" to discard');
+                    if (preview.warnings?.length) {
+                        preview.warnings.forEach(w => MagnetStudio.terminal.info(`⚠ ${w}`));
+                    }
+
+                    this._pendingPreview = preview;
+                    MagnetStudio.terminal.info('Type "apply" to execute, or "cancel" to discard');
+                }
 
             } catch (error) {
                 MagnetStudio.terminal.error(error.message);

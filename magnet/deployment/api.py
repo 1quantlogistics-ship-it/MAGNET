@@ -97,9 +97,10 @@ try:
             return v
 
     class IntentPreviewRequest(BaseModel):
-        """Request model for previewing an intent (Module 63)."""
+        """Request model for previewing an intent (Module 63/65.1)."""
         text: str
         design_version_before: Optional[int] = None
+        mode: Optional[str] = "single"  # Module 65.1: "single" or "compound"
 
     _PYDANTIC_AVAILABLE = True
 
@@ -122,6 +123,88 @@ except ImportError:
         pass
     class IntentPreviewRequest:
         pass
+
+
+# =============================================================================
+# Module 65.1: HypotheticalStateView for Gate Reuse
+# =============================================================================
+
+class HypotheticalStateView:
+    """
+    Read-only view that overlays proposed actions on real state.
+
+    Implements same get(path) interface as StateManager, allowing
+    GateCondition.evaluate() to run against hypothetical post-apply state
+    WITHOUT any mutation.
+
+    Module 65.1: This is the key mechanism for computing missing_for_phases.
+    """
+
+    def __init__(self, real_state_manager, proposed_actions: list):
+        """
+        Args:
+            real_state_manager: The real StateManager to read from
+            proposed_actions: List of Action objects to overlay
+        """
+        self._real = real_state_manager
+        # Build overlay: {path: value}
+        self._overlay = {}
+        for action in proposed_actions:
+            # Only SET actions contribute to overlay
+            if hasattr(action, 'action_type'):
+                from magnet.kernel.intent_protocol import ActionType
+                if action.action_type == ActionType.SET:
+                    self._overlay[action.path] = action.value
+            elif isinstance(action, dict) and action.get('action_type') == 'set':
+                self._overlay[action['path']] = action['value']
+
+    def get(self, path: str, default=None):
+        """
+        Return proposed value if exists, else real state.
+
+        This is the only method needed by GateCondition.evaluate().
+        """
+        if path in self._overlay:
+            return self._overlay[path]
+        return self._real.get(path, default)
+
+
+def check_gates_on_hypothetical(phase: str, hypothetical_view: HypotheticalStateView) -> list:
+    """
+    Check gate conditions for a phase using hypothetical state.
+
+    Module 65.1: Uses existing GATE_CONDITIONS and GateCondition.evaluate()
+    with zero new validation logic. The hypothetical_view overlays proposed
+    actions on real state.
+
+    Args:
+        phase: Phase name (e.g., "hull_form")
+        hypothetical_view: HypotheticalStateView with proposed values
+
+    Returns:
+        List of dicts for missing/failed gates: [{path, reason, gate_name}]
+    """
+    from magnet.core.phase_states import GATE_CONDITIONS
+
+    gates = GATE_CONDITIONS.get(phase, [])
+    missing = []
+
+    for gate in gates:
+        if not gate.required:
+            continue
+
+        # Use existing gate.evaluate() - the core reuse mechanism
+        passed, message = gate.evaluate(hypothetical_view)
+
+        if not passed:
+            missing.append({
+                "path": gate.check_path,
+                "reason": gate.error_message or message,
+                "gate_name": gate.name,
+                "phase": phase,
+            })
+
+    return missing
 
 
 def create_fastapi_app(context: "AppContext" = None):
@@ -731,7 +814,7 @@ def create_fastapi_app(context: "AppContext" = None):
             raise HTTPException(status_code=500, detail=str(e))
 
     # =========================================================================
-    # Intent Preview Endpoint (Module 63)
+    # Intent Preview Endpoint (Module 63 / 65.1)
     # =========================================================================
 
     @app.post("/api/v1/designs/{design_id}/intent/preview")
@@ -742,15 +825,20 @@ def create_fastapi_app(context: "AppContext" = None):
         validator=Depends(get_action_validator),
     ):
         """
-        Preview an intent without executing (Module 63).
+        Preview an intent without executing (Module 63 / 65.1).
 
         Parses natural language using REFINABLE_SCHEMA keywords only,
         validates via ActionPlanValidator, returns preview without mutation.
 
-        No state changes, no version bump.
+        Module 65.1 adds compound mode:
+        - mode="single" (default): Single-action parsing (legacy)
+        - mode="compound": Multi-pass extraction with gate checks
+
+        No state changes, no version bump. ZERO MUTATION.
 
         Returns:
             Preview with approved/rejected/warnings from ActionPlanValidator
+            Plus (compound mode): missing_required, unsupported_mentions
         """
         import uuid
         from magnet.ui.utils import get_state_value
@@ -765,7 +853,15 @@ def create_fastapi_app(context: "AppContext" = None):
         if current_id != design_id:
             raise HTTPException(status_code=404, detail="Design not found")
 
-        # Parse NL using REFINABLE_SCHEMA keywords ONLY
+        # Module 65.1: Compound mode
+        mode = getattr(request, 'mode', 'single') or 'single'
+
+        if mode == "compound":
+            return await _preview_intent_compound(
+                design_id, request, state_manager, validator
+            )
+
+        # Legacy single-action mode
         from magnet.deployment.intent_parser import parse_intent_to_actions, get_guidance_message
 
         actions = parse_intent_to_actions(request.text)
@@ -773,6 +869,7 @@ def create_fastapi_app(context: "AppContext" = None):
         if not actions:
             return {
                 "preview": True,
+                "intent_mode": "single",
                 "plan_id": None,
                 "intent_id": None,
                 "design_version_before": state_manager.design_version,
@@ -853,6 +950,165 @@ def create_fastapi_app(context: "AppContext" = None):
                     for a in result.approved
                 ]
             },
+        }
+
+    # =========================================================================
+    # Module 65.1: Compound Intent Preview Helper
+    # =========================================================================
+
+    async def _preview_intent_compound(
+        design_id: str,
+        request,
+        state_manager,
+        validator,
+    ):
+        """
+        Compound mode preview with gate reuse on hypothetical state.
+
+        Module 65.1: Multi-pass extraction + gate checks.
+        Uses HypotheticalStateView and check_gates_on_hypothetical().
+
+        ZERO MUTATION - no state.set(), no begin_transaction(), no commit().
+        """
+        import uuid
+        from magnet.deployment.intent_parser import (
+            extract_compound_intent,
+            get_guidance_message,
+        )
+        from magnet.kernel.intent_protocol import ActionPlan
+        from magnet.core.phase_ownership import get_phase_for_path
+
+        # Step 1: Multi-pass extraction
+        compound = extract_compound_intent(request.text)
+        proposed_actions = compound["proposed_actions"]
+        unsupported_mentions = compound["unsupported_mentions"]
+
+        if not proposed_actions:
+            return {
+                "preview": True,
+                "intent_mode": "compound",
+                "plan_id": None,
+                "intent_id": None,
+                "design_version_before": state_manager.design_version,
+                "proposed_actions": [],
+                "approved": [],
+                "rejected": [],
+                "warnings": [],
+                "missing_required": [],
+                "unsupported_mentions": unsupported_mentions,
+                "intent_status": "blocked",
+                "guidance": get_guidance_message(),
+                "apply_payload": None,
+            }
+
+        # Step 2: Build ActionPlan and validate
+        plan_id = f"preview_{uuid.uuid4().hex[:8]}"
+        intent_id = f"intent_{uuid.uuid4().hex[:8]}"
+        version_before = request.design_version_before or state_manager.design_version
+
+        plan = ActionPlan(
+            plan_id=plan_id,
+            intent_id=intent_id,
+            design_id=design_id,
+            design_version_before=version_before,
+            actions=proposed_actions,
+            proposed_at=datetime.now(timezone.utc),
+        )
+
+        try:
+            result = validator.validate(plan, state_manager, check_stale=False)
+        except Exception as e:
+            logger.error(f"Validation error: {e}")
+            return {
+                "preview": True,
+                "intent_mode": "compound",
+                "error": str(e),
+                "intent_status": "blocked",
+            }
+
+        # Step 3: Create HypotheticalStateView with approved actions
+        hypothetical = HypotheticalStateView(state_manager, result.approved)
+
+        # Step 4: Determine target phases and check gates on hypothetical
+        target_phases = set()
+        for action in result.approved:
+            phase = get_phase_for_path(action.path)
+            if phase:
+                target_phases.add(phase)
+
+        missing_required = []
+        for phase in target_phases:
+            phase_missing = check_gates_on_hypothetical(phase, hypothetical)
+            missing_required.extend(phase_missing)
+
+        # Remove duplicates (same path might appear from multiple phases)
+        seen_paths = set()
+        unique_missing = []
+        for m in missing_required:
+            if m["path"] not in seen_paths:
+                unique_missing.append(m)
+                seen_paths.add(m["path"])
+        missing_required = unique_missing
+
+        # Step 5: Compute intent_status
+        if not result.approved:
+            intent_status = "blocked"
+        elif missing_required:
+            intent_status = "partial"
+        else:
+            intent_status = "complete"
+
+        # Return compound preview response
+        return {
+            "preview": True,
+            "intent_mode": "compound",
+            "plan_id": plan_id,
+            "intent_id": intent_id,
+            "design_version_before": state_manager.design_version,
+            "proposed_actions": [
+                {
+                    "action_type": a.action_type.value,
+                    "path": a.path,
+                    "value": a.value,
+                    "amount": getattr(a, 'amount', None),
+                    "unit": a.unit,
+                    "source": "extracted",
+                }
+                for a in proposed_actions
+            ],
+            "approved": [
+                {
+                    "action_type": a.action_type.value,
+                    "path": a.path,
+                    "value": a.value,
+                    "amount": getattr(a, 'amount', None),
+                    "unit": a.unit,
+                }
+                for a in result.approved
+            ],
+            "rejected": [
+                {"action": {"path": a.path, "value": a.value}, "reason": reason}
+                for a, reason in result.rejected
+            ],
+            "warnings": result.warnings,
+            "missing_required": missing_required,
+            "unsupported_mentions": unsupported_mentions,
+            "intent_status": intent_status,
+            "apply_payload": {
+                "plan_id": plan_id,
+                "intent_id": intent_id,
+                "design_version_before": state_manager.design_version,
+                "actions": [
+                    {
+                        "action_type": a.action_type.value,
+                        "path": a.path,
+                        "value": a.value,
+                        "amount": getattr(a, 'amount', None),
+                        "unit": a.unit,
+                    }
+                    for a in result.approved
+                ]
+            } if result.approved else None,
         }
 
     # =========================================================================
