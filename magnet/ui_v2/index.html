@@ -1,0 +1,2623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MAGNET Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            /* Dark Mode (default) */
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #111113;
+            --bg-tertiary: #1a1a1c;
+            --bg-card: #1e1e20;
+            --bg-elevated: #252528;
+            
+            --border-subtle: rgba(255, 255, 255, 0.06);
+            --border-default: rgba(255, 255, 255, 0.1);
+            --border-hover: rgba(255, 255, 255, 0.15);
+            
+            --text-primary: #ffffff;
+            --text-secondary: #a1a1a6;
+            --text-tertiary: #6e6e73;
+            --text-muted: #48484a;
+            
+            --accent-blue: #0a84ff;
+            --accent-green: #30d158;
+            --accent-orange: #ff9f0a;
+            --accent-red: #ff453a;
+            --accent-cyan: #64d2ff;
+            --accent-purple: #bf5af2;
+            
+            --terminal-prompt: #ff9f0a;
+            --terminal-command: #ffffff;
+            --terminal-output: #a1a1a6;
+            --terminal-value: #ff9f0a;
+            --terminal-success: #30d158;
+            --terminal-info: #64d2ff;
+            
+            --canvas-bg: #0a0a0a;
+            --grid-color: rgba(255, 255, 255, 0.03);
+            
+            --ease: cubic-bezier(0.4, 0, 0.2, 1);
+            --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+            
+            --sidebar-width: 200px;
+            --chat-width-collapsed: 48px;
+            --chat-width-expanded: 420px;
+            --inspector-width: 280px;
+        }
+        
+        /* Light Mode - Paper/Canvas feel like Claude */
+        [data-theme="light"] {
+            --bg-primary: #f5f5f0;
+            --bg-secondary: #eeeee8;
+            --bg-tertiary: #e8e8e2;
+            --bg-card: #ffffff;
+            --bg-elevated: #fafaf8;
+            
+            --border-subtle: rgba(0, 0, 0, 0.06);
+            --border-default: rgba(0, 0, 0, 0.1);
+            --border-hover: rgba(0, 0, 0, 0.15);
+            
+            --text-primary: #1a1a1a;
+            --text-secondary: #5c5c5c;
+            --text-tertiary: #8c8c8c;
+            --text-muted: #b0b0b0;
+            
+            --accent-blue: #0066cc;
+            --accent-green: #22863a;
+            --accent-orange: #d97706;
+            --accent-red: #dc2626;
+            --accent-cyan: #0891b2;
+            --accent-purple: #7c3aed;
+            
+            --terminal-prompt: #d97706;
+            --terminal-command: #1a1a1a;
+            --terminal-output: #5c5c5c;
+            --terminal-value: #d97706;
+            --terminal-success: #22863a;
+            --terminal-info: #0891b2;
+            
+            --canvas-bg: #fafaf5;
+            --grid-color: rgba(0, 0, 0, 0.04);
+        }
+        
+        html, body {
+            height: 100%;
+            overflow: hidden;
+            background: var(--bg-primary);
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 14px;
+            color: var(--text-secondary);
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        /* ═══════════════════════════════════════════════════════════════
+           STUDIO LAYOUT
+           ═══════════════════════════════════════════════════════════════ */
+        .studio {
+            display: flex;
+            height: 100vh;
+            flex-direction: column;
+        }
+        
+        /* Top Bar */
+        .top-bar {
+            height: 48px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            flex-shrink: 0;
+            z-index: 100;
+        }
+        
+        .top-bar-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .logo {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.12em;
+            color: var(--text-primary);
+        }
+        
+        .project-name {
+            font-size: 13px;
+            color: var(--text-secondary);
+            padding-left: 16px;
+            border-left: 1px solid var(--border-subtle);
+        }
+        
+        .top-bar-center {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background: rgba(48, 209, 88, 0.1);
+            border: 1px solid rgba(48, 209, 88, 0.2);
+            border-radius: 100px;
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--accent-green);
+        }
+        
+        .connection-status.disconnected {
+            background: rgba(255, 69, 58, 0.1);
+            border-color: rgba(255, 69, 58, 0.2);
+            color: var(--accent-red);
+        }
+        
+        .connection-status.syncing {
+            background: rgba(255, 159, 10, 0.1);
+            border-color: rgba(255, 159, 10, 0.2);
+            color: var(--accent-orange);
+        }
+        
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+        
+        .status-dot.pulse {
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        
+        .sync-indicator {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: var(--text-muted);
+            padding: 4px 8px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+        }
+        
+        .top-bar-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .top-btn {
+            padding: 6px 12px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.15s var(--ease);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .top-btn:hover {
+            background: var(--bg-elevated);
+            border-color: var(--border-hover);
+            color: var(--text-primary);
+        }
+        
+        .top-btn.primary {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+            color: white;
+        }
+        
+        .top-btn.primary:hover {
+            background: #0077ed;
+        }
+        
+        /* Theme Toggle - Rectangular with animation */
+        .theme-toggle {
+            width: 40px;
+            height: 36px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.2s var(--ease);
+        }
+        
+        .theme-toggle:hover {
+            background: var(--bg-elevated);
+            border-color: var(--border-hover);
+        }
+        
+        .theme-toggle:active {
+            transform: scale(0.95);
+        }
+        
+        .theme-icon {
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.5s var(--ease-out);
+        }
+        
+        .theme-icon svg {
+            width: 18px;
+            height: 18px;
+            stroke: var(--text-secondary);
+            stroke-width: 2;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+        
+        /* Moon icon - visible in dark mode */
+        .moon-icon {
+            opacity: 1;
+            transform: rotate(0deg) scale(1);
+        }
+        
+        /* Sun icon - hidden in dark mode */
+        .sun-icon {
+            opacity: 0;
+            transform: rotate(-90deg) scale(0);
+        }
+        
+        /* Light mode: show sun, hide moon */
+        [data-theme="light"] .moon-icon {
+            opacity: 0;
+            transform: rotate(90deg) scale(0);
+        }
+        
+        [data-theme="light"] .sun-icon {
+            opacity: 1;
+            transform: rotate(0deg) scale(1);
+        }
+        
+        /* Sun rays subtle pulse in light mode */
+        [data-theme="light"] .sun-icon svg {
+            animation: sunPulse 3s ease-in-out infinite;
+        }
+        
+        @keyframes sunPulse {
+            0%, 100% { stroke-width: 2; }
+            50% { stroke-width: 1.5; }
+        }
+        
+        .top-btn svg {
+            width: 14px;
+            height: 14px;
+            stroke: currentColor;
+            stroke-width: 2;
+            fill: none;
+        }
+        
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+        
+        /* ═══════════════════════════════════════════════════════════════
+           LEFT SIDEBAR - Phase Navigation
+           ═══════════════════════════════════════════════════════════════ */
+        .sidebar {
+            width: var(--sidebar-width);
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-subtle);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+        
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 0;
+        }
+        
+        .sidebar-content::-webkit-scrollbar { width: 4px; }
+        .sidebar-content::-webkit-scrollbar-thumb { background: var(--bg-elevated); border-radius: 2px; }
+        
+        .nav-section { margin-bottom: 20px; }
+        
+        .nav-section-title {
+            padding: 0 16px;
+            font-size: 9px;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+        
+        /* Phase Items */
+        .phase-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px 16px;
+            cursor: pointer;
+            transition: all 0.15s var(--ease);
+            position: relative;
+        }
+        
+        .phase-item:hover { background: rgba(255, 255, 255, 0.03); }
+        .phase-item.active { background: rgba(10, 132, 255, 0.12); }
+        .phase-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 0; bottom: 0;
+            width: 3px;
+            background: var(--accent-blue);
+        }
+        
+        .phase-indicator {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: 2px solid var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            flex-shrink: 0;
+            margin-top: 1px;
+            transition: all 0.2s var(--ease);
+        }
+        
+        .phase-item.complete .phase-indicator {
+            background: var(--accent-green);
+            border-color: var(--accent-green);
+            color: var(--bg-primary);
+        }
+        
+        .phase-item.active .phase-indicator {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+        }
+        
+        .phase-item.error .phase-indicator {
+            background: var(--accent-red);
+            border-color: var(--accent-red);
+            color: white;
+        }
+        
+        .phase-content { flex: 1; min-width: 0; }
+        
+        .phase-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 2px;
+        }
+        
+        .phase-item.active .phase-label { color: var(--text-primary); font-weight: 500; }
+        
+        .phase-sublabel {
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+        
+        .phase-item.complete .phase-sublabel { color: var(--accent-green); }
+        .phase-item.error .phase-sublabel { color: var(--accent-red); }
+        
+        /* Validator Items */
+        .validator-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 16px;
+            cursor: pointer;
+            transition: all 0.15s var(--ease);
+        }
+        
+        .validator-item:hover { background: rgba(255, 255, 255, 0.03); }
+        
+        .validator-icon {
+            width: 18px;
+            height: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+        
+        .validator-icon.pass { color: var(--accent-green); }
+        .validator-icon.fail { color: var(--accent-red); }
+        .validator-icon.pending { color: var(--text-muted); }
+        .validator-icon.running { color: var(--accent-orange); }
+        
+        .validator-content { flex: 1; }
+        .validator-label { font-size: 13px; color: var(--text-secondary); }
+        .validator-detail { font-size: 10px; color: var(--text-muted); }
+        
+        /* ═══════════════════════════════════════════════════════════════
+           CHAT PANEL
+           ═══════════════════════════════════════════════════════════════ */
+        .chat-panel {
+            width: var(--chat-width-collapsed);
+            min-width: var(--chat-width-collapsed);
+            background: var(--bg-tertiary);
+            border-right: 1px solid var(--border-subtle);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            overflow: hidden;
+            transition: width 0.3s var(--ease-out), min-width 0.3s var(--ease-out);
+            position: relative;
+        }
+        
+        .chat-panel.expanded {
+            width: var(--chat-width-expanded);
+            min-width: var(--chat-width-expanded);
+        }
+        
+        .chat-panel.fullscreen {
+            flex: 1;
+            width: auto !important;
+            min-width: 0 !important;
+        }
+        
+        .chat-resize {
+            position: absolute;
+            top: 0; right: 0;
+            width: 6px;
+            height: 100%;
+            cursor: ew-resize;
+            z-index: 100;
+        }
+        
+        .chat-resize:hover, .chat-resize.dragging { background: var(--accent-blue); }
+        .chat-panel:not(.expanded):not(.fullscreen) .chat-resize { display: none; }
+        
+        .chat-toggle {
+            position: absolute;
+            top: 12px;
+            right: 10px;
+            width: 28px;
+            height: 28px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-tertiary);
+            font-size: 14px;
+            z-index: 101;
+            transition: all 0.2s var(--ease);
+        }
+        
+        .chat-toggle:hover {
+            background: var(--bg-card);
+            color: var(--text-primary);
+        }
+        
+        .chat-toggle-icon { transition: transform 0.3s var(--ease-out); }
+        .chat-panel.expanded .chat-toggle-icon,
+        .chat-panel.fullscreen .chat-toggle-icon { transform: rotate(180deg); }
+        
+        .chat-panel:not(.expanded):not(.fullscreen) .chat-toggle {
+            position: relative;
+            top: auto; right: auto;
+            margin: 10px auto;
+        }
+        
+        .chat-collapsed {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 8px 0;
+        }
+        
+        .chat-panel.expanded .chat-collapsed,
+        .chat-panel.fullscreen .chat-collapsed { display: none; }
+        
+        .chat-collapsed-label {
+            writing-mode: vertical-rl;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            font-weight: 500;
+            color: var(--text-tertiary);
+            margin-top: 8px;
+        }
+        
+        .chat-expanded {
+            display: none;
+            flex-direction: column;
+            height: 100%;
+        }
+        
+        .chat-panel.expanded .chat-expanded,
+        .chat-panel.fullscreen .chat-expanded { display: flex; }
+        
+        .chat-header {
+            padding: 12px 16px;
+            padding-right: 44px;
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .chat-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        
+        .chat-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: var(--accent-green);
+        }
+        
+        .chat-status.processing { color: var(--accent-orange); }
+        .chat-status.error { color: var(--accent-red); }
+        
+        /* Terminal */
+        .terminal {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            line-height: 1.8;
+        }
+        
+        .terminal::-webkit-scrollbar { width: 4px; }
+        .terminal::-webkit-scrollbar-thumb { background: var(--bg-elevated); border-radius: 2px; }
+        
+        .terminal-line {
+            margin-bottom: 4px;
+            opacity: 0;
+            transform: translateY(8px);
+            transition: all 0.3s var(--ease-out);
+        }
+        
+        .terminal-line.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .terminal-prompt { color: var(--terminal-prompt); }
+        .terminal-command { color: var(--terminal-command); }
+        .terminal-output { color: var(--terminal-output); padding-left: 14px; }
+        .terminal-label { color: var(--text-tertiary); }
+        .terminal-value { color: var(--terminal-value); }
+        .terminal-success { color: var(--terminal-success); }
+        .terminal-info { color: var(--terminal-info); }
+        .terminal-error { color: var(--accent-red); }
+        .terminal-check { color: var(--terminal-success); margin-right: 6px; }
+        .terminal-arrow { color: var(--terminal-info); margin-right: 6px; }
+        .terminal-x { color: var(--accent-red); margin-right: 6px; }
+        
+        .terminal-group {
+            margin: 12px 0;
+            padding: 12px 0;
+            border-top: 1px solid var(--border-subtle);
+        }
+        
+        .terminal-group:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+        
+        .terminal-data {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            padding-left: 14px;
+            margin: 6px 0;
+        }
+        
+        .terminal-cursor {
+            display: inline-block;
+            width: 8px;
+            height: 16px;
+            background: var(--terminal-prompt);
+            animation: blink 1s step-end infinite;
+            vertical-align: text-bottom;
+            margin-left: 4px;
+        }
+        
+        @keyframes blink { 50% { opacity: 0; } }
+        
+        /* Chat Suggestions */
+        .chat-suggestions {
+            padding: 8px 12px;
+            border-top: 1px solid var(--border-subtle);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        
+        .suggestion-chip {
+            padding: 6px 10px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 6px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.15s var(--ease);
+        }
+        
+        .suggestion-chip:hover {
+            background: var(--bg-elevated);
+            border-color: var(--accent-blue);
+            color: var(--text-primary);
+        }
+        
+        /* Chat Input */
+        .chat-input-area {
+            padding: 12px;
+            border-top: 1px solid var(--border-subtle);
+        }
+        
+        .chat-input-wrap {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            transition: all 0.2s var(--ease);
+        }
+        
+        .chat-input-wrap:focus-within {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.12);
+        }
+        
+        .chat-prompt {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            color: var(--terminal-prompt);
+        }
+        
+        .chat-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            color: var(--text-primary);
+            outline: none;
+            min-width: 0;
+        }
+        
+        .chat-input::placeholder { color: var(--text-muted); }
+        
+        .chat-send {
+            width: 28px;
+            height: 28px;
+            background: var(--accent-blue);
+            border: none;
+            border-radius: 6px;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s var(--ease);
+        }
+        
+        .chat-send:hover { background: #0077ed; }
+        .chat-send:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        .chat-send svg {
+            width: 14px;
+            height: 14px;
+            stroke: currentColor;
+            stroke-width: 2;
+            fill: none;
+        }
+        
+        /* ═══════════════════════════════════════════════════════════════
+           WORKSPACE
+           ═══════════════════════════════════════════════════════════════ */
+        .workspace {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            background: var(--bg-primary);
+        }
+        
+        .workspace-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 20px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-subtle);
+            gap: 16px;
+        }
+        
+        .workspace-filename {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .workspace-tabs {
+            display: flex;
+            gap: 4px;
+        }
+        
+        .workspace-tab {
+            padding: 8px 16px;
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-tertiary);
+            cursor: pointer;
+            transition: all 0.15s var(--ease);
+        }
+        
+        .workspace-tab:hover {
+            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+        .workspace-tab.active {
+            background: var(--accent-blue);
+            color: var(--text-primary);
+        }
+        
+        .workspace-layers {
+            display: flex;
+            gap: 4px;
+        }
+        
+        .layer-btn {
+            padding: 6px 10px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 6px;
+            font-size: 11px;
+            color: var(--text-tertiary);
+            cursor: pointer;
+            transition: all 0.15s var(--ease);
+        }
+        
+        .layer-btn:hover { border-color: var(--border-hover); color: var(--text-secondary); }
+        .layer-btn.active { background: var(--accent-blue); border-color: var(--accent-blue); color: white; }
+        
+        /* Viewport */
+        .viewport {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .viewport-grid {
+            position: absolute;
+            inset: 0;
+            background-color: var(--canvas-bg);
+            background-image: 
+                linear-gradient(var(--grid-color) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+            background-size: 50px 50px;
+            pointer-events: none;
+        }
+        
+        #canvas3d {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+        }
+        
+        /* Viewport Overlays */
+        .viewport-overlay {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 5;
+            opacity: 0;
+            transition: opacity 0.3s var(--ease);
+        }
+        
+        .viewport-overlay.active { opacity: 1; }
+        
+        /* Sections overlay */
+        .sections-overlay {
+            display: flex;
+            justify-content: space-around;
+            padding: 0 12%;
+        }
+        
+        .section-line {
+            width: 1px;
+            height: 100%;
+            background: linear-gradient(to bottom, transparent 15%, var(--accent-cyan) 30%, var(--accent-cyan) 70%, transparent 85%);
+            position: relative;
+        }
+        
+        .section-label {
+            position: absolute;
+            bottom: 12%;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px;
+            color: var(--accent-cyan);
+        }
+        
+        /* Hydro overlay */
+        .hydro-overlay { display: flex; flex-direction: column; justify-content: center; }
+        
+        .waterline {
+            height: 2px;
+            background: var(--accent-blue);
+            box-shadow: 0 0 20px var(--accent-blue);
+            margin: 0 10%;
+            position: relative;
+        }
+        
+        .waterline::after {
+            content: 'DWL';
+            position: absolute;
+            right: -36px;
+            top: -7px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: var(--accent-blue);
+        }
+        
+        .hydro-point {
+            width: 10px;
+            height: 10px;
+            background: var(--accent-blue);
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            box-shadow: 0 0 12px var(--accent-blue);
+        }
+        
+        .hydro-point::after {
+            content: attr(data-label);
+            position: absolute;
+            top: 14px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px;
+            color: var(--accent-blue);
+        }
+        
+        /* Viewport Stats */
+        .viewport-stats {
+            position: absolute;
+            bottom: 16px;
+            left: 16px;
+            display: flex;
+            gap: 6px;
+            z-index: 10;
+        }
+        
+        .stat-chip {
+            padding: 8px 12px;
+            background: rgba(26, 26, 28, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-subtle);
+            border-radius: 6px;
+        }
+        
+        .stat-label {
+            font-size: 9px;
+            font-weight: 500;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 2px;
+        }
+        
+        .stat-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+        
+        /* Viewport Controls */
+        .viewport-controls {
+            position: absolute;
+            right: 16px;
+            bottom: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            z-index: 10;
+        }
+        
+        .control-btn {
+            width: 40px;
+            height: 40px;
+            background: rgba(26, 26, 28, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            color: var(--text-tertiary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s var(--ease);
+        }
+        
+        .control-btn:hover {
+            background: var(--bg-elevated);
+            border-color: var(--border-hover);
+            color: var(--text-primary);
+        }
+        
+        .control-btn:active { transform: scale(0.95); }
+        
+        .control-btn svg {
+            width: 18px;
+            height: 18px;
+            stroke: currentColor;
+            stroke-width: 2;
+            fill: none;
+        }
+        
+        .control-divider {
+            height: 1px;
+            background: var(--border-subtle);
+            margin: 2px 0;
+        }
+        
+        .zoom-display {
+            position: absolute;
+            right: 64px;
+            bottom: 16px;
+            padding: 6px 10px;
+            background: rgba(26, 26, 28, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-subtle);
+            border-radius: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--text-secondary);
+            z-index: 10;
+            opacity: 0;
+            transition: opacity 0.2s var(--ease);
+        }
+        
+        .zoom-display.visible { opacity: 1; }
+        
+        /* Camera Mode Toggle */
+        .camera-modes {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            display: flex;
+            gap: 4px;
+            z-index: 10;
+        }
+        
+        .camera-btn {
+            padding: 6px 12px;
+            background: rgba(26, 26, 28, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-subtle);
+            border-radius: 6px;
+            font-size: 11px;
+            color: var(--text-tertiary);
+            cursor: pointer;
+            transition: all 0.15s var(--ease);
+        }
+        
+        .camera-btn:hover { border-color: var(--border-hover); color: var(--text-secondary); }
+        .camera-btn.active { background: var(--accent-blue); border-color: var(--accent-blue); color: white; }
+        
+        /* Loading Overlay */
+        .loading-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(10, 10, 10, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            z-index: 50;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s var(--ease);
+        }
+        
+        .loading-overlay.active { opacity: 1; pointer-events: auto; }
+        
+        .loading-spinner {
+            width: 32px;
+            height: 32px;
+            border: 2px solid var(--border-subtle);
+            border-top-color: var(--accent-blue);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        .loading-text {
+            font-size: 12px;
+            color: var(--text-tertiary);
+        }
+        
+        /* ═══════════════════════════════════════════════════════════════
+           INSPECTOR PANEL
+           ═══════════════════════════════════════════════════════════════ */
+        .inspector {
+            width: var(--inspector-width);
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border-subtle);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+        
+        .inspector.collapsed { width: 0; border: none; }
+        
+        .inspector-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .inspector-title {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+        
+        .inspector-close {
+            width: 20px;
+            height: 20px;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            transition: all 0.15s var(--ease);
+        }
+        
+        .inspector-close:hover { background: var(--bg-tertiary); color: var(--text-secondary); }
+        
+        .inspector-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 0;
+        }
+        
+        .inspector-content::-webkit-scrollbar { width: 4px; }
+        .inspector-content::-webkit-scrollbar-thumb { background: var(--bg-elevated); border-radius: 2px; }
+        
+        .inspector-section {
+            padding: 0 16px;
+            margin-bottom: 16px;
+        }
+        
+        .inspector-section-title {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+        
+        .inspector-empty {
+            padding: 24px 16px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+        
+        /* Properties Table */
+        .props-table {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        
+        .props-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 10px;
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+        }
+        
+        .props-key {
+            font-size: 11px;
+            color: var(--text-tertiary);
+        }
+        
+        .props-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--text-primary);
+        }
+        
+        .props-value.editable {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+            padding: 2px 6px;
+            cursor: text;
+        }
+        
+        .props-value.editable:hover { border-color: var(--border-hover); }
+        
+        /* Recommendations */
+        .recommendation-item {
+            padding: 10px 12px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.15s var(--ease);
+        }
+        
+        .recommendation-item:hover { border-color: var(--accent-blue); }
+        
+        .recommendation-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+        
+        .recommendation-icon {
+            font-size: 12px;
+        }
+        
+        .recommendation-icon.improvement { color: var(--accent-blue); }
+        .recommendation-icon.warning { color: var(--accent-orange); }
+        .recommendation-icon.error { color: var(--accent-red); }
+        
+        .recommendation-title {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+        
+        .recommendation-desc {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            line-height: 1.4;
+        }
+        
+        /* Apply Bar */
+        .apply-bar {
+            padding: 12px 16px;
+            border-top: 1px solid var(--border-subtle);
+            display: flex;
+            gap: 8px;
+        }
+        
+        .apply-btn {
+            flex: 1;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s var(--ease);
+        }
+        
+        .apply-btn.primary {
+            background: var(--accent-blue);
+            border: none;
+            color: white;
+        }
+        
+        .apply-btn.primary:hover { background: #0077ed; }
+        
+        .apply-btn.secondary {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+        }
+        
+        .apply-btn.secondary:hover { border-color: var(--border-hover); color: var(--text-primary); }
+        
+        /* ═══════════════════════════════════════════════════════════════
+           DATA VIEW
+           ═══════════════════════════════════════════════════════════════ */
+        .data-view {
+            position: absolute;
+            inset: 0;
+            display: none;
+            flex-direction: column;
+            padding: 20px;
+            overflow-y: auto;
+            background: var(--bg-primary);
+        }
+        
+        .data-view.active { display: flex; }
+        
+        .data-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        
+        .data-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        .data-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            background: rgba(48, 209, 88, 0.1);
+            border: 1px solid rgba(48, 209, 88, 0.2);
+            border-radius: 100px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--accent-green);
+        }
+        
+        .data-badge.warning {
+            background: rgba(255, 159, 10, 0.1);
+            border-color: rgba(255, 159, 10, 0.2);
+            color: var(--accent-orange);
+        }
+        
+        .data-badge.error {
+            background: rgba(255, 69, 58, 0.1);
+            border-color: rgba(255, 69, 58, 0.2);
+            color: var(--accent-red);
+        }
+        
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 10px;
+        }
+        
+        .data-card {
+            padding: 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            transition: all 0.15s var(--ease);
+        }
+        
+        .data-card:hover { border-color: var(--border-hover); }
+        
+        .data-card-label {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            margin-bottom: 6px;
+        }
+        
+        .data-card-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 24px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+        
+        .data-card-unit {
+            font-size: 12px;
+            color: var(--text-tertiary);
+            font-weight: 400;
+            margin-left: 4px;
+        }
+        
+        /* ═══════════════════════════════════════════════════════════════
+           MILESTONE TOAST
+           ═══════════════════════════════════════════════════════════════ */
+        .toast-container {
+            position: fixed;
+            top: 64px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .toast {
+            padding: 12px 20px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-default);
+            border-radius: 10px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            animation: toastIn 0.3s var(--ease-out);
+        }
+        
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .toast.success { border-color: var(--accent-green); }
+        .toast.warning { border-color: var(--accent-orange); }
+        .toast.error { border-color: var(--accent-red); }
+        
+        .toast-icon { font-size: 16px; }
+        .toast.success .toast-icon { color: var(--accent-green); }
+        .toast.warning .toast-icon { color: var(--accent-orange); }
+        .toast.error .toast-icon { color: var(--accent-red); }
+        
+        .toast-text {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+        
+        /* ═══════════════════════════════════════════════════════════════
+           EXPORT PANEL
+           ═══════════════════════════════════════════════════════════════ */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s var(--ease);
+        }
+        
+        .modal-overlay.active { opacity: 1; pointer-events: auto; }
+        
+        .modal {
+            width: 400px;
+            max-width: 90vw;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            overflow: hidden;
+            transform: scale(0.95);
+            transition: transform 0.2s var(--ease-out);
+        }
+        
+        .modal-overlay.active .modal { transform: scale(1); }
+        
+        .modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .modal-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        .modal-close {
+            width: 28px;
+            height: 28px;
+            background: var(--bg-tertiary);
+            border: none;
+            border-radius: 6px;
+            color: var(--text-tertiary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s var(--ease);
+        }
+        
+        .modal-close:hover { background: var(--bg-elevated); color: var(--text-primary); }
+        
+        .modal-body { padding: 20px; }
+        
+        .export-options {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .export-option {
+            padding: 14px 16px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: all 0.15s var(--ease);
+        }
+        
+        .export-option:hover { border-color: var(--accent-blue); background: var(--bg-card); }
+        
+        .export-icon {
+            width: 36px;
+            height: 36px;
+            background: var(--bg-elevated);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            color: var(--text-secondary);
+        }
+        
+        .export-info { flex: 1; }
+        
+        .export-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+            margin-bottom: 2px;
+        }
+        
+        .export-desc {
+            font-size: 11px;
+            color: var(--text-tertiary);
+        }
+        
+        .export-arrow {
+            color: var(--text-muted);
+        }
+        
+        /* Hide fullscreen when active */
+        .chat-panel.fullscreen ~ .workspace,
+        .chat-panel.fullscreen ~ .inspector { display: none; }
+    </style>
+    <!-- Three.js for 3D hull rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
+
+    <!-- MAGNET Backend Adapter -->
+    <script src="js/backend-adapter.js"></script>
+    <!-- MAGNET Scene Manager (Three.js GLB loader) -->
+    <script src="js/scene-manager.js"></script>
+</head>
+<body>
+    <div class="studio">
+        <!-- Top Bar -->
+        <header class="top-bar">
+            <div class="top-bar-left">
+                <span class="logo">MAGNET</span>
+                <span class="project-name" id="projectName">New Design</span>
+            </div>
+            
+            <div class="top-bar-center">
+                <div class="connection-status" id="connectionStatus">
+                    <span class="status-dot pulse"></span>
+                    <span id="connectionText">Connected</span>
+                </div>
+                <div class="sync-indicator" id="syncIndicator">Synced</div>
+            </div>
+            
+            <div class="top-bar-right">
+                <button class="theme-toggle" id="themeToggle" title="Toggle theme">
+                    <div class="theme-icon moon-icon">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                        </svg>
+                    </div>
+                    <div class="theme-icon sun-icon">
+                        <svg viewBox="0 0 24 24">
+                            <circle cx="12" cy="12" r="5"/>
+                            <line x1="12" y1="1" x2="12" y2="3"/>
+                            <line x1="12" y1="21" x2="12" y2="23"/>
+                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                            <line x1="1" y1="12" x2="3" y2="12"/>
+                            <line x1="21" y1="12" x2="23" y2="12"/>
+                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                        </svg>
+                    </div>
+                </button>
+                <button class="top-btn" id="btnFullscreen" title="Toggle fullscreen">
+                    <svg class="fullscreen-enter" viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                    <svg class="fullscreen-exit" viewBox="0 0 24 24" style="display:none;"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                </button>
+                <button class="top-btn" id="btnExport">
+                    <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                    Export
+                </button>
+                <button class="top-btn primary" id="btnSave">Save</button>
+            </div>
+        </header>
+        
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Left Sidebar -->
+            <aside class="sidebar">
+                <div class="sidebar-content">
+                    <div class="nav-section">
+                        <div class="nav-section-title">Design Phases</div>
+                        <div id="phaseNav"></div>
+                    </div>
+                    
+                    <div class="nav-section">
+                        <div class="nav-section-title">Validators</div>
+                        <div id="validatorNav"></div>
+                    </div>
+                </div>
+            </aside>
+            
+            <!-- Chat Panel -->
+            <aside class="chat-panel expanded" id="chatPanel">
+                <div class="chat-resize" id="chatResize"></div>
+                <button class="chat-toggle" id="chatToggle">
+                    <span class="chat-toggle-icon">›</span>
+                </button>
+                
+                <div class="chat-collapsed">
+                    <span class="chat-collapsed-label">MAGNET CLI</span>
+                </div>
+                
+                <div class="chat-expanded">
+                    <div class="chat-header">
+                        <span class="chat-title">MAGNET CLI</span>
+                        <div class="chat-status" id="chatStatus">
+                            <span class="status-dot pulse"></span>
+                            <span id="chatStatusText">Ready</span>
+                        </div>
+                    </div>
+                    
+                    <div class="terminal" id="terminal"></div>
+                    
+                    <div class="chat-suggestions" id="chatSuggestions"></div>
+                    
+                    <div class="chat-input-area">
+                        <div class="chat-input-wrap">
+                            <span class="chat-prompt">magnet ›</span>
+                            <input type="text" class="chat-input" id="chatInput" placeholder="Enter command..." />
+                            <button class="chat-send" id="chatSend">
+                                <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+            
+            <!-- Workspace -->
+            <main class="workspace" id="workspace">
+                <header class="workspace-header">
+                    <span class="workspace-filename" id="workspaceFilename">No design loaded</span>
+                    
+                    <div class="workspace-tabs" id="viewTabs"></div>
+                    
+                    <div class="workspace-layers" id="layerToggles"></div>
+                </header>
+                
+                <div class="viewport" id="viewport">
+                    <div class="viewport-grid"></div>
+                    
+                    <!-- Three.js Mount -->
+                    <div id="canvas3d"></div>
+                    
+                    <!-- View Overlays -->
+                    <div class="viewport-overlay sections-overlay" id="sectionsOverlay"></div>
+                    <div class="viewport-overlay hydro-overlay" id="hydroOverlay">
+                        <div class="waterline"></div>
+                    </div>
+                    
+                    <!-- Camera Modes -->
+                    <div class="camera-modes" id="cameraModes"></div>
+                    
+                    <!-- Stats -->
+                    <div class="viewport-stats" id="viewportStats"></div>
+                    
+                    <!-- Zoom Display -->
+                    <div class="zoom-display" id="zoomDisplay">100%</div>
+                    
+                    <!-- Controls -->
+                    <div class="viewport-controls">
+                        <button class="control-btn" id="btnZoomIn" title="Zoom In">
+                            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        </button>
+                        <button class="control-btn" id="btnZoomOut" title="Zoom Out">
+                            <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        </button>
+                        <div class="control-divider"></div>
+                        <button class="control-btn" id="btnResetView" title="Reset View">
+                            <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                        </button>
+                        <button class="control-btn" id="btnFitView" title="Fit to View">
+                            <svg viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                        </button>
+                    </div>
+                    
+                    <!-- Loading -->
+                    <div class="loading-overlay" id="viewportLoading">
+                        <div class="loading-spinner"></div>
+                        <span class="loading-text" id="loadingText">Loading...</span>
+                    </div>
+                    
+                    <!-- Data View -->
+                    <div class="data-view" id="dataView">
+                        <div class="data-header">
+                            <h2 class="data-title" id="dataTitle">—</h2>
+                            <div class="data-badge" id="dataBadge">
+                                <span class="status-dot"></span>
+                                <span id="dataBadgeText">—</span>
+                            </div>
+                        </div>
+                        <div class="data-grid" id="dataGrid"></div>
+                    </div>
+                </div>
+            </main>
+            
+            <!-- Inspector -->
+            <aside class="inspector" id="inspector">
+                <div class="inspector-header">
+                    <span class="inspector-title">Inspector</span>
+                    <button class="inspector-close" id="inspectorClose">×</button>
+                </div>
+                
+                <div class="inspector-content" id="inspectorContent">
+                    <div class="inspector-empty">Select an object to inspect</div>
+                </div>
+                
+                <div class="apply-bar" id="applyBar" style="display: none;">
+                    <button class="apply-btn secondary" id="btnDiscard">Discard</button>
+                    <button class="apply-btn primary" id="btnApply">Apply Changes</button>
+                </div>
+            </aside>
+        </div>
+    </div>
+    
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+    
+    <!-- Export Modal -->
+    <div class="modal-overlay" id="exportModal">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">Export Design</span>
+                <button class="modal-close" id="exportClose">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="export-options" id="exportOptions"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MAGNET STUDIO v7 - Full Backend Integration API
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    const MagnetStudio = (function() {
+        'use strict';
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // STATE
+        // ─────────────────────────────────────────────────────────────────────
+        const state = {
+            currentPhase: null,
+            currentView: 'wireframe',
+            currentCamera: 'orbit',
+            zoom: 100,
+            isProcessing: false,
+            isFullscreen: false,
+            selectedObject: null,
+            pendingChanges: {},
+            connected: true,
+            syncing: false,
+            theme: 'dark'
+        };
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // CONFIGURATION
+        // ─────────────────────────────────────────────────────────────────────
+        const config = {
+            phases: [
+                { id: 'mission', label: 'Mission', sublabel: 'Define requirements', view: 'data' },
+                { id: 'hull', label: 'Hull Form', sublabel: 'Generate geometry', view: '3d' },
+                { id: 'hydrostatics', label: 'Hydrostatics', sublabel: 'Calculate properties', view: 'data' },
+                { id: 'resistance', label: 'Resistance', sublabel: 'Power prediction', view: 'data' },
+                { id: 'structure', label: 'Structure', sublabel: 'Scantling design', view: 'data' },
+                { id: 'arrangement', label: 'Arrangement', sublabel: 'Layout & systems', view: '3d' }
+            ],
+            validators: [
+                { id: 'stability', label: 'Stability', detail: 'IMO criteria' },
+                { id: 'lloyds', label: "Lloyd's", detail: 'SSC rules' },
+                { id: 'abs_hsnc', label: 'ABS HSNC', detail: 'High-speed craft' },
+                { id: 'dnv_gl', label: 'DNV GL', detail: 'HSLC rules' }
+            ],
+            views: [
+                { id: 'wireframe', label: 'Wireframe' },
+                { id: 'shaded', label: 'Shaded' },
+                { id: 'sections', label: 'Sections' },
+                { id: 'hydro', label: 'Hydro' }
+            ],
+            layers: [
+                { id: 'hull', label: 'Hull' },
+                { id: 'frames', label: 'Frames' },
+                { id: 'deck', label: 'Deck' },
+                { id: 'routing', label: 'Routing' }
+            ],
+            cameras: [
+                { id: 'orbit', label: 'Orbit' },
+                { id: 'walkthrough', label: 'Walk' },
+                { id: 'deck', label: 'Deck' }
+            ],
+            exports: [
+                { id: 'pdf', icon: '📄', name: 'PDF Report', desc: 'Full design documentation' },
+                { id: 'json', icon: '{ }', name: 'JSON', desc: 'Design state data' },
+                { id: 'obj', icon: '📦', name: 'OBJ/GLB', desc: '3D geometry export' },
+                { id: 'dxf', icon: '📐', name: 'DXF', desc: 'CAD drawings' }
+            ],
+            suggestions: [
+                'show hydrostatics',
+                'optimize hull',
+                'run stability check',
+                'export report'
+            ],
+            zoomLimits: { min: 25, max: 400, step: 25 }
+        };
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // DOM
+        // ─────────────────────────────────────────────────────────────────────
+        const $ = id => document.getElementById(id);
+        const dom = {};
+        
+        function cacheDom() {
+            [
+                'projectName', 'connectionStatus', 'connectionText', 'syncIndicator',
+                'phaseNav', 'validatorNav', 'chatPanel', 'chatResize', 'chatToggle',
+                'terminal', 'chatSuggestions', 'chatInput', 'chatSend', 'chatStatus', 'chatStatusText',
+                'workspace', 'workspaceFilename', 'viewTabs', 'layerToggles',
+                'viewport', 'canvas3d', 'sectionsOverlay', 'hydroOverlay', 'cameraModes',
+                'viewportStats', 'zoomDisplay', 'viewportLoading', 'loadingText',
+                'dataView', 'dataTitle', 'dataBadge', 'dataBadgeText', 'dataGrid',
+                'inspector', 'inspectorContent', 'inspectorClose', 'applyBar', 'btnApply', 'btnDiscard',
+                'toastContainer', 'exportModal', 'exportOptions', 'exportClose',
+                'btnZoomIn', 'btnZoomOut', 'btnResetView', 'btnFitView', 'btnExport', 'btnSave', 'btnFullscreen',
+                'themeToggle'
+            ].forEach(id => dom[id] = $(id));
+        }
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // THEME
+        // ─────────────────────────────────────────────────────────────────────
+        function initTheme() {
+            // Check for saved preference or system preference
+            const saved = localStorage.getItem('magnet-theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = saved || (prefersDark ? 'dark' : 'light');
+            setTheme(theme, false);
+            
+            // Listen for system changes
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+                if (!localStorage.getItem('magnet-theme')) {
+                    setTheme(e.matches ? 'dark' : 'light', true);
+                }
+            });
+        }
+        
+        function setTheme(theme, animate = true) {
+            state.theme = theme;
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('magnet-theme', theme);
+            emit('themeChange', { theme });
+        }
+        
+        function toggleTheme() {
+            const current = state.theme || 'dark';
+            setTheme(current === 'dark' ? 'light' : 'dark', true);
+        }
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // FULLSCREEN
+        // ─────────────────────────────────────────────────────────────────────
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.warn('Fullscreen request failed:', err);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        }
+        
+        function updateFullscreenIcon() {
+            const isFullscreen = !!document.fullscreenElement;
+            const enterIcon = dom.btnFullscreen.querySelector('.fullscreen-enter');
+            const exitIcon = dom.btnFullscreen.querySelector('.fullscreen-exit');
+            enterIcon.style.display = isFullscreen ? 'none' : 'block';
+            exitIcon.style.display = isFullscreen ? 'block' : 'none';
+            state.isFullscreen = isFullscreen;
+            emit('fullscreenChange', { isFullscreen });
+        }
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // INITIALIZATION
+        // ─────────────────────────────────────────────────────────────────────
+        function init() {
+            cacheDom();
+            initTheme();
+            renderPhases();
+            renderValidators();
+            renderViewTabs();
+            renderLayers();
+            renderCameraModes();
+            renderSections();
+            renderExportOptions();
+            renderSuggestions();
+            bindEvents();
+            setView('wireframe');
+            Terminal.init();
+            
+            // Initial state
+            emit('ready');
+        }
+        
+        function renderPhases() {
+            dom.phaseNav.innerHTML = config.phases.map(p => `
+                <div class="phase-item" data-phase="${p.id}" data-view="${p.view}">
+                    <div class="phase-indicator"></div>
+                    <div class="phase-content">
+                        <div class="phase-label">${p.label}</div>
+                        <div class="phase-sublabel">${p.sublabel}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function renderValidators() {
+            dom.validatorNav.innerHTML = config.validators.map(v => `
+                <div class="validator-item" data-validator="${v.id}">
+                    <div class="validator-icon pending">○</div>
+                    <div class="validator-content">
+                        <div class="validator-label">${v.label}</div>
+                        <div class="validator-detail">${v.detail}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function renderViewTabs() {
+            dom.viewTabs.innerHTML = config.views.map(v => `
+                <button class="workspace-tab" data-view="${v.id}">${v.label}</button>
+            `).join('');
+        }
+        
+        function renderLayers() {
+            dom.layerToggles.innerHTML = config.layers.map(l => `
+                <button class="layer-btn active" data-layer="${l.id}">${l.label}</button>
+            `).join('');
+        }
+        
+        function renderCameraModes() {
+            dom.cameraModes.innerHTML = config.cameras.map(c => `
+                <button class="camera-btn${c.id === 'orbit' ? ' active' : ''}" data-camera="${c.id}">${c.label}</button>
+            `).join('');
+        }
+        
+        function renderSections() {
+            dom.sectionsOverlay.innerHTML = Array.from({ length: 10 }, (_, i) => `
+                <div class="section-line"><span class="section-label">ST ${i}</span></div>
+            `).join('');
+        }
+        
+        function renderExportOptions() {
+            dom.exportOptions.innerHTML = config.exports.map(e => `
+                <div class="export-option" data-export="${e.id}">
+                    <div class="export-icon">${e.icon}</div>
+                    <div class="export-info">
+                        <div class="export-name">${e.name}</div>
+                        <div class="export-desc">${e.desc}</div>
+                    </div>
+                    <span class="export-arrow">→</span>
+                </div>
+            `).join('');
+        }
+        
+        function renderSuggestions() {
+            dom.chatSuggestions.innerHTML = config.suggestions.map(s => `
+                <div class="suggestion-chip" data-cmd="${s}">${s}</div>
+            `).join('');
+        }
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // EVENT BINDING
+        // ─────────────────────────────────────────────────────────────────────
+        function bindEvents() {
+            // Phases
+            dom.phaseNav.addEventListener('click', e => {
+                const item = e.target.closest('.phase-item');
+                if (item) setPhase(item.dataset.phase);
+            });
+            
+            // Validators
+            dom.validatorNav.addEventListener('click', e => {
+                const item = e.target.closest('.validator-item');
+                if (item) emit('validatorClick', { validator: item.dataset.validator });
+            });
+            
+            // View tabs
+            dom.viewTabs.addEventListener('click', e => {
+                const tab = e.target.closest('.workspace-tab');
+                if (tab) setView(tab.dataset.view);
+            });
+            
+            // Layers
+            dom.layerToggles.addEventListener('click', e => {
+                const btn = e.target.closest('.layer-btn');
+                if (btn) {
+                    btn.classList.toggle('active');
+                    emit('layerToggle', { layer: btn.dataset.layer, active: btn.classList.contains('active') });
+                }
+            });
+            
+            // Camera modes
+            dom.cameraModes.addEventListener('click', e => {
+                const btn = e.target.closest('.camera-btn');
+                if (btn) setCameraMode(btn.dataset.camera);
+            });
+            
+            // Chat panel
+            initChatResize();
+            
+            // Chat input
+            dom.chatSend.addEventListener('click', handleCommand);
+            dom.chatInput.addEventListener('keypress', e => { if (e.key === 'Enter') handleCommand(); });
+            
+            // Suggestions
+            dom.chatSuggestions.addEventListener('click', e => {
+                const chip = e.target.closest('.suggestion-chip');
+                if (chip) {
+                    dom.chatInput.value = chip.dataset.cmd;
+                    handleCommand();
+                }
+            });
+            
+            // Viewport controls
+            dom.btnZoomIn.addEventListener('click', () => zoom(config.zoomLimits.step));
+            dom.btnZoomOut.addEventListener('click', () => zoom(-config.zoomLimits.step));
+            dom.btnResetView.addEventListener('click', resetView);
+            dom.btnFitView.addEventListener('click', fitView);
+            
+            // Inspector
+            dom.inspectorClose.addEventListener('click', () => selectObject(null));
+            dom.btnApply.addEventListener('click', applyChanges);
+            dom.btnDiscard.addEventListener('click', discardChanges);
+            
+            // Export
+            dom.btnExport.addEventListener('click', () => dom.exportModal.classList.add('active'));
+            dom.exportClose.addEventListener('click', () => dom.exportModal.classList.remove('active'));
+            dom.exportModal.addEventListener('click', e => {
+                if (e.target === dom.exportModal) dom.exportModal.classList.remove('active');
+            });
+            dom.exportOptions.addEventListener('click', e => {
+                const opt = e.target.closest('.export-option');
+                if (opt) {
+                    emit('export', { format: opt.dataset.export });
+                    dom.exportModal.classList.remove('active');
+                }
+            });
+            
+            // Save
+            dom.btnSave.addEventListener('click', () => emit('save'));
+            
+            // Theme toggle
+            dom.themeToggle.addEventListener('click', toggleTheme);
+            
+            // Fullscreen toggle
+            dom.btnFullscreen.addEventListener('click', toggleFullscreen);
+            document.addEventListener('fullscreenchange', updateFullscreenIcon);
+        }
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // CHAT RESIZE
+        // ─────────────────────────────────────────────────────────────────────
+        function initChatResize() {
+            let isResizing = false;
+            let startX, startWidth;
+            
+            dom.chatToggle.addEventListener('click', () => {
+                const panel = dom.chatPanel;
+                if (panel.classList.contains('fullscreen')) {
+                    panel.classList.remove('fullscreen');
+                    panel.classList.add('expanded');
+                    panel.style.width = '';
+                    panel.style.minWidth = '';
+                } else if (panel.classList.contains('expanded')) {
+                    panel.classList.remove('expanded');
+                    panel.style.width = '';
+                    panel.style.minWidth = '';
+                } else {
+                    panel.classList.add('expanded');
+                }
+            });
+            
+            dom.chatResize.addEventListener('mousedown', e => {
+                isResizing = true;
+                startX = e.clientX;
+                startWidth = dom.chatPanel.getBoundingClientRect().width;
+                dom.chatResize.classList.add('dragging');
+                document.body.style.cursor = 'ew-resize';
+                document.body.style.userSelect = 'none';
+                e.preventDefault();
+            });
+            
+            document.addEventListener('mousemove', e => {
+                if (!isResizing) return;
+                const sidebar = document.querySelector('.sidebar');
+                const sidebarWidth = sidebar ? sidebar.getBoundingClientRect().width : 200;
+                const availableWidth = window.innerWidth - sidebarWidth - 280; // minus inspector
+                const delta = e.clientX - startX;
+                let newWidth = Math.max(300, Math.min(availableWidth * 0.9, startWidth + delta));
+                
+                if (newWidth / availableWidth >= 0.7) {
+                    dom.chatPanel.classList.add('fullscreen');
+                    dom.chatPanel.classList.remove('expanded');
+                    dom.chatPanel.style.width = '';
+                    dom.chatPanel.style.minWidth = '';
+                } else {
+                    dom.chatPanel.classList.remove('fullscreen');
+                    dom.chatPanel.classList.add('expanded');
+                    dom.chatPanel.style.width = newWidth + 'px';
+                    dom.chatPanel.style.minWidth = newWidth + 'px';
+                }
+            });
+            
+            document.addEventListener('mouseup', () => {
+                if (isResizing) {
+                    isResizing = false;
+                    dom.chatResize.classList.remove('dragging');
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                }
+            });
+        }
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // NAVIGATION
+        // ─────────────────────────────────────────────────────────────────────
+        function setPhase(phaseId) {
+            const phase = config.phases.find(p => p.id === phaseId);
+            if (!phase) return;
+            
+            state.currentPhase = phaseId;
+            
+            dom.phaseNav.querySelectorAll('.phase-item').forEach(item => {
+                item.classList.toggle('active', item.dataset.phase === phaseId);
+            });
+            
+            if (phase.view === '3d') {
+                show3DView();
+            } else {
+                showDataView(phaseId);
+            }
+            
+            emit('phaseChange', { phase: phaseId });
+        }
+        
+        function setView(viewId) {
+            state.currentView = viewId;
+            
+            dom.viewTabs.querySelectorAll('.workspace-tab').forEach(tab => {
+                tab.classList.toggle('active', tab.dataset.view === viewId);
+            });
+            
+            dom.sectionsOverlay.classList.toggle('active', viewId === 'sections');
+            dom.hydroOverlay.classList.toggle('active', viewId === 'hydro');
+            
+            emit('viewChange', { view: viewId });
+        }
+        
+        function setCameraMode(mode) {
+            state.currentCamera = mode;
+            dom.cameraModes.querySelectorAll('.camera-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.camera === mode);
+            });
+            emit('cameraChange', { mode });
+        }
+        
+        function show3DView() {
+            dom.dataView.classList.remove('active');
+        }
+        
+        function showDataView() {
+            dom.dataView.classList.add('active');
+        }
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // ZOOM
+        // ─────────────────────────────────────────────────────────────────────
+        let zoomTimeout;
+        
+        function zoom(delta) {
+            state.zoom = Math.max(config.zoomLimits.min, Math.min(config.zoomLimits.max, state.zoom + delta));
+            showZoom();
+            emit('zoom', { level: state.zoom });
+        }
+        
+        function resetView() {
+            state.zoom = 100;
+            showZoom();
+            emit('resetView');
+        }
+        
+        function fitView() {
+            emit('fitView');
+        }
+        
+        function showZoom() {
+            dom.zoomDisplay.textContent = state.zoom + '%';
+            dom.zoomDisplay.classList.add('visible');
+            clearTimeout(zoomTimeout);
+            zoomTimeout = setTimeout(() => dom.zoomDisplay.classList.remove('visible'), 1500);
+        }
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // COMMAND
+        // ─────────────────────────────────────────────────────────────────────
+        function handleCommand() {
+            const cmd = dom.chatInput.value.trim();
+            if (!cmd || state.isProcessing) return;
+            
+            dom.chatInput.value = '';
+            Terminal.removeCursor();
+            Terminal.addLine(`<span class="terminal-prompt">magnet ›</span> <span class="terminal-command">${escapeHtml(cmd)}</span>`);
+            
+            emit('command', { command: cmd });
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // INSPECTOR
+        // ─────────────────────────────────────────────────────────────────────
+        function selectObject(obj) {
+            state.selectedObject = obj;
+            
+            if (!obj) {
+                dom.inspectorContent.innerHTML = '<div class="inspector-empty">Select an object to inspect</div>';
+                dom.applyBar.style.display = 'none';
+                return;
+            }
+            
+            emit('objectSelect', { object: obj });
+        }
+        
+        function applyChanges() {
+            emit('applyChanges', { changes: state.pendingChanges, object: state.selectedObject });
+            state.pendingChanges = {};
+            dom.applyBar.style.display = 'none';
+        }
+        
+        function discardChanges() {
+            state.pendingChanges = {};
+            dom.applyBar.style.display = 'none';
+            if (state.selectedObject) selectObject(state.selectedObject);
+        }
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // TERMINAL
+        // ─────────────────────────────────────────────────────────────────────
+        const Terminal = {
+            init() { this.addCursor(); },
+            
+            addLine(html) {
+                const line = document.createElement('div');
+                line.className = 'terminal-line';
+                line.innerHTML = html;
+                dom.terminal.appendChild(line);
+                requestAnimationFrame(() => {
+                    line.classList.add('visible');
+                    dom.terminal.scrollTop = dom.terminal.scrollHeight;
+                });
+                return line;
+            },
+            
+            addGroup() {
+                const div = document.createElement('div');
+                div.className = 'terminal-group';
+                dom.terminal.appendChild(div);
+            },
+            
+            addCursor() {
+                // Remove any existing cursor first
+                this.removeCursor();
+                this.addLine('<span class="terminal-prompt">magnet ›</span> <span class="terminal-cursor"></span>');
+            },
+            
+            removeCursor() {
+                const cursor = dom.terminal.querySelector('.terminal-cursor');
+                if (cursor) cursor.parentElement.remove();
+            },
+            
+            clear() {
+                dom.terminal.innerHTML = '';
+                this.addCursor();
+            }
+        };
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // EVENTS
+        // ─────────────────────────────────────────────────────────────────────
+        const handlers = {};
+        
+        function on(event, handler) {
+            if (!handlers[event]) handlers[event] = [];
+            handlers[event].push(handler);
+        }
+        
+        function off(event, handler) {
+            if (!handlers[event]) return;
+            handlers[event] = handlers[event].filter(h => h !== handler);
+        }
+        
+        function emit(event, data = {}) {
+            console.log(`[MAGNET] ${event}`, data);
+            if (handlers[event]) handlers[event].forEach(h => h(data));
+        }
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // PUBLIC API
+        // ─────────────────────────────────────────────────────────────────────
+        return {
+            init,
+            on,
+            off,
+            
+            // Status
+            setStatus(text, type = 'ready') {
+                dom.chatStatusText.textContent = text;
+                dom.chatStatus.className = 'chat-status' + (type !== 'ready' ? ` ${type}` : '');
+                state.isProcessing = type === 'processing';
+                dom.chatSend.disabled = state.isProcessing;
+            },
+            
+            setConnection(connected, syncing = false) {
+                state.connected = connected;
+                state.syncing = syncing;
+                dom.connectionStatus.className = 'connection-status' + (!connected ? ' disconnected' : syncing ? ' syncing' : '');
+                dom.connectionText.textContent = !connected ? 'Disconnected' : syncing ? 'Syncing...' : 'Connected';
+                dom.syncIndicator.textContent = syncing ? 'Syncing...' : 'Synced';
+            },
+            
+            // Terminal
+            terminal: {
+                print: text => Terminal.addLine(`<span class="terminal-output">${text}</span>`),
+                success: text => Terminal.addLine(`<span class="terminal-check">✓</span> ${text}`),
+                error: text => Terminal.addLine(`<span class="terminal-x">✗</span> <span class="terminal-error">${text}</span>`),
+                info: text => Terminal.addLine(`<span class="terminal-arrow">→</span> ${text}`),
+                data: pairs => {
+                    const html = Object.entries(pairs).map(([k, v]) => 
+                        `<span class="terminal-label">${k}:</span> <span class="terminal-value">${v}</span>`
+                    ).join(' ');
+                    Terminal.addLine(`<div class="terminal-data">${html}</div>`);
+                },
+                group: () => Terminal.addGroup(),
+                clear: () => Terminal.clear(),
+                cursor: () => Terminal.addCursor()
+            },
+            
+            // Phases
+            setPhaseState(phaseId, phaseState, sublabel) {
+                const item = dom.phaseNav.querySelector(`[data-phase="${phaseId}"]`);
+                if (!item) return;
+                item.classList.remove('complete', 'active', 'error');
+                if (phaseState) item.classList.add(phaseState);
+                item.querySelector('.phase-indicator').textContent = phaseState === 'complete' ? '✓' : phaseState === 'error' ? '!' : '';
+                if (sublabel) item.querySelector('.phase-sublabel').textContent = sublabel;
+            },
+            
+            // Validators
+            setValidatorState(validatorId, validatorState, detail) {
+                const item = dom.validatorNav.querySelector(`[data-validator="${validatorId}"]`);
+                if (!item) return;
+                const icon = item.querySelector('.validator-icon');
+                icon.className = 'validator-icon ' + validatorState;
+                icon.textContent = validatorState === 'pass' ? '✓' : validatorState === 'fail' ? '✗' : validatorState === 'running' ? '◌' : '○';
+                if (detail) item.querySelector('.validator-detail').textContent = detail;
+            },
+            
+            // Data panel
+            setDataPanel(title, cards, badge = { text: 'All passing', type: 'success' }) {
+                dom.dataTitle.textContent = title;
+                dom.dataBadgeText.textContent = badge.text;
+                dom.dataBadge.className = 'data-badge' + (badge.type !== 'success' ? ` ${badge.type}` : '');
+                dom.dataGrid.innerHTML = cards.map(c => `
+                    <div class="data-card">
+                        <div class="data-card-label">${c.label}</div>
+                        <div class="data-card-value">${c.value}<span class="data-card-unit">${c.unit || ''}</span></div>
+                    </div>
+                `).join('');
+            },
+            
+            // Inspector
+            setInspector(title, sections) {
+                dom.inspectorContent.innerHTML = `
+                    <div class="inspector-section">
+                        <div class="inspector-section-title">${title}</div>
+                        ${sections.map(s => `
+                            <div class="inspector-section">
+                                <div class="inspector-section-title">${s.title}</div>
+                                ${s.type === 'props' ? `
+                                    <div class="props-table">
+                                        ${s.items.map(i => `
+                                            <div class="props-row">
+                                                <span class="props-key">${i.key}</span>
+                                                <span class="props-value${i.editable ? ' editable' : ''}">${i.value}</span>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                ` : s.type === 'recommendations' ? `
+                                    ${s.items.map(r => `
+                                        <div class="recommendation-item" data-id="${r.id}">
+                                            <div class="recommendation-header">
+                                                <span class="recommendation-icon ${r.type}">${r.type === 'error' ? '!' : r.type === 'warning' ? '⚠' : '💡'}</span>
+                                                <span class="recommendation-title">${r.title}</span>
+                                            </div>
+                                            <div class="recommendation-desc">${r.desc}</div>
+                                        </div>
+                                    `).join('')}
+                                ` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                dom.applyBar.style.display = 'flex';
+            },
+            
+            // Viewport
+            setViewportStats(stats) {
+                dom.viewportStats.innerHTML = stats.map(s => `
+                    <div class="stat-chip">
+                        <div class="stat-label">${s.label}</div>
+                        <div class="stat-value">${s.value}</div>
+                    </div>
+                `).join('');
+            },
+            
+            setFilename(name) { dom.workspaceFilename.textContent = name; },
+            setProjectName(name) { dom.projectName.textContent = name; },
+            
+            showLoading(text = 'Loading...') {
+                dom.loadingText.textContent = text;
+                dom.viewportLoading.classList.add('active');
+            },
+            hideLoading() { dom.viewportLoading.classList.remove('active'); },
+            
+            // Toasts
+            toast(message, type = 'success') {
+                const toast = document.createElement('div');
+                toast.className = `toast ${type}`;
+                toast.innerHTML = `
+                    <span class="toast-icon">${type === 'success' ? '✓' : type === 'warning' ? '⚠' : '✗'}</span>
+                    <span class="toast-text">${message}</span>
+                `;
+                dom.toastContainer.appendChild(toast);
+                setTimeout(() => toast.remove(), 4000);
+            },
+            
+            // Suggestions
+            setSuggestions(suggestions) {
+                dom.chatSuggestions.innerHTML = suggestions.map(s => `
+                    <div class="suggestion-chip" data-cmd="${s}">${s}</div>
+                `).join('');
+            },
+            
+            // Theme
+            setTheme(theme) { setTheme(theme, true); },
+            toggleTheme,
+            
+            // Fullscreen
+            enterFullscreen() { 
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen();
+                }
+            },
+            exitFullscreen() {
+                if (document.fullscreenElement) {
+                    document.exitFullscreen();
+                }
+            },
+            toggleFullscreen,
+            
+            // Canvas mount
+            getCanvasMount() { return dom.canvas3d; },
+            getState() { return { ...state }; }
+        };
+    })();
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // INITIALIZATION
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    document.addEventListener('DOMContentLoaded', () => {
+        MagnetStudio.init();
+
+        // Initialize Three.js scene manager for 3D hull rendering
+        if (typeof MAGNETSceneManager !== 'undefined') {
+            const canvas = MagnetStudio.getCanvasMount();
+            if (canvas) {
+                window.magnetThreeScene = new MAGNETSceneManager(canvas);
+                console.log('[MAGNET] Scene manager initialized');
+            }
+        }
+
+        // Get config from URL params
+        const urlParams = new URLSearchParams(window.location.search);
+        const designId = urlParams.get('design');
+        const authToken = urlParams.get('token') || null;
+        const debug = urlParams.get('debug') === 'true';
+        const demoMode = urlParams.get('demo') === 'true' || !designId;
+
+        if (demoMode) {
+            // No design ID provided - run in demo mode with mock handlers
+            console.log('[MAGNET] Running in demo mode (no ?design= parameter)');
+            MagnetStudio.terminal.info('Demo mode - add ?design=ID to connect to backend');
+
+            // Demo event handlers
+            MagnetStudio.on('command', async ({ command }) => {
+                MagnetStudio.setStatus('Processing', 'processing');
+                await new Promise(r => setTimeout(r, 500));
+                MagnetStudio.terminal.info('Processing: ' + command);
+                await new Promise(r => setTimeout(r, 300));
+                MagnetStudio.terminal.success('Done');
+                MagnetStudio.terminal.cursor();
+                MagnetStudio.setStatus('Ready');
+            });
+
+            MagnetStudio.on('export', ({ format }) => {
+                MagnetStudio.toast(`Exporting ${format.toUpperCase()}...`);
+            });
+
+            MagnetStudio.on('save', () => {
+                MagnetStudio.toast('Design saved');
+            });
+
+            // Run demo sequence
+            runDemo();
+        } else {
+            // Connect to MAGNET backend
+            console.log('[MAGNET] Connecting to backend with design:', designId);
+
+            // Auto-detect host/port from URL or use defaults
+            // For RunPod: host will be the proxy hostname (auto-detected)
+            const config = {
+                host: urlParams.get('host') || window.location.hostname,
+                port: parseInt(urlParams.get('port') || '8000'),
+                debug: debug
+            };
+
+            // Set auth token if provided
+            if (authToken) {
+                config.authToken = authToken;
+            }
+
+            // Check if backend adapter is loaded
+            if (typeof MAGNETBackendAdapter === 'undefined') {
+                console.error('[MAGNET] Backend adapter not loaded! Check js/backend-adapter.js');
+                MagnetStudio.terminal.error('Backend adapter not loaded');
+                MagnetStudio.terminal.info('Falling back to demo mode...');
+                runDemo();
+                return;
+            }
+
+            const backend = new MAGNETBackendAdapter(config);
+            backend.connect(designId);
+
+            // Expose for debugging
+            window.magnetBackend = backend;
+
+            // Log connection info
+            console.log('[MAGNET] Config:', {
+                baseUrl: backend.baseUrl,
+                wsUrl: backend.wsUrl,
+                designId: designId,
+                hasAuth: !!backend.authToken
+            });
+        }
+    });
+    
+    async function runDemo() {
+        const wait = ms => new Promise(r => setTimeout(r, ms));
+        const T = MagnetStudio.terminal;
+
+        MagnetStudio.setProjectName('New Design');
+        MagnetStudio.setFilename('untitled.magnet');
+        MagnetStudio.setViewportStats([
+            { label: 'Vertices', value: '0' },
+            { label: 'Faces', value: '0' },
+            { label: 'LOD', value: '-' }
+        ]);
+
+        T.print('MAGNET Studio v0.2.0');
+        T.group();
+
+        await wait(300);
+        T.info('Ready for new design');
+        T.group();
+
+        // Start on Mission phase (first phase, active)
+        MagnetStudio.setPhaseState('mission', 'active', 'Define requirements');
+        MagnetStudio.setPhaseState('hull', 'pending');
+        MagnetStudio.setPhaseState('hydrostatics', 'pending');
+        MagnetStudio.setPhaseState('resistance', 'pending');
+        MagnetStudio.setPhaseState('structure', 'pending');
+        MagnetStudio.setPhaseState('arrangement', 'pending');
+
+        T.cursor();
+
+        // Clear data panel for fresh start
+        MagnetStudio.setDataPanel('Mission', []);
+    }
+    </script>
+</body>
+</html>
