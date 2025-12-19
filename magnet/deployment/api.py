@@ -96,6 +96,11 @@ try:
                 raise ValueError('actions list cannot be empty')
             return v
 
+    class IntentPreviewRequest(BaseModel):
+        """Request model for previewing an intent (Module 63)."""
+        text: str
+        design_version_before: Optional[int] = None
+
     _PYDANTIC_AVAILABLE = True
 
 except ImportError:
@@ -114,6 +119,8 @@ except ImportError:
     class ValidationRun:
         pass
     class ActionSubmit:
+        pass
+    class IntentPreviewRequest:
         pass
 
 
@@ -724,6 +731,131 @@ def create_fastapi_app(context: "AppContext" = None):
             raise HTTPException(status_code=500, detail=str(e))
 
     # =========================================================================
+    # Intent Preview Endpoint (Module 63)
+    # =========================================================================
+
+    @app.post("/api/v1/designs/{design_id}/intent/preview")
+    async def preview_intent(
+        design_id: str,
+        request: IntentPreviewRequest,
+        state_manager=Depends(get_state_manager),
+        validator=Depends(get_action_validator),
+    ):
+        """
+        Preview an intent without executing (Module 63).
+
+        Parses natural language using REFINABLE_SCHEMA keywords only,
+        validates via ActionPlanValidator, returns preview without mutation.
+
+        No state changes, no version bump.
+
+        Returns:
+            Preview with approved/rejected/warnings from ActionPlanValidator
+        """
+        import uuid
+        from magnet.ui.utils import get_state_value
+
+        if not state_manager:
+            raise HTTPException(status_code=503, detail="StateManager not available")
+        if not validator:
+            raise HTTPException(status_code=503, detail="ActionPlanValidator not available")
+
+        # Verify design exists
+        current_id = get_state_value(state_manager, "metadata.design_id")
+        if current_id != design_id:
+            raise HTTPException(status_code=404, detail="Design not found")
+
+        # Parse NL using REFINABLE_SCHEMA keywords ONLY
+        from magnet.deployment.intent_parser import parse_intent_to_actions, get_guidance_message
+
+        actions = parse_intent_to_actions(request.text)
+
+        if not actions:
+            return {
+                "preview": True,
+                "plan_id": None,
+                "intent_id": None,
+                "design_version_before": state_manager.design_version,
+                "actions": [],
+                "approved": [],
+                "rejected": [],
+                "warnings": [],
+                "guidance": get_guidance_message(),
+            }
+
+        # Build ActionPlan
+        from magnet.kernel.intent_protocol import ActionPlan
+
+        plan_id = f"preview_{uuid.uuid4().hex[:8]}"
+        intent_id = f"intent_{uuid.uuid4().hex[:8]}"
+        version_before = request.design_version_before or state_manager.design_version
+
+        plan = ActionPlan(
+            plan_id=plan_id,
+            intent_id=intent_id,
+            design_id=design_id,
+            design_version_before=version_before,
+            actions=actions,
+            proposed_at=datetime.now(timezone.utc),
+        )
+
+        # Validate via firewall (NO execution, check_stale=False for preview)
+        try:
+            result = validator.validate(plan, state_manager, check_stale=False)
+        except Exception as e:
+            logger.error(f"Validation error: {e}")
+            raise HTTPException(status_code=500, detail=f"Validation error: {e}")
+
+        # Return validator's exact output
+        return {
+            "preview": True,
+            "plan_id": plan_id,
+            "intent_id": intent_id,
+            "design_version_before": state_manager.design_version,
+            "actions": [
+                {
+                    "action_type": a.action_type.value,
+                    "path": a.path,
+                    "value": a.value,
+                    "amount": a.amount,
+                    "unit": a.unit,
+                }
+                for a in plan.actions
+            ],
+            "approved": [
+                {
+                    "action_type": a.action_type.value,
+                    "path": a.path,
+                    "value": a.value,
+                    "amount": a.amount,
+                    "unit": a.unit,
+                }
+                for a in result.approved
+            ],
+            "rejected": [
+                {"action": {"path": a.path, "value": a.value}, "reason": reason}
+                for a, reason in result.rejected
+            ],
+            "warnings": result.warnings,
+            # Module 63.1: apply_payload - exact shape for POST /actions
+            "apply_payload": {
+                "plan_id": plan_id,
+                "intent_id": intent_id,
+                "design_version_before": state_manager.design_version,
+                "actions": [
+                    {
+                        "action_type": a.action_type.value,
+                        "path": a.path,
+                        "value": a.value,
+                        "amount": a.amount,
+                        "unit": a.unit,
+                    }
+                    for a in result.approved
+                ]
+            },
+        }
+
+    # =========================================================================
     # Phase Endpoints with PhaseMachine integration (fixes blocker #11)
     # =========================================================================
 
@@ -766,6 +898,17 @@ def create_fastapi_app(context: "AppContext" = None):
             "details": phase_state,
         }
 
+    # Module 63: Phase ID mapping (UI names → kernel canonical names)
+    PHASE_ID_MAP = {
+        "hull_form": "hull",
+        "weight_stability": "weight",  # Note: stability is separate phase
+        # All other names pass through unchanged
+    }
+
+    def _map_phase_id(ui_phase: str) -> str:
+        """Map UI phase name to kernel canonical phase ID."""
+        return PHASE_ID_MAP.get(ui_phase, ui_phase)
+
     @app.post("/api/v1/designs/{design_id}/phases/{phase}/run")
     async def run_phase(
         design_id: str,
@@ -778,10 +921,13 @@ def create_fastapi_app(context: "AppContext" = None):
         """Run a single phase with PhaseMachine integration."""
         from magnet.ui.utils import set_phase_status
 
+        # Module 63: Map UI phase name to kernel canonical name
+        kernel_phase = _map_phase_id(phase)
+
         # v1.1: Check dependencies via PhaseMachine (fixes blocker #11)
         if phase_machine:
             try:
-                if not phase_machine.can_start_phase(phase):
+                if not phase_machine.can_start_phase(kernel_phase):
                     raise HTTPException(
                         status_code=400,
                         detail=f"Phase '{phase}' dependencies not met"
@@ -795,7 +941,7 @@ def create_fastapi_app(context: "AppContext" = None):
             # Submit as background job
             job_id = await submit_job(
                 "run_phase",
-                {"phase": phase},
+                {"phase": kernel_phase},
                 design_id=design_id,
             )
             return {"job_id": job_id, "phase": phase, "status": "submitted"}
@@ -803,7 +949,7 @@ def create_fastapi_app(context: "AppContext" = None):
         # Run synchronously
         if conductor:
             try:
-                result = conductor.run_phase(phase)
+                result = conductor.run_phase(kernel_phase)
 
                 ws_manager.queue_message(WSMessage(
                     type="phase_completed",
@@ -839,6 +985,9 @@ def create_fastapi_app(context: "AppContext" = None):
         if not state_manager:
             raise HTTPException(status_code=503, detail="StateManager not available")
 
+        # Module 63: Map UI phase name to kernel canonical name
+        kernel_phase = _map_phase_id(phase)
+
         if not executor:
             return {
                 "status": "error",
@@ -848,17 +997,17 @@ def create_fastapi_app(context: "AppContext" = None):
 
         try:
             # Run phase validation via single authority (Guardrail #2)
-            execution_state = executor.execute_phase(phase)
+            execution_state = executor.execute_phase(kernel_phase)
 
             # Check phase output contract (Guardrail #1)
             from magnet.validators.contracts import check_phase_contract
-            contract_result = check_phase_contract(phase, state_manager)
+            contract_result = check_phase_contract(kernel_phase, state_manager)
 
             # Get gate status
             gate_status = None
             if aggregator:
                 try:
-                    gate_status = aggregator.check_gate(phase, execution_state)
+                    gate_status = aggregator.check_gate(kernel_phase, execution_state)
                 except Exception as e:
                     logger.warning(f"Gate check failed: {e}")
 
