@@ -25,13 +25,14 @@ class RefinableField:
     Immutable to prevent runtime modification.
     """
     path: str
-    type: Literal["float", "int", "bool"]
+    type: Literal["float", "int", "bool", "enum"]
     kernel_unit: str
     allowed_units: tuple  # Tuple for immutability
     min_value: Optional[float] = None
     max_value: Optional[float] = None
     keywords: tuple = field(default_factory=tuple)  # Tuple for immutability
     description: str = ""
+    allowed_values: Optional[tuple] = None  # For enum types
 
     def __post_init__(self):
         """Convert lists to tuples for immutability."""
@@ -98,6 +99,43 @@ REFINABLE_SCHEMA: Dict[str, RefinableField] = {
         max_value=50.0,
         keywords=("depth", "hull depth"),
         description="Moulded depth",
+    ),
+
+    # =========================================================================
+    # HULL TYPE AND MATERIAL (Module 65.1 - Enum support)
+    # =========================================================================
+    "hull.hull_type": RefinableField(
+        path="hull.hull_type",
+        type="enum",
+        kernel_unit="",
+        allowed_units=("",),
+        keywords=("hull type", "catamaran", "monohull", "trimaran"),
+        description="Hull configuration type",
+        allowed_values=("monohull", "catamaran", "trimaran", "swath", "planing",
+                       "semi_planing", "displacement", "semi_displacement",
+                       "foil_assisted", "air_cushion"),
+    ),
+    "structural_design.hull_material": RefinableField(
+        path="structural_design.hull_material",
+        type="enum",
+        kernel_unit="",
+        allowed_units=("",),
+        keywords=("material", "aluminum", "steel", "composite", "frp"),
+        description="Hull construction material",
+        allowed_values=("aluminum", "steel", "frp", "composite", "wood",
+                       "cfrp", "titanium", "hybrid_composite", "grp"),
+    ),
+    "mission.vessel_type": RefinableField(
+        path="mission.vessel_type",
+        type="enum",
+        kernel_unit="",
+        allowed_units=("",),
+        keywords=("vessel type", "ferry", "patrol", "workboat", "yacht"),
+        description="Vessel mission type",
+        allowed_values=("patrol", "ferry", "workboat", "yacht", "fishing",
+                       "cargo", "military", "research", "tug", "passenger",
+                       "offshore", "pilot", "sar", "crew_boat", "landing_craft",
+                       "other"),
     ),
 
     # =========================================================================

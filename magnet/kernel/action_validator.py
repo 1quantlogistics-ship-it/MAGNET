@@ -241,6 +241,15 @@ class ActionPlanValidator:
             value = float(value)
         elif field.type == "bool":
             value = bool(value)
+        elif field.type == "enum":
+            # Validate enum value is in allowed_values
+            value = str(value).lower().strip()
+            if field.allowed_values and value not in field.allowed_values:
+                return ActionValidation(
+                    approved=False,
+                    reason=f"Invalid enum value for {action.path}: {value}. "
+                           f"Allowed: {field.allowed_values}"
+                )
 
         # 5. Clamp to bounds
         if field.type in ("int", "float"):
