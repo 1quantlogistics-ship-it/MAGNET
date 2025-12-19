@@ -2502,6 +2502,9 @@
     document.addEventListener('DOMContentLoaded', () => {
         MagnetStudio.init();
 
+        // UI provenance (for debugging deployment drift)
+        console.log('[MAGNET] UI provenance: magnet/ui_v2 | commit: c773b8a | Module 65.1');
+
         // Initialize Three.js scene manager for 3D hull rendering
         if (typeof MAGNETSceneManager !== 'undefined') {
             const canvas = MagnetStudio.getCanvasMount();

@@ -329,8 +329,21 @@ def extract_compound_intent(text: str) -> Dict:
             used_paths.add(action.path)
 
     # Pass 2: Implicit numeric patterns ("60m", "12 meters", "25 knots")
+    # Process keyword matches first (higher confidence), then fallback no-keyword matches
     numeric_actions = _extract_all_numeric_patterns(text_lower)
-    for action in numeric_actions:
+
+    # Separate keyword matches from fallback matches
+    keyword_matches = [(a, kw) for a, kw in numeric_actions if kw]
+    fallback_matches = [(a, kw) for a, kw in numeric_actions if not kw]
+
+    # Add keyword matches first (higher confidence)
+    for action, _ in keyword_matches:
+        if action.path not in used_paths:
+            proposed_actions.append(action)
+            used_paths.add(action.path)
+
+    # Then add fallback matches for remaining paths
+    for action, _ in fallback_matches:
         if action.path not in used_paths:
             proposed_actions.append(action)
             used_paths.add(action.path)
@@ -380,39 +393,89 @@ def _extract_explicit_patterns(text: str) -> List[Action]:
     return actions
 
 
-def _extract_all_numeric_patterns(text: str) -> List[Action]:
+def _extract_all_numeric_patterns(text: str) -> List[Tuple[Action, str]]:
     """
     Extract all implicit numeric patterns like "60m", "12 meters", "25 knots".
 
     Numeric patterns have precedence over enum patterns.
+    Uses LOCAL context (preceding word) to disambiguate same-unit values.
+
+    Returns: List of (Action, keyword) tuples. Keyword is empty string for fallback matches.
     """
     actions = []
 
-    # Pattern: number followed by unit (e.g., "60m", "12 meters", "25 kts")
-    # This catches standalone measurements
-    pattern = r"(\d+(?:\.\d+)?)\s*(m|meters?|ft|feet|kts|knots?|kw|mw|hp|nm|km)\b"
+    # Pattern: optional keyword before number+unit (e.g., "beam 12m", "60m")
+    # Captures: (keyword or empty, value, unit)
+    # Keyword must be alphabetic (not numeric) to avoid capturing part of the number
+    pattern = r"(?:^|[\s,])([a-zA-Z]*)\s*(\d+(?:\.\d+)?)\s*(m|meters?|ft|feet|kts|knots?|kw|mw|hp|nm|km)\b"
 
     for match in re.finditer(pattern, text, re.IGNORECASE):
-        value_str, unit_str = match.groups()
+        keyword, value_str, unit_str = match.groups()
         unit = _parse_unit(unit_str)
 
-        # Determine path based on unit
-        path = _infer_path_from_unit(unit, text)
+        # Use LOCAL keyword context, not full text
+        local_context = keyword.lower() if keyword else ""
+
+        # Determine path based on unit and local keyword
+        path = _infer_path_from_unit_with_keyword(unit, local_context, text)
         if path:
             value = _parse_value(value_str, path)
-            actions.append(Action(
-                action_type=ActionType.SET,
-                path=path,
-                value=value,
-                unit=unit,
+            actions.append((
+                Action(
+                    action_type=ActionType.SET,
+                    path=path,
+                    value=value,
+                    unit=unit,
+                ),
+                local_context  # Return keyword for prioritization
             ))
 
     return actions
 
 
+def _infer_path_from_unit_with_keyword(unit: str, keyword: str, full_context: str) -> Optional[str]:
+    """
+    Infer which path to set based on unit and LOCAL keyword.
+
+    The keyword is the word immediately preceding the number.
+    Falls back to full context if keyword is empty.
+    """
+    # Check local keyword first (higher priority)
+    if unit in ("m", "ft"):
+        if keyword in ("length", "loa", "l"):
+            return "hull.loa"
+        if keyword in ("beam", "width", "b", "w"):
+            return "hull.beam"
+        if keyword in ("draft", "draught", "d", "t"):
+            return "hull.draft"
+        if keyword in ("depth",):
+            return "hull.depth"
+
+    if unit in ("kts", "knots"):
+        if keyword in ("cruise", "cruising", "service"):
+            return "mission.cruise_speed_kts"
+        return "mission.max_speed_kts"
+
+    if unit in ("kw", "mw", "hp"):
+        return "propulsion.total_installed_power_kw"
+
+    if unit == "nm":
+        return "mission.range_nm"
+
+    if unit == "km":
+        return "mission.range_nm"
+
+    # Fallback for meters/feet with no local keyword: default to hull.loa
+    # (Don't use full context fallback as it causes ambiguity with other keywords in text)
+    if unit in ("m", "ft") and not keyword:
+        return "hull.loa"
+
+    return None
+
+
 def _infer_path_from_unit(unit: str, context: str) -> Optional[str]:
     """
-    Infer which path to set based on unit and context.
+    Infer which path to set based on unit and full context.
 
     For Module 65.1: Simple heuristics, no LLM.
     """
