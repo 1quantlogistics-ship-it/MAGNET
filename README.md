@@ -370,6 +370,43 @@ result = validator.validate(plan, state_manager)
 
 ---
 
+## Studio v7 — Natural Language Design (Module 65.1)
+
+MAGNET supports **broad-first natural language design input**. Users can describe a vessel in one sentence and receive a structured, validated proposal before committing changes.
+
+### Example
+
+```
+> 60m aluminum catamaran ferry beam 12m draft 3m 25 knots
+
+MAGNET understood:
+  hull.loa: 60 m
+  hull.beam: 12 m
+  hull.draft: 3 m
+  hull.hull_type: catamaran
+  structural_design.hull_material: aluminum
+  mission.vessel_type: ferry
+  mission.max_speed_kts: 25 kts
+
+Type "apply" to execute, or add missing fields
+```
+
+The system extracts **7 parameters** from a single input, reports missing requirements, detects unsupported concepts, and applies all changes atomically after confirmation.
+
+### Running the API
+
+> **The MAGNET API must be run via DI bootstrap.**
+
+```bash
+python3 -m magnet.bootstrap.app run-api
+```
+
+**Do not use:** `uvicorn magnet.deployment.api:app` — StateManager will be unavailable.
+
+**See [magnet/ui_v2/docs/MODULE_65_1_INTENT_RESOLUTION.md](magnet/ui_v2/docs/MODULE_65_1_INTENT_RESOLUTION.md) for full documentation.**
+
+---
+
 ## Real-Time 3D Visualization
 
 MAGNET includes a **production-grade WebGL engine** built for naval architecture:
