@@ -459,6 +459,31 @@ pytest --cov=magnet --cov-report=html
 
 ---
 
+## Studio v7 UI (HTML)
+
+The conversational design interface is in `magnet/ui_v2/`.
+
+### Quick Start
+```bash
+# Terminal 1: Backend
+python -m magnet.bootstrap.entrypoints api
+
+# Terminal 2: UI
+cd magnet/ui_v2 && python3 -m http.server 3000
+
+# Browser
+open http://localhost:3000
+```
+
+### Golden Loop
+```
+set hull length to 40 meters → apply → (auto phase run) → GLB loads
+```
+
+See [UI Runbook](magnet/ui_v2/docs/UI_V2_RUNBOOK.md) for details.
+
+---
+
 ## Where MAGNET Is Going
 
 MAGNET aims to become the **first AI-native engineering design OS**, capable of:
