@@ -124,15 +124,20 @@ class SynthesisLock:
         if missing:
             raise ValueError(f"Cannot write incomplete hull params, missing: {missing}")
 
-        # Module 62.4: Wrap refinable writes in transaction
+        # Module 62.4: Wrap refinable writes in transaction if not already in one
         source = f"synthesis:{owner}"
-        self._state.begin_transaction()
+        owns_transaction = not self._state.in_transaction()
+
+        if owns_transaction:
+            self._state.begin_transaction()
         try:
             for path, value in params.items():
                 self._state.set(path, value, source)
-            self._state.commit()
+            if owns_transaction:
+                self._state.commit()
         except Exception:
-            self._state.rollback()
+            if owns_transaction:
+                self._state.rollback()
             raise
 
     @contextmanager

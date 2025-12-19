@@ -715,6 +715,24 @@ class StateManager:
 
         return True
 
+    def rollback(self) -> bool:
+        """
+        Rollback the active transaction.
+
+        This is a convenience wrapper around rollback_transaction() that
+        uses the currently active transaction.
+
+        Returns:
+            True if rollback successful.
+
+        Raises:
+            RuntimeError: If no active transaction.
+        """
+        if self._current_txn is None:
+            raise RuntimeError("No active transaction to rollback")
+
+        return self.rollback_transaction(self._current_txn)
+
     def in_transaction(self) -> bool:
         """
         Check if currently in a transaction.
