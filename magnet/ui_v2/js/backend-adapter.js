@@ -62,10 +62,22 @@ const PhaseIdMapper = {
 
 /**
  * Resolve base URLs for different deployment environments
+ *
+ * Module 65.2: Same-origin is the default (no config = use window.location.origin)
  * Handles RunPod proxy format: https://<pod>-8000.proxy.runpod.net (no explicit port)
  */
 function resolveBaseUrls(config = {}) {
     const isSecure = window.location.protocol === 'https:';
+
+    // Module 65.2: If no explicit host/baseUrl, use same-origin
+    if (!config.host && !config.baseUrl) {
+        console.log('[MAGNET] Using same-origin backend');
+        return {
+            baseUrl: window.location.origin,
+            wsUrl: `${isSecure ? 'wss' : 'ws'}://${window.location.host}/ws`
+        };
+    }
+
     const hostname = config.host || window.location.hostname || 'localhost';
 
     // Check for RunPod proxy pattern: *-8000.proxy.runpod.net

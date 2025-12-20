@@ -28,6 +28,9 @@ logger = logging.getLogger("deployment.api")
 # Frontend dist path (relative to project root)
 FRONTEND_DIST_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "app", "dist")
 
+# Module 65.2: Serve ui_v2 directly (no build step required)
+UI_V2_PATH = os.path.join(os.path.dirname(__file__), "..", "ui_v2")
+
 
 # =============================================================================
 # Request/Response Models (v1.2: Moved to module level to fix forward ref bug)
@@ -220,7 +223,7 @@ def create_fastapi_app(context: "AppContext" = None):
     try:
         from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
         from fastapi.middleware.cors import CORSMiddleware
-        from fastapi.responses import JSONResponse, FileResponse
+        from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
         from fastapi.staticfiles import StaticFiles
     except ImportError:
         logger.warning("FastAPI not installed, creating stub app")
@@ -439,6 +442,23 @@ def create_fastapi_app(context: "AppContext" = None):
         return {
             "ready": all(checks.values()),
             "checks": checks,
+        }
+
+    # =========================================================================
+    # Module 65.2: Meta endpoint for UI auto-configuration
+    # =========================================================================
+
+    @app.get("/api/v1/meta")
+    async def get_meta():
+        """Return server capabilities for UI auto-configuration."""
+        return {
+            "version": "1.2.0",
+            "capabilities": ["compound_intent", "glb_export", "websocket"],
+            "endpoints": {
+                "designs": "/api/v1/designs",
+                "health": "/health",
+                "ws": "/ws/{design_id}"
+            }
         }
 
     # =========================================================================
@@ -1457,11 +1477,49 @@ def create_fastapi_app(context: "AppContext" = None):
             await ws_manager.disconnect(client.client_id)
 
     # =========================================================================
-    # Frontend Static Files
+    # Frontend Static Files (Module 65.2: Serve ui_v2 directly)
     # =========================================================================
 
-    # Mount static assets if frontend is built
-    if os.path.exists(FRONTEND_DIST_PATH):
+    # Priority 1: Serve ui_v2 directly (no build step required)
+    if os.path.exists(UI_V2_PATH):
+        # Mount JS and CSS directories
+        js_path = os.path.join(UI_V2_PATH, "js")
+        css_path = os.path.join(UI_V2_PATH, "css")
+        if os.path.exists(js_path):
+            app.mount("/js", StaticFiles(directory=js_path), name="js")
+        if os.path.exists(css_path):
+            app.mount("/css", StaticFiles(directory=css_path), name="css")
+        logger.info(f"Mounted Studio UI from {UI_V2_PATH}")
+
+        @app.get("/", response_class=HTMLResponse)
+        async def serve_ui():
+            """Serve Studio v7 UI (Module 65.2: single-origin architecture)."""
+            index_path = os.path.join(UI_V2_PATH, "index.html")
+            if os.path.exists(index_path):
+                with open(index_path, 'r') as f:
+                    return HTMLResponse(content=f.read())
+            return HTMLResponse(content="<h1>MAGNET API</h1><p>UI not found.</p>")
+
+        @app.get("/{full_path:path}")
+        async def serve_frontend_spa(full_path: str):
+            """Serve frontend SPA for all non-API routes."""
+            # Don't serve frontend for API, docs, or WebSocket paths
+            if full_path.startswith(("api/", "docs", "redoc", "openapi", "ws/", "health", "ready")):
+                raise HTTPException(status_code=404, detail="Not found")
+
+            # Try to serve static file from ui_v2
+            static_path = os.path.join(UI_V2_PATH, full_path)
+            if os.path.exists(static_path) and os.path.isfile(static_path):
+                return FileResponse(static_path)
+
+            # Fall back to index.html for SPA routing
+            index_path = os.path.join(UI_V2_PATH, "index.html")
+            if os.path.exists(index_path):
+                return FileResponse(index_path)
+            raise HTTPException(status_code=404, detail="UI not found")
+
+    # Priority 2: Fall back to built frontend (app/dist)
+    elif os.path.exists(FRONTEND_DIST_PATH):
         assets_path = os.path.join(FRONTEND_DIST_PATH, "assets")
         if os.path.exists(assets_path):
             app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
@@ -1476,24 +1534,21 @@ def create_fastapi_app(context: "AppContext" = None):
             raise HTTPException(status_code=404, detail="Frontend not built")
 
         @app.get("/{full_path:path}")
-        async def serve_frontend_spa(full_path: str):
+        async def serve_frontend_spa_fallback(full_path: str):
             """Serve frontend SPA for all non-API routes."""
-            # Don't serve frontend for API, docs, or WebSocket paths
             if full_path.startswith(("api/", "docs", "redoc", "openapi", "ws/", "health", "ready")):
                 raise HTTPException(status_code=404, detail="Not found")
 
-            # Try to serve static file first
             static_path = os.path.join(FRONTEND_DIST_PATH, full_path)
             if os.path.exists(static_path) and os.path.isfile(static_path):
                 return FileResponse(static_path)
 
-            # Fall back to index.html for SPA routing
             index_path = os.path.join(FRONTEND_DIST_PATH, "index.html")
             if os.path.exists(index_path):
                 return FileResponse(index_path)
             raise HTTPException(status_code=404, detail="Frontend not built")
     else:
-        logger.info(f"Frontend not built at {FRONTEND_DIST_PATH}, skipping static file serving")
+        logger.info(f"No UI found at {UI_V2_PATH} or {FRONTEND_DIST_PATH}")
 
     return app
 
