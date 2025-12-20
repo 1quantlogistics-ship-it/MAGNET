@@ -2514,87 +2514,180 @@
             }
         }
 
-        // Get config from URL params
+        // =======================================================================
+        // Module 65.2: Auto-connect architecture
+        // =======================================================================
+
         const urlParams = new URLSearchParams(window.location.search);
         const designId = urlParams.get('design');
         const authToken = urlParams.get('token') || null;
         const debug = urlParams.get('debug') === 'true';
-        const demoMode = urlParams.get('demo') === 'true' || !designId;
+        const forceDemoMode = urlParams.get('demo') === 'true';
 
-        if (demoMode) {
-            // No design ID provided - run in demo mode with mock handlers
-            console.log('[MAGNET] Running in demo mode (no ?design= parameter)');
-            MagnetStudio.terminal.info('Demo mode - add ?design=ID to connect to backend');
-
-            // Demo event handlers
-            MagnetStudio.on('command', async ({ command }) => {
-                MagnetStudio.setStatus('Processing', 'processing');
-                await new Promise(r => setTimeout(r, 500));
-                MagnetStudio.terminal.info('Processing: ' + command);
-                await new Promise(r => setTimeout(r, 300));
-                MagnetStudio.terminal.success('Done');
-                MagnetStudio.terminal.cursor();
-                MagnetStudio.setStatus('Ready');
-            });
-
-            MagnetStudio.on('export', ({ format }) => {
-                MagnetStudio.toast(`Exporting ${format.toUpperCase()}...`);
-            });
-
-            MagnetStudio.on('save', () => {
-                MagnetStudio.toast('Design saved');
-            });
-
-            // Run demo sequence
+        // Module 65.2 Invariant 1: Same-origin implies connected mode
+        // Demo mode requires explicit opt-in when served from backend
+        if (forceDemoMode) {
+            console.log('[MAGNET] Demo mode explicitly requested via ?demo=true');
             runDemo();
         } else {
-            // Connect to MAGNET backend
-            console.log('[MAGNET] Connecting to backend with design:', designId);
-
-            // Auto-detect host/port from URL or use defaults
-            // For RunPod: host will be the proxy hostname (auto-detected)
-            const config = {
-                host: urlParams.get('host') || window.location.hostname,
-                port: parseInt(urlParams.get('port') || '8000'),
-                debug: debug
-            };
-
-            // Set auth token if provided
-            if (authToken) {
-                config.authToken = authToken;
-            }
-
-            // Check if backend adapter is loaded
-            if (typeof MAGNETBackendAdapter === 'undefined') {
-                console.error('[MAGNET] Backend adapter not loaded! Check js/backend-adapter.js');
-                MagnetStudio.terminal.error('Backend adapter not loaded');
-                MagnetStudio.terminal.info('Falling back to demo mode...');
-                runDemo();
-                return;
-            }
-
-            const backend = new MAGNETBackendAdapter(config);
-            backend.connect(designId);
-
-            // Expose for debugging
-            window.magnetBackend = backend;
-
-            // Log connection info
-            console.log('[MAGNET] Config:', {
-                baseUrl: backend.baseUrl,
-                wsUrl: backend.wsUrl,
-                designId: designId,
-                hasAuth: !!backend.authToken
-            });
+            // Try to auto-connect to same-origin backend
+            tryAutoConnect(designId, authToken, debug);
         }
     });
+
+    // =======================================================================
+    // Module 65.2: Auto-connect logic
+    // =======================================================================
+
+    async function tryAutoConnect(designId, authToken, debug) {
+        const T = MagnetStudio.terminal;
+
+        try {
+            // Probe same-origin for backend
+            const metaResp = await fetch('/api/v1/meta');
+            if (!metaResp.ok) throw new Error('No backend at same origin');
+
+            const meta = await metaResp.json();
+            console.log('[MAGNET] Backend detected:', meta.version);
+            T.info(`Backend v${meta.version} detected`);
+
+            if (designId) {
+                // Connect to specified design
+                connectToDesign(designId, authToken, debug);
+            } else {
+                // Show design picker
+                await showDesignPicker(authToken, debug);
+            }
+        } catch (e) {
+            console.warn('[MAGNET] No backend detected:', e.message);
+            T.warning('No backend detected at same origin.');
+            T.info('Start backend: python -m magnet.bootstrap.entrypoints api');
+            T.info('Or add ?demo=true for sandbox mode');
+            runDemo();
+        }
+    }
+
+    function connectToDesign(designId, authToken, debug) {
+        console.log('[MAGNET] Connecting to design:', designId);
+
+        // Module 65.2: Same-origin default
+        const config = { debug };
+        if (authToken) {
+            config.authToken = authToken;
+        }
+
+        // Check if backend adapter is loaded
+        if (typeof MAGNETBackendAdapter === 'undefined') {
+            console.error('[MAGNET] Backend adapter not loaded!');
+            MagnetStudio.terminal.error('Backend adapter not loaded');
+            runDemo();
+            return;
+        }
+
+        const backend = new MAGNETBackendAdapter(config);
+        backend.connect(designId);
+
+        // Expose for debugging
+        window.magnetBackend = backend;
+
+        console.log('[MAGNET] Connected:', {
+            baseUrl: backend.baseUrl,
+            wsUrl: backend.wsUrl,
+            designId: designId
+        });
+    }
+
+    async function showDesignPicker(authToken, debug) {
+        const T = MagnetStudio.terminal;
+        T.info('Fetching available designs...');
+
+        try {
+            const resp = await fetch('/api/v1/designs');
+            const data = await resp.json();
+            const designs = data.designs || [];
+
+            if (designs.length === 0) {
+                T.info('No designs found. Creating new design...');
+                const newResp = await fetch('/api/v1/designs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: 'New Design' })
+                });
+                const newDesign = await newResp.json();
+                if (newDesign.design_id) {
+                    T.success(`Created design: ${newDesign.design_id}`);
+                    connectToDesign(newDesign.design_id, authToken, debug);
+                } else {
+                    T.error('Failed to create design');
+                    runDemo();
+                }
+            } else {
+                T.info(`Found ${designs.length} design(s):`);
+                designs.slice(0, 5).forEach((d, i) => {
+                    T.info(`  ${i+1}. ${d.design_id} - ${d.name || 'Unnamed'}`);
+                });
+                if (designs.length > 5) {
+                    T.info(`  ... and ${designs.length - 5} more`);
+                }
+
+                // Auto-select most recent
+                const latest = designs[0];
+                T.info(`Auto-selecting: ${latest.design_id}`);
+                connectToDesign(latest.design_id, authToken, debug);
+            }
+        } catch (e) {
+            T.error('Failed to fetch designs: ' + e.message);
+            runDemo();
+        }
+    }
     
     async function runDemo() {
         const wait = ms => new Promise(r => setTimeout(r, ms));
         const T = MagnetStudio.terminal;
 
-        MagnetStudio.setProjectName('New Design');
-        MagnetStudio.setFilename('untitled.magnet');
+        // =======================================================================
+        // Module 65.2 Invariant 2: Demo mode must be visually unmistakable
+        // =======================================================================
+        const banner = document.createElement('div');
+        banner.id = 'demo-mode-banner';
+        banner.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: #b45309;
+            color: white;
+            padding: 8px 16px;
+            text-align: center;
+            font-weight: 600;
+            z-index: 9999;
+            font-family: monospace;
+        `;
+        banner.textContent = '\u26A0\uFE0F DEMO MODE \u2014 No backend connected';
+        document.body.prepend(banner);
+        document.body.style.paddingTop = '40px';
+
+        // Demo event handlers
+        MagnetStudio.on('command', async ({ command }) => {
+            MagnetStudio.setStatus('Processing', 'processing');
+            await wait(500);
+            T.info('Processing: ' + command);
+            await wait(300);
+            T.success('Done (simulated)');
+            T.cursor();
+            MagnetStudio.setStatus('Ready');
+        });
+
+        MagnetStudio.on('export', ({ format }) => {
+            MagnetStudio.toast(`Exporting ${format.toUpperCase()}... (simulated)`);
+        });
+
+        MagnetStudio.on('save', () => {
+            MagnetStudio.toast('Design saved (simulated)');
+        });
+
+        MagnetStudio.setProjectName('Demo Design');
+        MagnetStudio.setFilename('demo.magnet');
         MagnetStudio.setViewportStats([
             { label: 'Vertices', value: '0' },
             { label: 'Faces', value: '0' },
