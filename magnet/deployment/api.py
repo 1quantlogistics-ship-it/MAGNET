@@ -19,8 +19,6 @@ from datetime import datetime, timezone
 import logging
 import asyncio
 import os
-import secrets
-import base64
 
 if TYPE_CHECKING:
     from magnet.bootstrap.app import AppContext
@@ -32,11 +30,6 @@ FRONTEND_DIST_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "app", 
 
 # Module 65.2: Serve ui_v2 directly (no build step required)
 UI_V2_PATH = os.path.join(os.path.dirname(__file__), "..", "ui_v2")
-
-# Module 65.4: Simple Basic Auth for external access
-# Set MAGNET_AUTH_PASS to enable auth, leave empty to disable
-MAGNET_AUTH_USER = os.environ.get("MAGNET_AUTH_USER", "magnet")
-MAGNET_AUTH_PASS = os.environ.get("MAGNET_AUTH_PASS", "")
 
 
 # =============================================================================
@@ -266,52 +259,6 @@ def create_fastapi_app(context: "AppContext" = None):
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    # =========================================================================
-    # Module 65.4: Simple Basic Auth Middleware
-    # =========================================================================
-    if MAGNET_AUTH_PASS:
-        from starlette.middleware.base import BaseHTTPMiddleware
-        from starlette.responses import Response
-
-        class BasicAuthMiddleware(BaseHTTPMiddleware):
-            async def dispatch(self, request, call_next):
-                # Allow health check without auth
-                if request.url.path in ["/health", "/docs", "/redoc", "/openapi.json"]:
-                    return await call_next(request)
-
-                auth = request.headers.get("Authorization", "")
-                if not auth.startswith("Basic "):
-                    return Response(
-                        status_code=401,
-                        headers={"WWW-Authenticate": 'Basic realm="MAGNET"'},
-                        content="Unauthorized"
-                    )
-
-                try:
-                    decoded = base64.b64decode(auth[6:]).decode("utf-8")
-                    username, password = decoded.split(":", 1)
-                except Exception:
-                    return Response(
-                        status_code=401,
-                        headers={"WWW-Authenticate": 'Basic realm="MAGNET"'},
-                        content="Invalid credentials"
-                    )
-
-                if not (secrets.compare_digest(username, MAGNET_AUTH_USER) and
-                        secrets.compare_digest(password, MAGNET_AUTH_PASS)):
-                    return Response(
-                        status_code=401,
-                        headers={"WWW-Authenticate": 'Basic realm="MAGNET"'},
-                        content="Invalid credentials"
-                    )
-
-                return await call_next(request)
-
-        app.add_middleware(BasicAuthMiddleware)
-        logger.info(f"Basic Auth enabled (user: {MAGNET_AUTH_USER})")
-    else:
-        logger.info("Basic Auth disabled (no MAGNET_AUTH_PASS set)")
 
     # WebSocket manager
     ws_manager = get_connection_manager()
