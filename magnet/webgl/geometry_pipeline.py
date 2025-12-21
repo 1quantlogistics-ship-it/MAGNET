@@ -88,7 +88,16 @@ class HullGeometryPipeline:
         return self._tessellate_from_sections(sections)
 
     def _tessellate_from_sections(self, sections: List[HullSection]) -> MeshData:
-        """Tessellate from hull sections."""
+        """
+        Tessellate from hull sections.
+
+        Critical invariant: Within a section, adjacency must be monotonic
+        along the section curve (keel→deck), not alternating across Y.
+
+        Fix for topology corruption: Uses separate port/starboard vertex grids
+        instead of interleaving mirrored vertices into the same array.
+        Citation: 67.1.md Phase 1 - Geometry Pipeline Fix
+        """
         from .mesh_builder import MeshBuilder
 
         builder = MeshBuilder()
@@ -97,48 +106,64 @@ class HullGeometryPipeline:
             logger.warning("No sections to tessellate")
             return builder.build()
 
-        # Build vertex grid from sections
-        vertex_indices: List[List[int]] = []
+        # Build SEPARATE vertex grids for port and starboard
+        # Citation: 67.1.md - "Separate arrays for port (y >= 0) and starboard (y <= 0)"
+        port_indices: List[List[int]] = []
+        starboard_indices: List[List[int]] = []
 
         for section in sections:
-            section_indices = []
+            port_section = []
+            starboard_section = []
+
             for point in section.points:
-                idx = builder.add_vertex(point.x, point.y, point.z)
-                section_indices.append(idx)
+                # Port side (original points, y >= 0)
+                idx_port = builder.add_vertex(point.x, point.y, point.z)
+                port_section.append(idx_port)
 
-                # Mirror to starboard (negative Y)
-                if abs(point.y) > 0.001:  # Not on centerline
-                    idx_mirror = builder.add_vertex(point.x, -point.y, point.z)
-                    section_indices.append(idx_mirror)
+                # Starboard side (mirrored, y <= 0)
+                if abs(point.y) > 0.001:
+                    idx_starboard = builder.add_vertex(point.x, -point.y, point.z)
+                else:
+                    # Centerline point - use same vertex for both sides
+                    # Citation: 67.1.md - "prevents gaps at keel"
+                    idx_starboard = idx_port
+                starboard_section.append(idx_starboard)
 
-            vertex_indices.append(section_indices)
+            port_indices.append(port_section)
+            starboard_indices.append(starboard_section)
 
-        # Generate faces between sections
-        for i in range(len(vertex_indices) - 1):
-            curr_section = vertex_indices[i]
-            next_section = vertex_indices[i + 1]
+        # Generate faces for PORT side
+        _triangulate_hull_side(builder, port_indices, reverse_winding=False)
 
-            # Match up points between sections
-            n_curr = len(curr_section)
-            n_next = len(next_section)
-
-            if n_curr == 0 or n_next == 0:
-                continue
-
-            # Simple triangulation - assumes same point count
-            n_points = min(n_curr, n_next)
-
-            for j in range(n_points - 1):
-                v0 = curr_section[j]
-                v1 = curr_section[j + 1]
-                v2 = next_section[j]
-                v3 = next_section[j + 1]
-
-                # Two triangles for quad
-                builder.add_triangle(v0, v2, v1)
-                builder.add_triangle(v1, v2, v3)
+        # Generate faces for STARBOARD side (reverse winding for correct normals)
+        # Citation: 67.1.md Winding Direction Rationale table
+        _triangulate_hull_side(builder, starboard_indices, reverse_winding=True)
 
         mesh = builder.build()
+
+        # Topology validation - Citation: 67.1.md Phase 5.2
+        if mesh.vertex_count == 0 or mesh.face_count == 0:
+            logger.error("Empty mesh generated!")
+
+        # NaN check
+        if any(math.isnan(v) for v in mesh.vertices):
+            logger.error("NaN values in vertex data!")
+
+        # Vertex count sanity - use SUM of per-section point counts
+        # Citation: 67.1.md - "sections may vary in point count near bow/stern"
+        total_section_points = sum(len(s.points) for s in sections)
+        expected_verts = total_section_points * 2  # port + starboard
+        if mesh.vertex_count > expected_verts * 1.5:
+            logger.warning(
+                f"Vertex count {mesh.vertex_count} higher than expected {expected_verts}"
+            )
+
+        # Degenerate triangle check (PRIMARY validation)
+        # Citation: 67.1.md Phase 5.1 - area-based detection
+        degen_count = _count_degenerate_triangles(mesh)
+        if degen_count > 0:
+            logger.error(f"Degenerate triangles detected: {degen_count}")
+
         logger.debug(
             f"Tessellated {len(sections)} sections into "
             f"{mesh.vertex_count} vertices, {mesh.face_count} faces"
@@ -273,6 +298,112 @@ class HullGeometryPipeline:
             points.append(Point3D(x=x, y=y, z=z))
 
         return points
+
+
+# =============================================================================
+# TESSELLATION HELPERS
+# Citation: 67.1.md Phase 1 - Helper function for hull side triangulation
+# =============================================================================
+
+def _triangulate_hull_side(
+    builder: 'MeshBuilder',
+    vertex_indices: List[List[int]],
+    reverse_winding: bool = False
+) -> None:
+    """
+    Triangulate one side of the hull.
+
+    Citation: 67.1.md Winding Direction Rationale
+    - Port (reverse_winding=False): (v0, v2, v1), (v1, v2, v3) → normals +Y
+    - Starboard (reverse_winding=True): (v0, v1, v2), (v1, v3, v2) → normals -Y
+
+    Non-goal: watertight hull caps (caps deferred)
+    """
+    for i in range(len(vertex_indices) - 1):
+        curr_section = vertex_indices[i]
+        next_section = vertex_indices[i + 1]
+
+        n_curr = len(curr_section)
+        n_next = len(next_section)
+
+        if n_curr == 0 or n_next == 0:
+            continue
+
+        # Section point count mismatch warning
+        # Citation: feedback - "can create gaps or sliver triangles"
+        if n_curr != n_next:
+            logger.debug(
+                f"Section point count mismatch at section {i}: "
+                f"curr={n_curr}, next={n_next}"
+            )
+
+        n_points = min(n_curr, n_next)
+
+        for j in range(n_points - 1):
+            v0 = curr_section[j]
+            v1 = curr_section[j + 1]
+            v2 = next_section[j]
+            v3 = next_section[j + 1]
+
+            if reverse_winding:
+                # Starboard: flip triangle winding for outward normals
+                builder.add_triangle(v0, v1, v2)
+                builder.add_triangle(v1, v3, v2)
+            else:
+                # Port: normal winding
+                builder.add_triangle(v0, v2, v1)
+                builder.add_triangle(v1, v2, v3)
+
+
+def _compute_triangle_area(v0: int, v1: int, v2: int, vertices: List[float]) -> float:
+    """
+    Compute triangle area using cross product magnitude.
+
+    Citation: 67.1.md Phase 5.1 - Area-based degenerate detection
+    """
+    # Get vertex positions (vertices is flat array: x0,y0,z0,x1,y1,z1,...)
+    p0 = (vertices[v0 * 3], vertices[v0 * 3 + 1], vertices[v0 * 3 + 2])
+    p1 = (vertices[v1 * 3], vertices[v1 * 3 + 1], vertices[v1 * 3 + 2])
+    p2 = (vertices[v2 * 3], vertices[v2 * 3 + 1], vertices[v2 * 3 + 2])
+
+    # Edge vectors
+    e1 = (p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2])
+    e2 = (p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2])
+
+    # Cross product
+    cx = e1[1] * e2[2] - e1[2] * e2[1]
+    cy = e1[2] * e2[0] - e1[0] * e2[2]
+    cz = e1[0] * e2[1] - e1[1] * e2[0]
+
+    # Area = 0.5 * |cross product|
+    return 0.5 * math.sqrt(cx * cx + cy * cy + cz * cz)
+
+
+def _count_degenerate_triangles(mesh: MeshData, area_threshold: float = 1e-6) -> int:
+    """
+    Count triangles with near-zero area (the actual failure mode).
+
+    Citation: 67.1.md Phase 5.1
+    "detects near-zero area triangles that the index-duplicate check misses"
+    """
+    degenerate_count = 0
+    indices = mesh.indices
+    vertices = mesh.vertices
+
+    for i in range(0, len(indices), 3):
+        v0, v1, v2 = indices[i], indices[i + 1], indices[i + 2]
+
+        # Check duplicate indices (trivial degenerates)
+        if v0 == v1 or v1 == v2 or v0 == v2:
+            degenerate_count += 1
+            continue
+
+        # Check near-zero area (the bug's actual failure mode)
+        area = _compute_triangle_area(v0, v1, v2, vertices)
+        if area < area_threshold:
+            degenerate_count += 1
+
+    return degenerate_count
 
 
 # =============================================================================

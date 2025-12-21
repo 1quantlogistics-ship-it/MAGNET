@@ -848,8 +848,13 @@
             position: absolute;
             inset: 0;
             z-index: 1;
+            pointer-events: auto;
         }
-        
+
+        #canvas3d canvas {
+            pointer-events: auto;
+        }
+
         /* Viewport Overlays */
         .viewport-overlay {
             position: absolute;
@@ -1530,15 +1535,15 @@
         .chat-panel.fullscreen ~ .workspace,
         .chat-panel.fullscreen ~ .inspector { display: none; }
     </style>
-    <!-- Three.js for 3D hull rendering -->
-    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
+    <!-- Three.js for 3D hull rendering (r128 - stable with legacy global exports) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 
     <!-- MAGNET Backend Adapter -->
-    <script src="js/backend-adapter.js"></script>
+    <script src="js/backend-adapter.js?v=20251220-fix4"></script>
     <!-- MAGNET Scene Manager (Three.js GLB loader) -->
-    <script src="js/scene-manager.js"></script>
+    <script src="js/scene-manager.js?v=20251220-fix4"></script>
 </head>
 <body>
     <div class="studio">
@@ -2356,7 +2361,14 @@
                 error: text => Terminal.addLine(`<span class="terminal-x">✗</span> <span class="terminal-error">${text}</span>`),
                 info: text => Terminal.addLine(`<span class="terminal-arrow">→</span> ${text}`),
                 data: pairs => {
-                    const html = Object.entries(pairs).map(([k, v]) => 
+                    // Handle both array-of-objects [{key, value}] and plain object {key: value}
+                    let items;
+                    if (Array.isArray(pairs)) {
+                        items = pairs.map(p => [p.key, p.value]);
+                    } else {
+                        items = Object.entries(pairs);
+                    }
+                    const html = items.map(([k, v]) =>
                         `<span class="terminal-label">${k}:</span> <span class="terminal-value">${v}</span>`
                     ).join(' ');
                     Terminal.addLine(`<div class="terminal-data">${html}</div>`);
@@ -2551,11 +2563,14 @@
             console.log('[MAGNET] Backend detected:', meta.version);
             T.info(`Backend v${meta.version} detected`);
 
+            console.log('[MAGNET] URL designId param:', designId);
             if (designId) {
                 // Connect to specified design
+                console.log('[MAGNET] Using URL design ID:', designId);
                 connectToDesign(designId, authToken, debug);
             } else {
                 // Show design picker
+                console.log('[MAGNET] No design ID in URL, showing picker');
                 await showDesignPicker(authToken, debug);
             }
         } catch (e) {
@@ -2602,11 +2617,17 @@
         T.info('Fetching available designs...');
 
         try {
-            const resp = await fetch('/api/v1/designs');
+            // Cache-bust to ensure fresh response
+            const resp = await fetch('/api/v1/designs?_t=' + Date.now());
+            console.log('[MAGNET] Designs fetch response status:', resp.status);
             const data = await resp.json();
+            console.log('[MAGNET] Designs data:', JSON.stringify(data));
             const designs = data.designs || [];
+            console.log('[MAGNET] Parsed designs array length:', designs.length);
 
             if (designs.length === 0) {
+                console.log('[MAGNET] NO DESIGNS FOUND - creating new');
+                console.error('!!! BUG: designs.length is 0 but API should return 1 !!!');
                 T.info('No designs found. Creating new design...');
                 const newResp = await fetch('/api/v1/designs', {
                     method: 'POST',
