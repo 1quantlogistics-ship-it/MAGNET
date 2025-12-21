@@ -11,8 +11,19 @@ class MAGNETSceneManager {
         this.camera = new THREE.PerspectiveCamera(
             45, container.clientWidth / container.clientHeight, 0.1, 1000
         );
-        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        this.loader = new THREE.GLTFLoader();
+        this.renderer = new THREE.WebGLRenderer({
+            antialias: true,
+            alpha: true,
+            logarithmicDepthBuffer: true  // Helps with z-fighting on overlapping geometry
+        });
+        // GLTFLoader location varies by Three.js version
+        // r128+: THREE.GLTFLoader (from examples/js/loaders/GLTFLoader.js)
+        // r160+: May need different access pattern
+        const GLTFLoaderClass = THREE.GLTFLoader || window.GLTFLoader;
+        if (!GLTFLoaderClass) {
+            console.error('[MAGNET] GLTFLoader not found! Check Three.js version and loader script.');
+        }
+        this.loader = GLTFLoaderClass ? new GLTFLoaderClass() : null;
         this.hull = null;
 
         this._init();
@@ -23,11 +34,20 @@ class MAGNETSceneManager {
         this.renderer.setClearColor(0x0a0a0a, 1);
         this.container.appendChild(this.renderer.domElement);
 
-        // Lights
-        this.scene.add(new THREE.AmbientLight(0x404040, 0.5));
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        dirLight.position.set(5, 10, 7);
-        this.scene.add(dirLight);
+        // Ensure canvas receives pointer events regardless of parent CSS
+        this.renderer.domElement.style.pointerEvents = 'auto';
+
+        // Lights - bright ambient for CAD-style visibility
+        this.scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+        // Hemisphere light for even illumination from all angles
+        this.scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.6));
+        // Directional lights from multiple angles
+        const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.5);
+        dirLight1.position.set(5, 10, 7);
+        this.scene.add(dirLight1);
+        const dirLight2 = new THREE.DirectionalLight(0xffffff, 0.3);
+        dirLight2.position.set(-5, -10, -7);
+        this.scene.add(dirLight2);
 
         // Camera
         this.camera.position.set(50, 30, 50);
@@ -49,6 +69,22 @@ class MAGNETSceneManager {
         if (this.hull) this.scene.remove(this.hull);
         this.hull = gltf.scene;
         this.scene.add(this.hull);
+
+        // Replace all materials with flat unlit gray - ignores lighting completely
+        const flatMaterial = new THREE.MeshBasicMaterial({
+            color: 0x888888,        // Medium gray
+            side: THREE.DoubleSide, // Render both sides
+            wireframe: false,
+            polygonOffset: true,    // Help with z-fighting
+            polygonOffsetFactor: 1,
+            polygonOffsetUnits: 1
+        });
+
+        this.hull.traverse(child => {
+            if (child.isMesh) {
+                child.material = flatMaterial;
+            }
+        });
 
         // Center model
         const box = new THREE.Box3().setFromObject(this.hull);

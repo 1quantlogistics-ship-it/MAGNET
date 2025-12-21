@@ -339,10 +339,12 @@ class MAGNETBackendAdapter {
     }
 
     bindUIEvents() {
+        console.log('[MAGNET] bindUIEvents() called');
         // Module 63.2: Intent preview/apply flow
         this._pendingPreview = null;
 
         MagnetStudio.on('command', async ({ command }) => {
+            console.log('[MAGNET] Command handler triggered:', command);
             MagnetStudio.setStatus('Processing', 'processing');
             MagnetStudio.terminal.print(`> ${command}`);
 
@@ -378,10 +380,12 @@ class MAGNETBackendAdapter {
 
             // Natural language → preview via Intent API (Module 65.1: compound mode)
             try {
+                console.log('[MAGNET] Sending command to API:', command);
                 const preview = await this.post(
                     `/api/v1/designs/${this.designId}/intent/preview`,
                     { text: command, mode: 'compound' }
                 );
+                console.log('[MAGNET] API Response:', preview);
 
                 // Module 65.1: Handle compound mode response
                 if (preview.intent_mode === 'compound') {
@@ -615,12 +619,19 @@ class MAGNETBackendAdapter {
 
     // Module 64: Load hull GLB with loading state and design_version cache-bust
     async _loadHullGeometry() {
+        // Guard: Scene manager must be ready
+        if (!window.magnetThreeScene?.loadGLB) {
+            console.warn('[MAGNET] Scene manager not ready, skipping geometry load');
+            return;
+        }
+
         MagnetStudio.showLoading('Loading 3D geometry...');
         try {
             // Use design_version for deterministic cache-busting, fallback to timestamp
             // GLB endpoint returns binary only - no JSON fields available
             const cacheBust = this._lastDesignVersion || Date.now();
             const url = `${this.baseUrl}/api/v1/designs/${this.designId}/3d/export/glb?v=${cacheBust}`;
+            console.log('[MAGNET] Loading GLB from:', url);
             const stats = await window.magnetThreeScene.loadGLB(url);
 
             MagnetStudio.setViewportStats([
@@ -637,9 +648,11 @@ class MAGNETBackendAdapter {
     }
 
     async loadDesignState() {
+        console.log('[MAGNET] loadDesignState called for:', this.designId);
         try {
             // VALIDATED: GET /api/v1/designs/{id} exists
             const design = await this.get(`/api/v1/designs/${this.designId}`);
+            console.log('[MAGNET] Design fetched:', design.metadata?.name || design.design_name || 'unknown');
 
             MagnetStudio.setProjectName(design.name || design.metadata?.name || 'Untitled Design');
             MagnetStudio.setFilename(`design_${this.designId}.magnet`);
@@ -657,6 +670,21 @@ class MAGNETBackendAdapter {
             }
 
             MagnetStudio.terminal.success('Design loaded');
+
+            // Auto-load geometry on connect
+            // Attempt load and treat 404 as "no geometry yet" (silent fail)
+            // GLB generates on-demand even if vision.geometry_generated=false
+            console.log('[MAGNET] Attempting auto-load of geometry...');
+            try {
+                await this._loadHullGeometry();
+                console.log('[MAGNET] Geometry auto-load SUCCESS');
+            } catch (e) {
+                // 404 = no geometry yet, not an error worth showing
+                console.log('[MAGNET] Geometry auto-load error:', e.message);
+                if (!e.message?.includes('404')) {
+                    console.warn('[MAGNET] Geometry auto-load failed:', e.message);
+                }
+            }
         } catch (error) {
             console.error('[MAGNET] Failed to load design:', error);
             MagnetStudio.terminal.error(`Failed to load design: ${error.message}`);
