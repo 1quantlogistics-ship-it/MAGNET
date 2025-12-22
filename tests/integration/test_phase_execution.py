@@ -6,9 +6,12 @@ validators via PipelineExecutor and produces expected state changes.
 
 These tests verify the complete phase execution pipeline from Conductor
 through validators to state mutations.
+
+Module 62.4: Uses refinable_write_context for transaction-wrapped writes.
 """
 import pytest
 from datetime import datetime
+from tests.conftest import refinable_write_context
 
 
 class TestPhaseExecution:
@@ -36,14 +39,16 @@ class TestPhaseExecution:
         """
         app, sm = setup_app
 
-        # Provide required hull inputs
-        sm.set("hull.lwl", 50.0, "test/setup")
-        sm.set("hull.beam", 10.0, "test/setup")
-        sm.set("hull.draft", 2.5, "test/setup")
-        sm.set("hull.depth", 4.0, "test/setup")
-        sm.set("hull.cb", 0.55, "test/setup")
-        # Required by physics/resistance validator
-        sm.set("mission.max_speed_kts", 15.0, "test/setup")
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(sm):
+            # Provide required hull inputs
+            sm.set("hull.lwl", 50.0, "test/setup")
+            sm.set("hull.beam", 10.0, "test/setup")
+            sm.set("hull.draft", 2.5, "test/setup")
+            sm.set("hull.depth", 4.0, "test/setup")
+            sm.set("hull.cb", 0.55, "test/setup")
+            # Required by physics/resistance validator
+            sm.set("mission.max_speed_kts", 15.0, "test/setup")
 
         # Get conductor and create session
         conductor = app.conductor
@@ -102,13 +107,15 @@ class TestPhaseExecution:
         """
         app, sm = setup_app
 
-        # Provide required inputs
-        sm.set("hull.lwl", 50.0, "test/setup")
-        sm.set("hull.beam", 10.0, "test/setup")
-        sm.set("hull.draft", 2.5, "test/setup")
-        sm.set("hull.depth", 4.0, "test/setup")
-        sm.set("hull.cb", 0.55, "test/setup")
-        sm.set("mission.max_speed_kts", 15.0, "test/setup")
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(sm):
+            # Provide required inputs
+            sm.set("hull.lwl", 50.0, "test/setup")
+            sm.set("hull.beam", 10.0, "test/setup")
+            sm.set("hull.draft", 2.5, "test/setup")
+            sm.set("hull.depth", 4.0, "test/setup")
+            sm.set("hull.cb", 0.55, "test/setup")
+            sm.set("mission.max_speed_kts", 15.0, "test/setup")
 
         conductor = app.conductor
         conductor.create_session("test-weight-001")
@@ -141,14 +148,16 @@ class TestPhaseExecution:
         """
         app, sm = setup_app
 
-        # Setup hull inputs
-        sm.set("hull.lwl", 50.0, "test/setup")
-        sm.set("hull.beam", 10.0, "test/setup")
-        sm.set("hull.draft", 2.5, "test/setup")
-        sm.set("hull.depth", 4.0, "test/setup")
-        sm.set("hull.cb", 0.55, "test/setup")
-        # Required by physics/resistance validator
-        sm.set("mission.max_speed_kts", 15.0, "test/setup")
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(sm):
+            # Setup hull inputs
+            sm.set("hull.lwl", 50.0, "test/setup")
+            sm.set("hull.beam", 10.0, "test/setup")
+            sm.set("hull.draft", 2.5, "test/setup")
+            sm.set("hull.depth", 4.0, "test/setup")
+            sm.set("hull.cb", 0.55, "test/setup")
+            # Required by physics/resistance validator
+            sm.set("mission.max_speed_kts", 15.0, "test/setup")
 
         conductor = app.conductor
         conductor.create_session("test-pipeline-001")

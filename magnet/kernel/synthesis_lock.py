@@ -99,9 +99,10 @@ class SynthesisLock:
         owner: str,
     ) -> None:
         """
-        Atomically write hull parameters to state.
+        Atomically write hull parameters to state within a transaction.
 
         Only allowed by lock owner. All-or-nothing write (never partial state).
+        Module 62.4: Wraps writes in transaction to satisfy enforcement.
 
         Args:
             params: Dictionary of path -> value for hull parameters
@@ -123,10 +124,21 @@ class SynthesisLock:
         if missing:
             raise ValueError(f"Cannot write incomplete hull params, missing: {missing}")
 
-        # Atomic write
+        # Module 62.4: Wrap refinable writes in transaction if not already in one
         source = f"synthesis:{owner}"
-        for path, value in params.items():
-            self._state.set(path, value, source)
+        owns_transaction = not self._state.in_transaction()
+
+        if owns_transaction:
+            self._state.begin_transaction()
+        try:
+            for path, value in params.items():
+                self._state.set(path, value, source)
+            if owns_transaction:
+                self._state.commit()
+        except Exception:
+            if owns_transaction:
+                self._state.rollback()
+            raise
 
     @contextmanager
     def exclusive_access(self, owner: str):

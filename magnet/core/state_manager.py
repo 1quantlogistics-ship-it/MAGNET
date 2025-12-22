@@ -279,6 +279,9 @@ class StateManager:
         self._state = state if state is not None else DesignState()
         self._transactions: Dict[str, Dict[str, Any]] = {}
         self._current_txn: Optional[str] = None
+        # Versioned snapshots for revert operations
+        self._version_snapshots: Dict[int, Dict[str, Any]] = {}
+        self._version_snapshots[self._state.design_version] = copy.deepcopy(self._state.to_dict())
 
     @property
     def state(self) -> DesignState:
@@ -646,6 +649,9 @@ class StateManager:
         # Increment design_version (ONLY place this happens)
         self._state.design_version += 1
 
+        # Save snapshot of committed state for potential revert
+        self._version_snapshots[self._state.design_version] = copy.deepcopy(self._state.to_dict())
+
         # Clear transaction data
         del self._transactions[txn_id]
         self._current_txn = None
@@ -714,6 +720,53 @@ class StateManager:
         })
 
         return True
+
+    # ==================== Revert ====================
+
+    def revert_to_version(self, target_version: int) -> bool:
+        """
+        Revert state to a previously committed design_version.
+
+        Args:
+            target_version: Design version to restore.
+
+        Returns:
+            True if revert succeeded, False otherwise.
+        """
+        if target_version not in self._version_snapshots:
+            return False
+
+        snapshot = self._version_snapshots[target_version]
+        self._state = DesignState.from_dict(copy.deepcopy(snapshot))
+        self._current_txn = None
+        self._transactions.clear()
+
+        # Record revert in history
+        self._state.history.append({
+            "timestamp": datetime.utcnow().isoformat(),
+            "action": "revert",
+            "design_version": target_version,
+        })
+
+        return True
+
+    def rollback(self) -> bool:
+        """
+        Rollback the active transaction.
+
+        This is a convenience wrapper around rollback_transaction() that
+        uses the currently active transaction.
+
+        Returns:
+            True if rollback successful.
+
+        Raises:
+            RuntimeError: If no active transaction.
+        """
+        if self._current_txn is None:
+            raise RuntimeError("No active transaction to rollback")
+
+        return self.rollback_transaction(self._current_txn)
 
     def in_transaction(self) -> bool:
         """

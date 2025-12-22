@@ -5,6 +5,8 @@ Tests the end-to-end design flow using production DI wiring.
 Verifies that MAGNETApp.build() produces a working system.
 
 v1.1: Tests hull synthesis → stability flow via Conductor.
+
+Module 62.4: Uses refinable_write_context for transaction-wrapped writes.
 """
 
 import pytest
@@ -12,6 +14,7 @@ from magnet.bootstrap.app import MAGNETApp, create_app
 from magnet.core.state_manager import StateManager
 from magnet.kernel.conductor import Conductor
 from magnet.kernel.enums import PhaseStatus
+from tests.conftest import refinable_write_context
 
 
 class TestGoldenPathSetup:
@@ -62,9 +65,11 @@ class TestGoldenPathFlow:
         app = MAGNETApp().build()
         sm = app.container.resolve(StateManager)
 
-        # Seed minimal mission data for hull synthesis
-        sm.set("mission.max_speed_kts", 25.0, "test")
-        sm.set("hull.hull_type", "workboat", "test")
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(sm):
+            # Seed minimal mission data for hull synthesis
+            sm.set("mission.max_speed_kts", 25.0, "test")
+            sm.set("hull.hull_type", "workboat", "test")
 
         return app
 
@@ -122,12 +127,14 @@ class TestGoldenPathFlow:
         conductor = app.container.resolve(Conductor)
         sm = app.container.resolve(StateManager)
 
-        # Seed all hull inputs required by contract
-        sm.set("hull.lwl", 25.0, "test")
-        sm.set("hull.beam", 5.5, "test")
-        sm.set("hull.draft", 1.6, "test")
-        sm.set("hull.cb", 0.45, "test")
-        sm.set("hull.hull_type", "workboat", "test")
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(sm):
+            # Seed all hull inputs required by contract
+            sm.set("hull.lwl", 25.0, "test")
+            sm.set("hull.beam", 5.5, "test")
+            sm.set("hull.draft", 1.6, "test")
+            sm.set("hull.cb", 0.45, "test")
+            sm.set("hull.hull_type", "workboat", "test")
 
         # Now hull phase should not be blocked
         result = conductor.run_phase("hull")
@@ -150,12 +157,14 @@ class TestGoldenPathValidators:
         app = MAGNETApp().build()
         sm = app.container.resolve(StateManager)
 
-        # Seed hull data directly
-        sm.set("hull.lwl", 25.0, "test")
-        sm.set("hull.beam", 5.5, "test")
-        sm.set("hull.draft", 1.6, "test")
-        sm.set("hull.cb", 0.45, "test")
-        sm.set("hull.depth", 2.5, "test")
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(sm):
+            # Seed hull data directly
+            sm.set("hull.lwl", 25.0, "test")
+            sm.set("hull.beam", 5.5, "test")
+            sm.set("hull.draft", 1.6, "test")
+            sm.set("hull.cb", 0.45, "test")
+            sm.set("hull.depth", 2.5, "test")
 
         return app
 
@@ -203,9 +212,11 @@ class TestGoldenPathContracts:
         app = MAGNETApp().build()
         sm = app.container.resolve(StateManager)
 
-        # Seed mission data
-        sm.set("mission.max_speed_kts", 25.0, "test")
-        sm.set("hull.hull_type", "workboat", "test")
+        # Module 62.4: Wrap refinable writes in transaction
+        with refinable_write_context(sm):
+            # Seed mission data
+            sm.set("mission.max_speed_kts", 25.0, "test")
+            sm.set("hull.hull_type", "workboat", "test")
 
         # Run hull phase to trigger synthesis
         conductor = app.container.resolve(Conductor)

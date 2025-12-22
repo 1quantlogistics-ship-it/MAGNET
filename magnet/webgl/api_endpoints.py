@@ -141,7 +141,32 @@ def get_state_manager(design_id: str) -> "StateManager":
             status_code=500,
             detail="State manager not configured",
         )
-    return _state_manager_getter(design_id)
+    sm = _state_manager_getter(design_id)
+    if sm is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Design not found",
+        )
+
+    try:
+        from magnet.ui.utils import get_state_value
+
+        current_id = get_state_value(sm, "metadata.design_id")
+        if current_id and current_id != design_id:
+            raise HTTPException(
+                status_code=409,
+                detail="Design mismatch",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        # If metadata cannot be read, fail closed to prevent serving wrong design.
+        raise HTTPException(
+            status_code=409,
+            detail="Design identity unavailable",
+        )
+
+    return sm
 
 
 # =============================================================================
@@ -165,15 +190,10 @@ async def get_hull_geometry(
     """
     try:
         from .geometry_service import GeometryService
-        from .interfaces import StateGeometryAdapter
 
         sm = get_state_manager(design_id)
-        adapter = StateGeometryAdapter(sm)
 
-        service = GeometryService(
-            input_provider=adapter,
-            design_id=design_id,
-        )
+        service = GeometryService(state_manager=sm)
 
         lod_level = LODLevel(lod) if lod in [l.value for l in LODLevel] else LODLevel.MEDIUM
 
@@ -235,15 +255,10 @@ async def get_scene(
     """
     try:
         from .geometry_service import GeometryService
-        from .interfaces import StateGeometryAdapter
 
         sm = get_state_manager(design_id)
-        adapter = StateGeometryAdapter(sm)
 
-        service = GeometryService(
-            input_provider=adapter,
-            design_id=design_id,
-        )
+        service = GeometryService(state_manager=sm)
 
         lod_level = LODLevel(lod) if lod in [l.value for l in LODLevel] else LODLevel.MEDIUM
 
@@ -293,12 +308,8 @@ async def get_binary_geometry(
         from .serializer import serialize_mesh
 
         sm = get_state_manager(design_id)
-        adapter = StateGeometryAdapter(sm)
 
-        service = GeometryService(
-            input_provider=adapter,
-            design_id=design_id,
-        )
+        service = GeometryService(state_manager=sm)
 
         lod_level = LODLevel(lod) if lod in [l.value for l in LODLevel] else LODLevel.MEDIUM
 
@@ -354,12 +365,8 @@ async def create_section_cut(
         from .section_cuts import SectionPlane
 
         sm = get_state_manager(design_id)
-        adapter = StateGeometryAdapter(sm)
 
-        service = GeometryService(
-            input_provider=adapter,
-            design_id=design_id,
-        )
+        service = GeometryService(state_manager=sm)
 
         # Map plane string to enum
         plane_map = {
@@ -421,12 +428,8 @@ async def get_transverse_sections(
         from .section_cuts import SectionPlane
 
         sm = get_state_manager(design_id)
-        adapter = StateGeometryAdapter(sm)
 
-        service = GeometryService(
-            input_provider=adapter,
-            design_id=design_id,
-        )
+        service = GeometryService(state_manager=sm)
 
         lod_level = LODLevel(lod) if lod in [l.value for l in LODLevel] else LODLevel.MEDIUM
 
@@ -494,12 +497,8 @@ async def export_geometry(
         from .exporter import GeometryExporter, ExportFormat
 
         sm = get_state_manager(design_id)
-        adapter = StateGeometryAdapter(sm)
 
-        service = GeometryService(
-            input_provider=adapter,
-            design_id=design_id,
-        )
+        service = GeometryService(state_manager=sm)
 
         # Map format string to enum
         format_map = {
@@ -513,8 +512,8 @@ async def export_geometry(
         export_format = format_map.get(format.lower())
         if not export_format:
             raise ExportError(
-                message=f"Unsupported export format: {format}",
                 format=format,
+                reason="unsupported_format",
                 design_id=design_id,
             )
 
@@ -537,8 +536,8 @@ async def export_geometry(
 
         if not result.success:
             raise ExportError(
-                message=result.errors[0] if result.errors else "Export failed",
                 format=format,
+                reason=result.errors[0] if result.errors else "export_failed",
                 design_id=design_id,
             )
 
@@ -552,6 +551,10 @@ async def export_geometry(
         }
 
         filename = f"{design_id}_hull{result.file_extension}"
+        try:
+            design_version = sm.get("design_version", 0)
+        except Exception:
+            design_version = 0
 
         return Response(
             content=result.data,
@@ -560,9 +563,12 @@ async def export_geometry(
                 "Content-Disposition": f"attachment; filename={filename}",
                 "X-Export-Id": result.metadata.export_id,
                 "X-Geometry-Mode": result.metadata.geometry_mode,
+                "X-Design-Id": design_id,
+                "X-Design-Version": str(design_version),
                 "X-Vertex-Count": str(result.metadata.vertex_count),
                 "X-Face-Count": str(result.metadata.face_count),
                 "X-Schema-Version": result.metadata.schema_version,
+                "Cache-Control": "no-store",
             },
         )
 
@@ -609,18 +615,14 @@ async def export_with_options(
         export_format = format_map.get(request.format.lower())
         if not export_format:
             raise ExportError(
-                message=f"Unsupported format: {request.format}",
                 format=request.format,
+                reason="unsupported_format",
                 design_id=design_id,
             )
 
         sm = get_state_manager(design_id)
-        adapter = StateGeometryAdapter(sm)
 
-        service = GeometryService(
-            input_provider=adapter,
-            design_id=design_id,
-        )
+        service = GeometryService(state_manager=sm)
 
         lod_level = LODLevel(request.lod) if request.lod in [l.value for l in LODLevel] else LODLevel.MEDIUM
 

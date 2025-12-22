@@ -131,8 +131,9 @@ class GeometryService:
                 )
             lod = actual_lod
 
-        # Check cache
-        cache_key = f"{design_id}:{lod.value}"
+        # Check cache (versioned)
+        design_version = self._sm.get("design_version", 0) if hasattr(self._sm, "get") else 0
+        cache_key = f"{design_id}:{design_version}:{lod.value}"
         if self._config.enable_geometry_cache and cache_key in self._mesh_cache:
             mesh, mode, cached_time = self._mesh_cache[cache_key]
             cache_age = time.time() - cached_time
@@ -143,6 +144,7 @@ class GeometryService:
         # Try authoritative source
         try:
             hull_geom = self._grm_provider.get_hull_geometry(design_id)
+            logger.info(f"[AUTHORITATIVE] Hull geometry generated for {design_id}")
             mesh = self._tessellate_grm(hull_geom, lod)
             mode = GeometryMode.AUTHORITATIVE
 
@@ -160,7 +162,7 @@ class GeometryService:
 
             elapsed = time.time() - start_time
             logger.info(
-                f"Generated authoritative hull geometry for {design_id} "
+                f"[AUTHORITATIVE] Tessellated {design_id} "
                 f"(LOD: {lod.value}, vertices: {mesh.vertex_count}, time: {elapsed:.2f}s)"
             )
 
@@ -169,32 +171,31 @@ class GeometryService:
 
             return mesh, mode
 
-        except GeometryUnavailableError:
-            if allow_visual_only:
-                logger.warning(
-                    f"GRM unavailable for {design_id}, using visual-only approximation. "
-                    "Results may not match engineering calculations."
-                )
-                mesh = self._generate_visual_approximation(design_id, lod)
-                mode = GeometryMode.VISUAL_ONLY
+        except GeometryUnavailableError as e:
+            logger.warning(f"[VISUAL-ONLY] GRM unavailable for {design_id}: {e}")
 
-                # Cache result
-                if self._config.enable_geometry_cache:
-                    self._mesh_cache[cache_key] = (mesh, mode, time.time())
-
-                elapsed = time.time() - start_time
-                logger.info(
-                    f"Generated visual-only hull geometry for {design_id} "
-                    f"(LOD: {lod.value}, vertices: {mesh.vertex_count}, time: {elapsed:.2f}s)"
-                )
-
-                # Emit event with visual-only flag
-                self._emit_geometry_ready(design_id, mesh, mode, lod)
-
-                return mesh, mode
-            else:
-                # Re-raise without fallback
+            if not allow_visual_only:
+                logger.error(f"[BLOCKED] Visual-only not permitted, raising error")
                 raise
+
+            logger.warning(f"[FALLBACK] Using visual-only approximation for {design_id}")
+            mesh = self._generate_visual_approximation(design_id, lod)
+            mode = GeometryMode.VISUAL_ONLY
+
+            # Cache result
+            if self._config.enable_geometry_cache:
+                self._mesh_cache[cache_key] = (mesh, mode, time.time())
+
+            elapsed = time.time() - start_time
+            logger.info(
+                f"[VISUAL-ONLY] Tessellated {design_id} "
+                f"(LOD: {lod.value}, vertices: {mesh.vertex_count}, time: {elapsed:.2f}s)"
+            )
+
+            # Emit event with visual-only flag
+            self._emit_geometry_ready(design_id, mesh, mode, lod)
+
+            return mesh, mode
 
         except Exception as e:
             logger.exception(f"Hull geometry generation failed: {e}")
