@@ -418,6 +418,10 @@ def _extract_all_numeric_patterns(text: str) -> List[Tuple[Action, str]]:
 
         # Determine path based on unit and local keyword
         path = _infer_path_from_unit_with_keyword(unit, local_context, text)
+        # If the local keyword is unrecognized, fall back to full-context inference
+        # so that generic commands like "make it 10m longer" still map to a path.
+        if not path:
+            path = _infer_path_from_unit(unit, text)
         if path:
             value = _parse_value(value_str, path)
             actions.append((

@@ -265,6 +265,7 @@ def _compile_intent_with_llm_fallback(
 
     Returns preview payload with provenance and optional apply_payload (gated).
     """
+    logger.info(f"[intent_preview] mode={mode} design={design_id} text={getattr(request, 'text', '')!r}")
     import uuid
     from magnet.deployment.intent_parser import (
         parse_intent_to_actions,
@@ -283,6 +284,16 @@ def _compile_intent_with_llm_fallback(
         unsupported_mentions = compound.get("unsupported_mentions", [])
     else:
         actions = parse_intent_to_actions(request.text)
+
+    logger.info(
+        "[intent_preview] deterministic_extract",
+        extra={
+            "design_id": design_id,
+            "mode": mode,
+            "text": getattr(request, "text", ""),
+            "det_actions": len(actions),
+        },
+    )
 
     def _serialize_actions(actions_list):
         return [
@@ -1296,6 +1307,15 @@ def create_fastapi_app(context: "AppContext" = None):
         unsupported_mentions = compound["unsupported_mentions"]
 
         if not proposed_actions:
+            if llm_client:
+                return _compile_intent_with_llm_fallback(
+                    design_id=design_id,
+                    request=request,
+                    state_manager=state_manager,
+                    validator=validator,
+                    mode="compound",
+                    llm_client=llm_client,
+                )
             return {
                 "preview": True,
                 "intent_mode": "compound",
