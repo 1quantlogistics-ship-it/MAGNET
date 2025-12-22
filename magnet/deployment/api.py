@@ -845,6 +845,95 @@ def create_fastapi_app(context: "AppContext" = None):
             raise HTTPException(status_code=500, detail=str(e))
 
     # =========================================================================
+    # Design Revert Endpoints (Undo / Restore Version)
+    # =========================================================================
+
+    @app.post("/api/v1/designs/{design_id}/undo")
+    async def undo_design(
+        design_id: str,
+        state_manager=Depends(get_state_manager),
+    ):
+        """
+        Revert to the previous committed design_version (design_version - 1).
+        """
+        from magnet.ui.utils import get_state_value
+
+        if not state_manager:
+            raise HTTPException(status_code=503, detail="StateManager not available")
+
+        current_id = get_state_value(state_manager, "metadata.design_id")
+        if current_id != design_id:
+            raise HTTPException(status_code=404, detail="Design not found")
+
+        target_version = max(state_manager.design_version - 1, 0)
+        if target_version == state_manager.design_version:
+            raise HTTPException(status_code=400, detail="No previous version to revert to")
+
+        success = False
+        try:
+            success = state_manager.revert_to_version(target_version)
+        except Exception as e:
+            logger.error(f"Undo failed: {e}")
+            raise HTTPException(status_code=500, detail="Undo failed")
+
+        if not success:
+            raise HTTPException(status_code=404, detail="Target version not found")
+
+        ws_manager.queue_message(WSMessage(
+            type="design_reverted",
+            design_id=design_id,
+            payload={"design_version": target_version},
+        ))
+
+        return {
+            "success": True,
+            "design_version": state_manager.design_version,
+        }
+
+    @app.post("/api/v1/designs/{design_id}/versions/{version}/restore")
+    async def restore_design_version(
+        design_id: str,
+        version: int,
+        state_manager=Depends(get_state_manager),
+    ):
+        """
+        Restore a specific design_version.
+        """
+        from magnet.ui.utils import get_state_value
+
+        if not state_manager:
+            raise HTTPException(status_code=503, detail="StateManager not available")
+
+        current_id = get_state_value(state_manager, "metadata.design_id")
+        if current_id != design_id:
+            raise HTTPException(status_code=404, detail="Design not found")
+
+        try:
+            version = int(version)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid version")
+
+        try:
+            success = state_manager.revert_to_version(version)
+        except Exception as e:
+            logger.error(f"Restore failed: {e}")
+            raise HTTPException(status_code=500, detail="Restore failed")
+
+        if not success:
+            raise HTTPException(status_code=404, detail="Version not found")
+
+        ws_manager.queue_message(WSMessage(
+            type="design_reverted",
+            design_id=design_id,
+            payload={"design_version": version},
+        ))
+
+        return {
+            "success": True,
+            "design_version": state_manager.design_version,
+        }
+
+    # =========================================================================
     # Intent Preview Endpoint (Module 63 / 65.1)
     # =========================================================================
 

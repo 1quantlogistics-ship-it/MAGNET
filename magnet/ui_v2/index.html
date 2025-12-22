@@ -2591,6 +2591,15 @@
             config.authToken = authToken;
         }
 
+        // Persist design param in URL without reload
+        try {
+            const url = new URL(window.location.href);
+            url.searchParams.set('design', designId);
+            window.history.replaceState({}, '', url.toString());
+        } catch (e) {
+            console.warn('[MAGNET] Failed to persist design param:', e);
+        }
+
         // Check if backend adapter is loaded
         if (typeof MAGNETBackendAdapter === 'undefined') {
             console.error('[MAGNET] Backend adapter not loaded!');
