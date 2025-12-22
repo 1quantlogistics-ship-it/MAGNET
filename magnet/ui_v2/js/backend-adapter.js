@@ -348,27 +348,14 @@ class MAGNETBackendAdapter {
             MagnetStudio.setStatus('Processing', 'processing');
             MagnetStudio.terminal.print(`> ${command}`);
 
+            if (!this.designId) {
+                MagnetStudio.terminal.error('No design selected. Add ?design= or pick a design first.');
+                MagnetStudio.setStatus('Error', 'error');
+                MagnetStudio.terminal.cursor();
+                return;
+            }
+
             const cmd = command.trim().toLowerCase();
-
-            // Handle apply/cancel for pending preview
-            if (cmd === 'apply') {
-                if (this._pendingPreview) {
-                    await this._applyPendingPreview();
-                } else {
-                    MagnetStudio.terminal.info('No pending preview to apply');
-                }
-                MagnetStudio.setStatus('Ready');
-                MagnetStudio.terminal.cursor();
-                return;
-            }
-
-            if (cmd === 'cancel') {
-                this._pendingPreview = null;
-                MagnetStudio.terminal.info('Preview cancelled');
-                MagnetStudio.setStatus('Ready');
-                MagnetStudio.terminal.cursor();
-                return;
-            }
 
             // Module 64: Reload geometry command
             if (cmd === 'reload' || cmd === 'reload geometry') {
@@ -378,7 +365,27 @@ class MAGNETBackendAdapter {
                 return;
             }
 
-            // Natural language → preview via Intent API (Module 65.1: compound mode)
+            // Undo / revert commands
+            if (cmd === 'undo' || cmd === 'revert' || cmd === 'go back') {
+                await this._undo();
+                MagnetStudio.setStatus('Ready');
+                MagnetStudio.terminal.cursor();
+                return;
+            }
+
+            if (cmd.startsWith('restore version')) {
+                const parts = cmd.split(' ');
+                const versionStr = parts[parts.length - 1];
+                const versionNum = parseInt(versionStr, 10);
+                if (!isNaN(versionNum)) {
+                    await this._restoreVersion(versionNum);
+                    MagnetStudio.setStatus('Ready');
+                    MagnetStudio.terminal.cursor();
+                    return;
+                }
+            }
+
+            // Natural language → validate then auto-apply (compound mode)
             try {
                 console.log('[MAGNET] Sending command to API:', command);
                 const preview = await this.post(
@@ -387,97 +394,64 @@ class MAGNETBackendAdapter {
                 );
                 console.log('[MAGNET] API Response:', preview);
 
-                // Module 65.1: Handle compound mode response
-                if (preview.intent_mode === 'compound') {
-                    // Check if we have any proposed actions
-                    if (!preview.proposed_actions?.length && !preview.approved?.length) {
-                        MagnetStudio.terminal.info(preview.guidance || 'No actions recognized');
-                        MagnetStudio.terminal.info('Try: "60m aluminum catamaran ferry"');
-                        MagnetStudio.setStatus('Ready');
-                        MagnetStudio.terminal.cursor();
-                        return;
-                    }
+                const approved = preview.approved || [];
+                const proposed = preview.proposed_actions || [];
+                const hasActions = approved.length || proposed.length;
 
-                    // 1. Show "MAGNET understood" (approved actions)
-                    const understood = preview.approved || [];
-                    if (understood.length) {
-                        MagnetStudio.terminal.info('MAGNET understood:');
-                        understood.forEach(a => {
-                            MagnetStudio.terminal.data([
-                                { key: a.path, value: `${a.value}${a.unit ? ' ' + a.unit : ''}` }
-                            ]);
-                        });
-                    }
+                if (!hasActions) {
+                    MagnetStudio.terminal.info(preview.guidance || 'No actions recognized');
+                    MagnetStudio.terminal.info('Try: "60m aluminum catamaran ferry"');
+                    MagnetStudio.setStatus('Ready');
+                    MagnetStudio.terminal.cursor();
+                    return;
+                }
 
-                    // Show rejected if any
-                    if (preview.rejected?.length) {
-                        MagnetStudio.terminal.info('');
-                        preview.rejected.forEach(r => {
-                            MagnetStudio.terminal.error(`${r.action?.path || 'unknown'}: ${r.reason}`);
-                        });
-                    }
-
-                    // 2. Show "MAGNET needs" (missing_required)
-                    if (preview.missing_required?.length) {
-                        MagnetStudio.terminal.info('');
-                        MagnetStudio.terminal.info('MAGNET needs:');
-                        preview.missing_required.forEach(m => {
-                            MagnetStudio.terminal.info(`  ○ ${m.path}: ${m.reason}`);
-                        });
-                    }
-
-                    // 3. Show "Can't yet model" (unsupported_mentions)
-                    if (preview.unsupported_mentions?.length) {
-                        MagnetStudio.terminal.info('');
-                        MagnetStudio.terminal.info("MAGNET can't yet model:");
-                        preview.unsupported_mentions.forEach(u => {
-                            MagnetStudio.terminal.info(`  "${u.text}" → ${u.future || 'future support'}`);
-                        });
-                    }
-
-                    // Show warnings
-                    if (preview.warnings?.length) {
-                        preview.warnings.forEach(w => MagnetStudio.terminal.info(`⚠ ${w}`));
-                    }
-
-                    // 4. Store for apply and show prompt
-                    this._pendingPreview = preview;
-                    MagnetStudio.terminal.info('');
-                    if (preview.intent_status === 'complete') {
-                        MagnetStudio.terminal.success('All requirements met');
-                    }
-                    MagnetStudio.terminal.info('Type "apply" to execute, or add missing fields');
-
-                } else {
-                    // Legacy single-action mode fallback
-                    if (!preview.approved?.length) {
-                        MagnetStudio.terminal.info(preview.guidance || 'No actions recognized');
-                        MagnetStudio.terminal.info('Try: "set hull length to 30 meters"');
-                        MagnetStudio.setStatus('Ready');
-                        MagnetStudio.terminal.cursor();
-                        return;
-                    }
-
-                    MagnetStudio.terminal.info('Preview:');
-                    preview.approved.forEach(a => {
+                // Show understanding
+                if (approved.length) {
+                    MagnetStudio.terminal.info('MAGNET understood:');
+                    approved.forEach(a => {
                         MagnetStudio.terminal.data([
                             { key: a.path, value: `${a.value}${a.unit ? ' ' + a.unit : ''}` }
                         ]);
                     });
-
-                    if (preview.rejected?.length) {
-                        preview.rejected.forEach(r => {
-                            MagnetStudio.terminal.error(`${r.action.path}: ${r.reason}`);
-                        });
-                    }
-
-                    if (preview.warnings?.length) {
-                        preview.warnings.forEach(w => MagnetStudio.terminal.info(`⚠ ${w}`));
-                    }
-
-                    this._pendingPreview = preview;
-                    MagnetStudio.terminal.info('Type "apply" to execute, or "cancel" to discard');
                 }
+
+                if (preview.rejected?.length) {
+                    MagnetStudio.terminal.info('');
+                    preview.rejected.forEach(r => {
+                        MagnetStudio.terminal.error(`${r.action?.path || 'unknown'}: ${r.reason}`);
+                    });
+                }
+
+                if (preview.missing_required?.length) {
+                    MagnetStudio.terminal.info('');
+                    MagnetStudio.terminal.info('MAGNET needs:');
+                    preview.missing_required.forEach(m => {
+                        MagnetStudio.terminal.info(`  ○ ${m.path}: ${m.reason}`);
+                    });
+                }
+
+                if (preview.unsupported_mentions?.length) {
+                    MagnetStudio.terminal.info('');
+                    MagnetStudio.terminal.info("MAGNET can't yet model:");
+                    preview.unsupported_mentions.forEach(u => {
+                        MagnetStudio.terminal.info(`  "${u.text}" → ${u.future || 'future support'}`);
+                    });
+                }
+
+                if (preview.warnings?.length) {
+                    preview.warnings.forEach(w => MagnetStudio.terminal.info(`⚠ ${w}`));
+                }
+
+                if (!preview.apply_payload) {
+                    MagnetStudio.terminal.error('No apply payload returned; nothing applied');
+                    MagnetStudio.setStatus('Ready');
+                    MagnetStudio.terminal.cursor();
+                    return;
+                }
+
+                // Auto-apply immediately
+                await this._applyPreview(preview);
 
             } catch (error) {
                 MagnetStudio.terminal.error(error.message);
@@ -537,10 +511,46 @@ class MAGNETBackendAdapter {
         });
     }
 
+    // Undo last version
+    async _undo() {
+        try {
+            const result = await this.post(`/api/v1/designs/${this.designId}/undo`, {});
+            if (result.success) {
+                const v = result.design_version;
+                this._lastDesignVersion = v;
+                window.magnetThreeScene?.setDesignVersion?.(v);
+                MagnetStudio.terminal.success(`Reverted to version ${v}`);
+                await this._loadHullGeometry();
+            } else {
+                MagnetStudio.terminal.error('Undo failed');
+            }
+        } catch (error) {
+            MagnetStudio.terminal.error(error.message || 'Undo failed');
+        }
+    }
+
+    // Restore specific version
+    async _restoreVersion(version) {
+        try {
+            const result = await this.post(`/api/v1/designs/${this.designId}/versions/${version}/restore`, {});
+            if (result.success) {
+                const v = result.design_version;
+                this._lastDesignVersion = v;
+                window.magnetThreeScene?.setDesignVersion?.(v);
+                MagnetStudio.terminal.success(`Restored version ${v}`);
+                await this._loadHullGeometry();
+            } else {
+                MagnetStudio.terminal.error('Restore failed');
+            }
+        } catch (error) {
+            MagnetStudio.terminal.error(error.message || 'Restore failed');
+        }
+    }
+
     // Module 63.2: Apply pending preview via /actions endpoint
-    async _applyPendingPreview() {
-        if (!this._pendingPreview?.apply_payload) {
-            MagnetStudio.terminal.error('No pending preview to apply');
+    async _applyPreview(preview) {
+        if (!preview?.apply_payload) {
+            MagnetStudio.terminal.error('No apply payload to execute');
             return;
         }
 
@@ -549,7 +559,7 @@ class MAGNETBackendAdapter {
         try {
             const result = await this.post(
                 `/api/v1/designs/${this.designId}/actions`,
-                this._pendingPreview.apply_payload
+                preview.apply_payload
             );
 
             if (result.success) {
@@ -573,6 +583,9 @@ class MAGNETBackendAdapter {
                     const backendPhase = PhaseIdMapper.uiToBackend(phase);
                     await this.post(`/api/v1/designs/${this.designId}/phases/${backendPhase}/run`, {});
                 }
+
+                // Auto-refresh geometry after commit
+                await this._loadHullGeometry();
             } else {
                 MagnetStudio.terminal.error('Apply failed');
                 if (result.rejections?.length) {
@@ -581,11 +594,7 @@ class MAGNETBackendAdapter {
                     });
                 }
             }
-
-            this._pendingPreview = null;
-
         } catch (error) {
-            // Module 64: Better error messages for common HTTP errors
             const msg = error.message || '';
             if (msg.includes('409')) {
                 MagnetStudio.terminal.error('Design changed since preview');
@@ -595,7 +604,6 @@ class MAGNETBackendAdapter {
             } else {
                 MagnetStudio.terminal.error(msg || 'Apply failed');
             }
-            this._pendingPreview = null;
         }
     }
 
@@ -670,6 +678,9 @@ class MAGNETBackendAdapter {
             }
 
             MagnetStudio.terminal.success('Design loaded');
+            const designVersion = design.design_version ?? design.metadata?.design_version ?? 0;
+            MagnetStudio.setStatus(`Ready (v${designVersion})`);
+            MagnetStudio.terminal.info(`Design ${this.designId} v${designVersion}`);
 
             // Auto-load geometry on connect
             // Attempt load and treat 404 as "no geometry yet" (silent fail)

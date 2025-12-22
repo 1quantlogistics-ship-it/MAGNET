@@ -82,6 +82,13 @@ class MAGNETSceneManager {
 
         const gltf = await this.loader.parseAsync(arrayBuffer, '');
 
+        if (headerGeometryMode && headerGeometryMode !== 'authoritative') {
+            MagnetStudio?.setStatus?.(`Non-authoritative geometry (${headerGeometryMode})`, 'warning');
+            MagnetStudio?.terminal?.warning?.(`Geometry mode: ${headerGeometryMode}`);
+        } else {
+            MagnetStudio?.setStatus?.('Ready');
+        }
+
         if (this.hull) this.scene.remove(this.hull);
         this.hull = gltf.scene;
         this.scene.add(this.hull);
