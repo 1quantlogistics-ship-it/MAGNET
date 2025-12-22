@@ -64,17 +64,35 @@ class MAGNETSceneManager {
     }
 
     async loadGLB(url) {
-        const gltf = await this.loader.loadAsync(url);
+        const response = await fetch(url, { cache: 'no-store' });
+
+        const headerDesignId = response.headers.get('X-Design-Id');
+        const headerDesignVersion = response.headers.get('X-Design-Version');
+        const headerGeometryMode = response.headers.get('X-Geometry-Mode');
+
+        if (this._designId && headerDesignId && headerDesignId !== this._designId) {
+            throw new Error(`Design mismatch: expected ${this._designId}, got ${headerDesignId}`);
+        }
+
+        if (this._designVersion !== undefined && headerDesignVersion && String(this._designVersion) !== headerDesignVersion) {
+            throw new Error(`Design version mismatch: expected ${this._designVersion}, got ${headerDesignVersion}`);
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+
+        const gltf = await this.loader.parseAsync(arrayBuffer, '');
 
         if (this.hull) this.scene.remove(this.hull);
         this.hull = gltf.scene;
         this.scene.add(this.hull);
 
-        // Replace all materials with flat unlit gray - ignores lighting completely
-        const flatMaterial = new THREE.MeshBasicMaterial({
-            color: 0x888888,        // Medium gray
+        // Replace all materials with lit standard material - uses normals for shading
+        const hullMaterial = new THREE.MeshStandardMaterial({
+            color: 0x6688aa,        // Steel blue-gray
             side: THREE.DoubleSide, // Render both sides
-            wireframe: false,
+            roughness: 0.7,
+            metalness: 0.3,
+            flatShading: false,     // Use smooth shading with vertex normals
             polygonOffset: true,    // Help with z-fighting
             polygonOffsetFactor: 1,
             polygonOffsetUnits: 1
@@ -82,7 +100,12 @@ class MAGNETSceneManager {
 
         this.hull.traverse(child => {
             if (child.isMesh) {
-                child.material = flatMaterial;
+                child.material = hullMaterial;
+                // Ensure normals exist - compute if missing
+                if (!child.geometry.attributes.normal) {
+                    console.warn('[MAGNET] Missing normals, computing...');
+                    child.geometry.computeVertexNormals();
+                }
             }
         });
 
