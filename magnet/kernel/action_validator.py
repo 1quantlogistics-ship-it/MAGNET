@@ -20,6 +20,50 @@ from magnet.kernel.intent_protocol import Action, ActionPlan, ActionType
 from magnet.core.refinable_schema import REFINABLE_SCHEMA, RefinableField, is_refinable
 from magnet.core.unit_converter import UnitConverter, UnitConversionError, clamp_to_bounds
 
+# =============================================================================
+# KERNEL-OWNED BASELINES AND BUCKET DELTA POLICY (v67.x)
+# =============================================================================
+
+# Deterministic baselines used when applying deltas to unset values
+_BASELINE_VALUES: Dict[str, float] = {
+    # Hull
+    "hull.loa": 30.0,
+    "hull.beam": 8.0,
+    "hull.draft": 2.0,
+    "hull.depth": 4.0,
+    # Mission
+    "mission.max_speed_kts": 25.0,
+    "mission.cruise_speed_kts": 18.0,
+    "mission.range_nm": 500.0,
+    "mission.crew_berthed": 6,
+    "mission.passengers": 50,
+    # Propulsion
+    "propulsion.total_installed_power_kw": 2000.0,
+}
+
+# Path-aware bucket delta policy (absolute steps or bounded percentages)
+_DELTA_POLICY: Dict[str, Dict[str, float]] = {
+    # Hull (absolute meters)
+    "hull.loa": {"type": "absolute", "a_bit": 1.0, "normal": 2.0, "way": 5.0},
+    "hull.beam": {"type": "absolute", "a_bit": 0.2, "normal": 0.5, "way": 1.0},
+    "hull.draft": {"type": "absolute", "a_bit": 0.10, "normal": 0.25, "way": 0.50},
+    "hull.depth": {"type": "absolute", "a_bit": 0.20, "normal": 0.50, "way": 1.00},
+    # Mission (absolute kts / nm / counts)
+    "mission.max_speed_kts": {"type": "absolute", "a_bit": 1.0, "normal": 3.0, "way": 7.0},
+    "mission.cruise_speed_kts": {"type": "absolute", "a_bit": 1.0, "normal": 2.0, "way": 5.0},
+    "mission.range_nm": {"type": "absolute", "a_bit": 50.0, "normal": 200.0, "way": 500.0},
+    "mission.crew_berthed": {"type": "absolute", "a_bit": 1.0, "normal": 3.0, "way": 8.0},
+    "mission.passengers": {"type": "absolute", "a_bit": 10.0, "normal": 50.0, "way": 200.0},
+    # Propulsion (bounded percent with floor, kW)
+    "propulsion.total_installed_power_kw": {
+        "type": "percent",
+        "a_bit": 0.05,
+        "normal": 0.15,
+        "way": 0.35,
+        "min_abs": 100.0,
+    },
+}
+
 if TYPE_CHECKING:
     from magnet.core.state_manager import StateManager
 
@@ -299,29 +343,90 @@ class ActionPlanValidator:
                 reason=f"Parameter locked by earlier action in same plan: {action.path}"
             )
 
-        # 3. Get current value
-        current = state_manager.get(action.path)
-        if current is None:
-            return ActionValidation(
-                approved=False,
-                reason=f"Cannot apply delta to unset value: {action.path}"
-            )
+        # 3. Get current value (prefer get_strict to detect unset)
+        current = None
+        try:
+            if hasattr(state_manager, "get_strict"):
+                current = state_manager.get_strict(action.path)
+                # Handle sentinel if available
+                try:
+                    from magnet.core.state_manager import MISSING
 
-        # 4. Normalize amount unit
-        amount = action.amount
-        if action.unit and action.unit != field.kernel_unit:
-            if action.unit not in field.allowed_units:
-                return ActionValidation(
-                    approved=False,
-                    reason=f"Unit not allowed for {action.path}: {action.unit}"
-                )
+                    if current is MISSING:
+                        current = None
+                except Exception:
+                    pass
+        except Exception:
+            current = None
+
+        if current is None:
             try:
-                amount = UnitConverter.normalize(amount, action.unit, field.kernel_unit)
-            except UnitConversionError as e:
+                current = state_manager.get(action.path)
+            except Exception:
+                current = None
+
+        if current is None:
+            if action.path in _BASELINE_VALUES:
+                current = _BASELINE_VALUES[action.path]
+                warnings.append(f"baseline_used:{action.path}={_BASELINE_VALUES[action.path]}")
+            else:
                 return ActionValidation(
                     approved=False,
-                    reason=f"Unit conversion failed: {e}"
+                    reason=f"Cannot apply delta to unset value: {action.path}"
                 )
+
+        # 4. Determine amount (bucket-aware or unit-normalized)
+        is_bucket = bool(action.unit) and str(action.unit).startswith("bucket:")
+        amount = action.amount
+
+        if (amount is None) and (is_bucket or (action.unit is None and action.path in _DELTA_POLICY)):
+            bucket = "normal"
+            if is_bucket:
+                _, _, bucket_token = str(action.unit).partition(":")
+                bucket = bucket_token or "normal"
+            policy = _DELTA_POLICY.get(action.path)
+            if not policy:
+                return ActionValidation(
+                    approved=False,
+                    reason=f"Bucket delta not allowed for path: {action.path}"
+                )
+            if bucket not in policy:
+                return ActionValidation(
+                    approved=False,
+                    reason=f"Bucket '{bucket}' not allowed for path: {action.path}"
+                )
+
+            if policy.get("type") == "absolute":
+                amount = policy[bucket]
+            elif policy.get("type") == "percent":
+                pct = policy[bucket]
+                min_abs = policy.get("min_abs", 0.0)
+                amount = max(current * pct, min_abs)
+            else:
+                return ActionValidation(
+                    approved=False,
+                    reason=f"Unknown bucket policy type for path: {action.path}"
+                )
+        else:
+            # Non-bucket path: normalize units if provided
+            if amount is None:
+                return ActionValidation(
+                    approved=False,
+                    reason=f"Delta amount is required for {action.path}"
+                )
+            if action.unit and action.unit != field.kernel_unit:
+                if action.unit not in field.allowed_units:
+                    return ActionValidation(
+                        approved=False,
+                        reason=f"Unit not allowed for {action.path}: {action.unit}"
+                    )
+                try:
+                    amount = UnitConverter.normalize(amount, action.unit, field.kernel_unit)
+                except UnitConversionError as e:
+                    return ActionValidation(
+                        approved=False,
+                        reason=f"Unit conversion failed: {e}"
+                    )
 
         # 5. Calculate new value
         if action.action_type == ActionType.INCREASE:
@@ -337,6 +442,12 @@ class ActionPlanValidator:
                 f"(bounds: {field.min_value}-{field.max_value})"
             )
             new_value = clamped
+
+        # 7. Type coercion for numeric/int fields
+        if field.type == "int":
+            new_value = int(round(new_value))
+        elif field.type == "float":
+            new_value = float(new_value)
 
         # Convert delta action to SET action with computed value
         return ActionValidation(

@@ -24,6 +24,10 @@ class MockStateManager:
         self._data = {}
         self._locked = set()
         self._in_transaction = False
+        self._active_txn = None
+        self._snapshot = {}
+        self.rollback_called = False
+        self.last_source = None
 
     @property
     def design_version(self):
@@ -31,21 +35,30 @@ class MockStateManager:
 
     def begin_transaction(self):
         self._in_transaction = True
-        return "txn_001"
+        self._snapshot = dict(self._data)
+        self._active_txn = "txn_001"
+        return self._active_txn
 
     def commit(self):
         self._in_transaction = False
         self._state.design_version += 1
+        self._active_txn = None
+        self._snapshot = {}
         return self._state.design_version
 
-    def rollback_transaction(self):
+    def rollback_transaction(self, txn_id=None):
         self._in_transaction = False
+        self.rollback_called = True
+        # Restore snapshot to simulate atomic rollback
+        self._data = dict(self._snapshot)
+        self._active_txn = None
 
     def get(self, path):
         return self._data.get(path)
 
     def set(self, path, value, source=None):
         self._data[path] = value
+        self.last_source = source
 
     def is_locked(self, path):
         return path in self._locked
@@ -408,6 +421,33 @@ class TestPlanContext:
         assert len(events_received) == 1
         assert events_received[0].plan_id == "plan_001"
 
+    def test_executor_sets_source_includes_provenance_plan_and_intent(self):
+        """Source string includes provenance, plan_id, and intent_id."""
+        sm = MockStateManager()
+        executor = ActionExecutor(sm)
+
+        plan = ActionPlan(
+            plan_id="det_plan_123",
+            intent_id="intent_abc",
+            design_id="test_design",
+            design_version_before=0,
+            actions=[
+                Action(action_type=ActionType.SET, path="hull.loa", value=100.0),
+            ],
+            proposed_at=datetime.now(timezone.utc),
+        )
+
+        actions = [
+            Action(action_type=ActionType.SET, path="hull.loa", value=100.0),
+        ]
+
+        executor.execute(actions, plan)
+
+        assert sm.last_source is not None
+        assert "prov=deterministic" in sm.last_source
+        assert "plan=det_plan_123" in sm.last_source
+        assert "intent=intent_abc" in sm.last_source
+
 
 class TestTransactionHandling:
     """Tests for transaction handling."""
@@ -426,8 +466,8 @@ class TestTransactionHandling:
         # Transaction should be complete
         assert sm._in_transaction is False
 
-    def test_partial_success_on_action_error(self):
-        """Partial success when individual action fails."""
+    def test_execute_is_atomic_rolls_back_on_action_error(self):
+        """Any action error triggers rollback and no partial commit."""
         sm = MockStateManager()
 
         # Make set raise an exception
@@ -441,11 +481,10 @@ class TestTransactionHandling:
 
         result = executor.execute(actions)
 
-        # Overall result is success (commit still happens), but with errors
-        # The action itself failed, so actions_executed is 0
-        assert result.success is True
+        assert result.success is False
         assert result.actions_executed == 0
-        assert len(result.errors) > 0
+        assert sm.rollback_called is True
+        assert sm.design_version == 0  # no version bump
         assert "Set failed" in result.errors[0]
 
     def test_transaction_rolled_back_on_commit_error(self):
@@ -462,4 +501,5 @@ class TestTransactionHandling:
         result = executor.execute(actions)
 
         assert result.success is False
+        assert sm.rollback_called is True
         assert "Commit failed" in result.errors[0] or "Execution failed" in result.errors[0]

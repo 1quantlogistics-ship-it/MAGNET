@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MAGNET Debug Test</title>
+</head>
+<body>
+    <h1>MAGNET Debug Test</h1>
+    <div id="output" style="font-family: monospace; white-space: pre;"></div>
+    <script>
+        const out = document.getElementById('output');
+        function log(msg) {
+            out.textContent += msg + '\n';
+            console.log(msg);
+        }
+
+        async function runTests() {
+            log('=== MAGNET Debug Test ===\n');
+
+            // Test 1: Meta endpoint
+            log('1. Testing /api/v1/meta...');
+            try {
+                const metaResp = await fetch('/api/v1/meta');
+                const meta = await metaResp.json();
+                log('   OK: Backend version ' + meta.version);
+            } catch (e) {
+                log('   FAIL: ' + e.message);
+            }
+
+            // Test 2: Designs list
+            log('\n2. Testing /api/v1/designs...');
+            try {
+                const resp = await fetch('/api/v1/designs');
+                const data = await resp.json();
+                log('   Response: ' + JSON.stringify(data));
+                const designs = data.designs || [];
+                log('   Designs count: ' + designs.length);
+                if (designs.length > 0) {
+                    log('   First design: ' + designs[0].design_id + ' - ' + designs[0].name);
+                }
+            } catch (e) {
+                log('   FAIL: ' + e.message);
+            }
+
+            // Test 3: URL param
+            log('\n3. Checking URL parameters...');
+            const urlParams = new URLSearchParams(window.location.search);
+            const designId = urlParams.get('design');
+            log('   ?design= ' + (designId || '(not set)'));
+
+            // Test 4: Specific design
+            if (designId) {
+                log('\n4. Testing /api/v1/designs/' + designId + '...');
+                try {
+                    const resp = await fetch('/api/v1/designs/' + designId);
+                    if (resp.ok) {
+                        const design = await resp.json();
+                        log('   Name: ' + (design.metadata?.name || design.name || 'unknown'));
+                        log('   Hull LWL: ' + (design.hull?.lwl || 'not set'));
+                    } else {
+                        log('   FAIL: HTTP ' + resp.status);
+                    }
+                } catch (e) {
+                    log('   FAIL: ' + e.message);
+                }
+            }
+
+            // Test 5: GLB endpoint
+            const testDesignId = designId || 'MAGNET-20251220-0418';
+            log('\n5. Testing GLB endpoint for ' + testDesignId + '...');
+            try {
+                const resp = await fetch('/api/v1/designs/' + testDesignId + '/3d/export/glb');
+                if (resp.ok) {
+                    const blob = await resp.blob();
+                    log('   OK: ' + blob.size + ' bytes, type: ' + blob.type);
+                } else {
+                    log('   FAIL: HTTP ' + resp.status);
+                }
+            } catch (e) {
+                log('   FAIL: ' + e.message);
+            }
+
+            log('\n=== Done ===');
+        }
+
+        runTests();
+    </script>
+</body>
+</html>

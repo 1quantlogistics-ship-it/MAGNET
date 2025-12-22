@@ -65,6 +65,9 @@ class MAGNETSceneManager {
 
     async loadGLB(url) {
         const response = await fetch(url, { cache: 'no-store' });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status} loading GLB`);
+        }
 
         const headerDesignId = response.headers.get('X-Design-Id');
         const headerDesignVersion = response.headers.get('X-Design-Version');
@@ -80,7 +83,17 @@ class MAGNETSceneManager {
 
         const arrayBuffer = await response.arrayBuffer();
 
-        const gltf = await this.loader.parseAsync(arrayBuffer, '');
+        let gltf;
+        // GLTFLoader API varies by Three.js version. Some versions do not have parseAsync().
+        if (typeof this.loader?.parseAsync === 'function') {
+            gltf = await this.loader.parseAsync(arrayBuffer, '');
+        } else if (typeof this.loader?.parse === 'function') {
+            gltf = await new Promise((resolve, reject) => {
+                this.loader.parse(arrayBuffer, '', resolve, reject);
+            });
+        } else {
+            throw new Error('GLTFLoader parse API not available (missing parse/parseAsync)');
+        }
 
         if (headerGeometryMode && headerGeometryMode !== 'authoritative') {
             MagnetStudio?.setStatus?.(`Non-authoritative geometry (${headerGeometryMode})`, 'warning');
