@@ -23,6 +23,8 @@ import math
 
 from .schema import MeshData, SceneData, MaterialDef, BoundingBox, GeometryMode
 from .errors import ExportError
+from .contracts import MeshCategory, AttributePolicy
+from .gltf_builder import GLTFBuilder
 
 if TYPE_CHECKING:
     pass
@@ -197,7 +199,7 @@ class GeometryExporter:
             elif format == ExportFormat.OBJ:
                 data = self._export_obj(mesh)
             else:
-                raise ExportError(f"Unsupported format: {format}")
+                raise ExportError(format=format.value if hasattr(format, "value") else str(format), reason="unsupported_format")
 
             metadata.file_size_bytes = len(data)
 
@@ -286,7 +288,7 @@ class GeometryExporter:
             elif format == ExportFormat.OBJ:
                 data = self._export_scene_obj(meshes)
             else:
-                raise ExportError(f"Unsupported format: {format}")
+                raise ExportError(format=format.value if hasattr(format, "value") else str(format), reason="unsupported_format")
 
             metadata.file_size_bytes = len(data)
 
@@ -308,154 +310,23 @@ class GeometryExporter:
             )
 
     # =========================================================================
-    # glTF/GLB EXPORT
+    # glTF/GLB EXPORT (Module 67.3: Unified via GLTFBuilder)
     # =========================================================================
 
     def _export_gltf(self, mesh: MeshData, metadata: ExportMetadata, binary: bool = True) -> bytes:
-        """Export mesh to glTF/GLB format."""
-        # Build accessors and buffer views
-        buffer_data = io.BytesIO()
+        """
+        Export mesh to glTF/GLB format using unified GLTFBuilder.
 
-        # Position accessor
-        positions_offset = buffer_data.tell()
-        for i in range(0, len(mesh.vertices), 3):
-            buffer_data.write(struct.pack("<3f", mesh.vertices[i], mesh.vertices[i+1], mesh.vertices[i+2]))
-        positions_length = buffer_data.tell() - positions_offset
+        Module 67.3: All mesh writing now goes through GLTFBuilder.write_mesh_primitive()
+        to prevent divergence bugs like missing normals.
+        """
+        builder = GLTFBuilder(metadata)
 
-        # Calculate bounds
-        min_pos = [float('inf')] * 3
-        max_pos = [float('-inf')] * 3
-        for i in range(0, len(mesh.vertices), 3):
-            for j in range(3):
-                min_pos[j] = min(min_pos[j], mesh.vertices[i+j])
-                max_pos[j] = max(max_pos[j], mesh.vertices[i+j])
+        # Use hull policy by default for single mesh export
+        policy = AttributePolicy.for_category(MeshCategory.HULL)
+        builder.write_mesh_primitive(mesh, mesh.mesh_id or "hull", policy)
 
-        # Normal accessor
-        normals_offset = buffer_data.tell()
-        if mesh.normals:
-            for i in range(0, len(mesh.normals), 3):
-                buffer_data.write(struct.pack("<3f", mesh.normals[i], mesh.normals[i+1], mesh.normals[i+2]))
-        normals_length = buffer_data.tell() - normals_offset
-
-        # Index accessor
-        indices_offset = buffer_data.tell()
-        for idx in mesh.indices:
-            buffer_data.write(struct.pack("<I", idx))
-        indices_length = buffer_data.tell() - indices_offset
-
-        buffer_bytes = buffer_data.getvalue()
-
-        # Pad to 4-byte boundary
-        padding = (4 - len(buffer_bytes) % 4) % 4
-        buffer_bytes += b'\x00' * padding
-
-        # Build glTF JSON
-        gltf = {
-            "asset": {
-                "version": "2.0",
-                "generator": "MAGNET WebGL Exporter v1.1",
-                "extras": metadata.to_dict(),
-            },
-            "scene": 0,
-            "scenes": [{"nodes": [0]}],
-            "nodes": [{"mesh": 0, "name": mesh.mesh_id or "hull"}],
-            "meshes": [{
-                "primitives": [{
-                    "attributes": {"POSITION": 0},
-                    "indices": 2 if mesh.normals else 1,
-                    "mode": 4,  # TRIANGLES
-                }],
-                "name": mesh.mesh_id or "hull",
-            }],
-            "accessors": [
-                {
-                    "bufferView": 0,
-                    "byteOffset": 0,
-                    "componentType": 5126,  # FLOAT
-                    "count": mesh.vertex_count,
-                    "type": "VEC3",
-                    "min": min_pos,
-                    "max": max_pos,
-                },
-            ],
-            "bufferViews": [
-                {
-                    "buffer": 0,
-                    "byteOffset": positions_offset,
-                    "byteLength": positions_length,
-                    "target": 34962,  # ARRAY_BUFFER
-                },
-            ],
-            "buffers": [{"byteLength": len(buffer_bytes)}],
-        }
-
-        # Add normals if present
-        if mesh.normals:
-            gltf["meshes"][0]["primitives"][0]["attributes"]["NORMAL"] = 1
-            gltf["accessors"].append({
-                "bufferView": 1,
-                "byteOffset": 0,
-                "componentType": 5126,
-                "count": len(mesh.normals) // 3,
-                "type": "VEC3",
-            })
-            gltf["bufferViews"].append({
-                "buffer": 0,
-                "byteOffset": normals_offset,
-                "byteLength": normals_length,
-                "target": 34962,
-            })
-
-        # Add indices
-        idx_accessor_idx = len(gltf["accessors"])
-        gltf["meshes"][0]["primitives"][0]["indices"] = idx_accessor_idx
-        gltf["accessors"].append({
-            "bufferView": len(gltf["bufferViews"]),
-            "byteOffset": 0,
-            "componentType": 5125,  # UNSIGNED_INT
-            "count": len(mesh.indices),
-            "type": "SCALAR",
-        })
-        gltf["bufferViews"].append({
-            "buffer": 0,
-            "byteOffset": indices_offset,
-            "byteLength": indices_length,
-            "target": 34963,  # ELEMENT_ARRAY_BUFFER
-        })
-
-        if binary:
-            # GLB format
-            json_str = json.dumps(gltf, separators=(',', ':'))
-            json_bytes = json_str.encode('utf-8')
-
-            # Pad JSON to 4-byte boundary
-            json_padding = (4 - len(json_bytes) % 4) % 4
-            json_bytes += b' ' * json_padding
-
-            # Build GLB
-            output = io.BytesIO()
-
-            # Header
-            output.write(b'glTF')  # Magic
-            output.write(struct.pack("<I", 2))  # Version
-            total_length = 12 + 8 + len(json_bytes) + 8 + len(buffer_bytes)
-            output.write(struct.pack("<I", total_length))
-
-            # JSON chunk
-            output.write(struct.pack("<I", len(json_bytes)))
-            output.write(struct.pack("<I", 0x4E4F534A))  # JSON
-            output.write(json_bytes)
-
-            # BIN chunk
-            output.write(struct.pack("<I", len(buffer_bytes)))
-            output.write(struct.pack("<I", 0x004E4942))  # BIN
-            output.write(buffer_bytes)
-
-            return output.getvalue()
-        else:
-            # glTF JSON with embedded base64 buffer
-            gltf["buffers"][0]["uri"] = "data:application/octet-stream;base64," + base64.b64encode(buffer_bytes).decode('ascii')
-            return json.dumps(gltf, indent=2).encode('utf-8')
+        return builder.finalize(binary=binary)
 
     def _export_scene_gltf(
         self,
@@ -464,165 +335,47 @@ class GeometryExporter:
         metadata: ExportMetadata,
         binary: bool = True,
     ) -> bytes:
-        """Export multiple meshes to glTF/GLB."""
-        buffer_data = io.BytesIO()
+        """
+        Export multiple meshes to glTF/GLB using unified GLTFBuilder.
 
-        gltf = {
-            "asset": {
-                "version": "2.0",
-                "generator": "MAGNET WebGL Exporter v1.1",
-                "extras": metadata.to_dict(),
-            },
-            "scene": 0,
-            "scenes": [{"nodes": list(range(len(meshes)))}],
-            "nodes": [],
-            "meshes": [],
-            "accessors": [],
-            "bufferViews": [],
-            "buffers": [],
-        }
+        Module 67.3: All mesh writing now goes through GLTFBuilder.write_mesh_primitive()
+        to prevent divergence bugs like missing normals.
+        """
+        builder = GLTFBuilder(metadata)
 
         # Add materials if present
         if materials:
-            gltf["materials"] = []
-            for mat in materials:
-                # Convert hex color to RGB factors
-                color_hex = mat.color.lstrip('#')
-                if len(color_hex) == 6:
-                    r = int(color_hex[0:2], 16) / 255.0
-                    g = int(color_hex[2:4], 16) / 255.0
-                    b = int(color_hex[4:6], 16) / 255.0
-                else:
-                    r, g, b = 0.7, 0.7, 0.7  # Default gray
+            builder.add_materials(materials)
 
-                gltf_mat = {
-                    "name": mat.name,
-                    "pbrMetallicRoughness": {
-                        "baseColorFactor": [r, g, b, mat.opacity],
-                        "metallicFactor": mat.metalness,
-                        "roughnessFactor": mat.roughness,
-                    },
-                }
-                if mat.opacity < 1.0:
-                    gltf_mat["alphaMode"] = "BLEND"
-                gltf["materials"].append(gltf_mat)
-
+        # Write each mesh with appropriate policy
         for mesh_idx, (name, mesh) in enumerate(meshes):
-            # Position data
-            positions_offset = buffer_data.tell()
-            min_pos = [float('inf')] * 3
-            max_pos = [float('-inf')] * 3
+            # Log mesh stats for debugging (data path verification)
+            logger.debug(
+                f"Scene mesh '{name}': vertices={len(mesh.vertices)}, "
+                f"normals={len(mesh.normals) if mesh.normals else 0}"
+            )
 
-            for i in range(0, len(mesh.vertices), 3):
-                x, y, z = mesh.vertices[i], mesh.vertices[i+1], mesh.vertices[i+2]
-                buffer_data.write(struct.pack("<3f", x, y, z))
-                min_pos[0] = min(min_pos[0], x)
-                min_pos[1] = min(min_pos[1], y)
-                min_pos[2] = min(min_pos[2], z)
-                max_pos[0] = max(max_pos[0], x)
-                max_pos[1] = max(max_pos[1], y)
-                max_pos[2] = max(max_pos[2], z)
+            # Determine mesh category from name
+            if "hull" in name.lower():
+                category = MeshCategory.HULL
+            elif "deck" in name.lower():
+                category = MeshCategory.DECK
+            else:
+                category = MeshCategory.STRUCTURE
 
-            positions_length = buffer_data.tell() - positions_offset
-
-            # Index data
-            indices_offset = buffer_data.tell()
-            for idx in mesh.indices:
-                buffer_data.write(struct.pack("<I", idx))
-            indices_length = buffer_data.tell() - indices_offset
-
-            # Add node
-            gltf["nodes"].append({"mesh": mesh_idx, "name": name})
-
-            # Add buffer views
-            pos_bv_idx = len(gltf["bufferViews"])
-            gltf["bufferViews"].append({
-                "buffer": 0,
-                "byteOffset": positions_offset,
-                "byteLength": positions_length,
-                "target": 34962,
-            })
-
-            idx_bv_idx = len(gltf["bufferViews"])
-            gltf["bufferViews"].append({
-                "buffer": 0,
-                "byteOffset": indices_offset,
-                "byteLength": indices_length,
-                "target": 34963,
-            })
-
-            # Add accessors
-            pos_acc_idx = len(gltf["accessors"])
-            gltf["accessors"].append({
-                "bufferView": pos_bv_idx,
-                "byteOffset": 0,
-                "componentType": 5126,
-                "count": mesh.vertex_count,
-                "type": "VEC3",
-                "min": min_pos,
-                "max": max_pos,
-            })
-
-            idx_acc_idx = len(gltf["accessors"])
-            gltf["accessors"].append({
-                "bufferView": idx_bv_idx,
-                "byteOffset": 0,
-                "componentType": 5125,
-                "count": len(mesh.indices),
-                "type": "SCALAR",
-            })
-
-            # Add mesh
-            primitive = {
-                "attributes": {"POSITION": pos_acc_idx},
-                "indices": idx_acc_idx,
-                "mode": 4,
-            }
+            policy = AttributePolicy.for_category(category)
+            builder.write_mesh_primitive(mesh, name, policy)
 
             # Assign material based on mesh name
             if materials:
                 if "hull" in name.lower():
-                    primitive["material"] = 0
+                    builder.set_primitive_material(mesh_idx, 0)
                 elif "deck" in name.lower() and len(materials) > 1:
-                    primitive["material"] = 1
+                    builder.set_primitive_material(mesh_idx, 1)
                 elif "frame" in name.lower() or "structure" in name.lower():
-                    primitive["material"] = min(2, len(materials) - 1)
+                    builder.set_primitive_material(mesh_idx, min(2, len(materials) - 1))
 
-            gltf["meshes"].append({
-                "primitives": [primitive],
-                "name": name,
-            })
-
-        buffer_bytes = buffer_data.getvalue()
-        padding = (4 - len(buffer_bytes) % 4) % 4
-        buffer_bytes += b'\x00' * padding
-
-        gltf["buffers"].append({"byteLength": len(buffer_bytes)})
-
-        if binary:
-            json_str = json.dumps(gltf, separators=(',', ':'))
-            json_bytes = json_str.encode('utf-8')
-            json_padding = (4 - len(json_bytes) % 4) % 4
-            json_bytes += b' ' * json_padding
-
-            output = io.BytesIO()
-            output.write(b'glTF')
-            output.write(struct.pack("<I", 2))
-            total_length = 12 + 8 + len(json_bytes) + 8 + len(buffer_bytes)
-            output.write(struct.pack("<I", total_length))
-
-            output.write(struct.pack("<I", len(json_bytes)))
-            output.write(struct.pack("<I", 0x4E4F534A))
-            output.write(json_bytes)
-
-            output.write(struct.pack("<I", len(buffer_bytes)))
-            output.write(struct.pack("<I", 0x004E4942))
-            output.write(buffer_bytes)
-
-            return output.getvalue()
-        else:
-            gltf["buffers"][0]["uri"] = "data:application/octet-stream;base64," + base64.b64encode(buffer_bytes).decode('ascii')
-            return json.dumps(gltf, indent=2).encode('utf-8')
+        return builder.finalize(binary=binary)
 
     # =========================================================================
     # STL EXPORT

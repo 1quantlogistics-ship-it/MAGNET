@@ -300,6 +300,24 @@ class StateGeometryAdapter:
         return self._get_hull_value('bow_angle_deg', 25.0)
 
     @property
+    def hull_type(self) -> str:
+        """Hull type string."""
+        try:
+            from magnet.ui.utils import get_state_value
+            return get_state_value(self._sm, "hull.hull_type", "hard_chine")
+        except Exception:
+            return "hard_chine"
+
+    @property
+    def hull_spacing(self) -> float:
+        """Hull spacing for multihull (m)."""
+        # Try both naming conventions
+        spacing = self._get_hull_value('hull_spacing_m', 0.0)
+        if spacing == 0.0:
+            spacing = self._get_hull_value('hull_spacing', 0.0)
+        return spacing
+
+    @property
     def design_id(self) -> str:
         try:
             from magnet.ui.utils import get_state_value
@@ -333,46 +351,158 @@ class HullGeneratorAdapter:
 
     def get_hull_geometry(self, design_id: str) -> HullGeometryData:
         """Get hull geometry, generating if needed."""
-        # Check cache
-        if design_id in self._cache:
-            return self._cache[design_id]
+        # Build cache key from design_id + hull-affecting parameters
+        # This ensures cache invalidation when hull_type, spacing, or coefficients change
+        inputs = StateGeometryAdapter(self._sm)
+        cache_key = self._build_cache_key(design_id, inputs)
+
+        # Check cache with versioned key
+        if cache_key in self._cache:
+            return self._cache[cache_key]
 
         # Try to get from hull generator
         try:
             from magnet.hull_gen.generator import HullGenerator
-
-            # Get inputs
-            inputs = StateGeometryAdapter(self._sm)
-
-            # Generate geometry
-            generator = HullGenerator()
-            hull_geom = generator.generate(
-                loa=inputs.loa,
-                lwl=inputs.lwl,
-                beam=inputs.beam,
-                draft=inputs.draft,
-                cb=inputs.cb,
-                cp=inputs.cp,
-                cwp=inputs.cwp,
+            from magnet.hull_gen.parameters import (
+                HullDefinition,
+                MainDimensions,
+                FormCoefficients,
+                DeadriseProfile,
+                HullFeatures,
             )
+
+            # Build HullDefinition object (the correct interface)
+            hull_type = self._get_hull_type(inputs)
+
+            definition = HullDefinition(
+                hull_id=design_id,
+                hull_name=f"Design {design_id}",
+                hull_type=hull_type,
+                dimensions=MainDimensions(
+                    loa=inputs.loa,
+                    lwl=inputs.lwl,
+                    lpp=inputs.lwl * 0.98,  # PROVISIONAL - approximate LPP
+                    beam_max=inputs.beam,
+                    beam_wl=inputs.beam * 0.95,   # PROVISIONAL - refine via state or rules
+                    beam_chine=inputs.beam * 0.90, # PROVISIONAL - refine via state or rules
+                    depth=inputs.depth,
+                    draft=inputs.draft,
+                    draft_fwd=inputs.draft,  # PROVISIONAL - add trim support later
+                    draft_aft=inputs.draft,  # PROVISIONAL - add trim support later
+                    freeboard_bow=inputs.depth - inputs.draft + 0.5,
+                    freeboard_mid=inputs.depth - inputs.draft,
+                    freeboard_stern=inputs.depth - inputs.draft,
+                ),
+                coefficients=FormCoefficients(
+                    cb=inputs.cb,
+                    cp=inputs.cp,
+                    cm=inputs.cm,
+                    cwp=inputs.cwp,
+                    # PROVISIONAL DEFAULTS - to be overridden by LLM proposals or rule-based refinement
+                    lcb=0.52,  # Slightly aft of midship (typical for displacement hulls)
+                    lcf=0.50,  # At midship
+                ),
+                deadrise=DeadriseProfile.warped(
+                    transom=inputs.deadrise_deg,
+                    midship=inputs.deadrise_deg + 2,
+                    bow=inputs.deadrise_deg + 25,
+                ),
+                features=HullFeatures(
+                    transom_width_fraction=inputs.transom_width_ratio,
+                    bow_flare_deg=inputs.bow_angle_deg,
+                    hull_spacing=inputs.hull_spacing,
+                    num_hulls=2 if inputs.hull_type == "catamaran" else 1,
+                ),
+            )
+
+            # Validate definition
+            errors = definition.validate()
+            if errors:
+                logger.warning(f"HullDefinition validation warnings: {errors}")
+
+            # Compute derived properties
+            definition.compute_displacement()
+            definition.compute_waterplane_area()
+
+            # Generate geometry with correct signature
+            generator = HullGenerator()
+            hull_geom = generator.generate(definition)  # CORRECT
 
             # Convert to HullGeometryData
             data = self._convert_hull_geometry(hull_geom, design_id)
-            self._cache[design_id] = data
+            self._cache[cache_key] = data  # Cache with versioned key
             return data
 
-        except ImportError:
+        except ImportError as e:
             from magnet.webgl.errors import GeometryUnavailableError
             raise GeometryUnavailableError(
                 design_id=design_id,
-                reason="HullGenerator module not available",
+                reason=f"HullGenerator module not available: {e}",
             )
         except Exception as e:
             from magnet.webgl.errors import GeometryUnavailableError
+            logger.error(f"Hull generation failed: {e}", exc_info=True)
             raise GeometryUnavailableError(
                 design_id=design_id,
                 reason=str(e),
             )
+
+    def _build_cache_key(self, design_id: str, inputs: StateGeometryAdapter) -> str:
+        """
+        Build cache key that includes hull-affecting parameters.
+
+        Cache invalidates when any geometry-affecting parameter changes.
+        This prevents stale geometry when hull_type, spacing, or coefficients update.
+        """
+        import hashlib
+
+        # Include all parameters that affect hull geometry
+        try:
+            design_version = self._sm.get("design_version", 0) if hasattr(self._sm, "get") else 0
+        except Exception:
+            design_version = 0
+
+        key_parts = [
+            f"{design_id}:{design_version}",
+            str(inputs.hull_type),
+            f"{inputs.loa:.3f}",
+            f"{inputs.lwl:.3f}",
+            f"{inputs.beam:.3f}",
+            f"{inputs.draft:.3f}",
+            f"{inputs.depth:.3f}",
+            f"{inputs.cb:.4f}",
+            f"{inputs.cp:.4f}",
+            f"{inputs.cwp:.4f}",
+            f"{inputs.deadrise_deg:.1f}",
+            f"{inputs.hull_spacing:.3f}",
+        ]
+
+        key_string = "|".join(key_parts)
+        return hashlib.md5(key_string.encode()).hexdigest()[:16]
+
+    def _get_hull_type(self, inputs: StateGeometryAdapter) -> 'HullType':
+        """Get hull type from state, defaulting to HARD_CHINE."""
+        from magnet.hull_gen.enums import HullType
+
+        hull_type_str = inputs.hull_type
+
+        # Map string to enum
+        type_map = {
+            "hard_chine": HullType.HARD_CHINE,
+            "round_bilge": HullType.ROUND_BILGE,
+            "deep_v": HullType.DEEP_V_PLANING,
+            "deep_v_planing": HullType.DEEP_V_PLANING,
+            "semi_displacement": HullType.SEMI_DISPLACEMENT,
+            "catamaran": HullType.CATAMARAN,
+            "trimaran": HullType.TRIMARAN,
+            "swath": HullType.SWATH,
+        }
+
+        # Warn on unknown hull type (don't silently fall back)
+        if hull_type_str.lower() not in type_map:
+            logger.warning(f"Unknown hull_type '{hull_type_str}', defaulting to HARD_CHINE")
+
+        return type_map.get(hull_type_str.lower(), HullType.HARD_CHINE)
 
     def _convert_hull_geometry(self, hull_geom: Any, design_id: str) -> HullGeometryData:
         """Convert HullGenerator output to HullGeometryData."""
@@ -384,13 +514,19 @@ class HullGeneratorAdapter:
                 points = []
                 if hasattr(section, 'points'):
                     for pt in section.points:
-                        if hasattr(pt, 'x'):
+                        # Handle SectionPoint objects (have .position attribute)
+                        if hasattr(pt, 'position'):
+                            pos = pt.position
+                            points.append(Point3D(pos.x, pos.y, pos.z))
+                        # Handle Point3D directly
+                        elif hasattr(pt, 'x'):
                             points.append(Point3D(pt.x, pt.y, pt.z))
                         elif isinstance(pt, (list, tuple)) and len(pt) >= 3:
                             points.append(Point3D(pt[0], pt[1], pt[2]))
 
                 station = getattr(section, 'station', 0.0)
-                sections.append(HullSection(station=station, points=points))
+                x_position = getattr(section, 'x_position', station)
+                sections.append(HullSection(station=x_position, points=points))
 
         # Convert curves
         keel_profile = self._extract_curve(hull_geom, 'keel_profile')

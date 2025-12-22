@@ -290,11 +290,22 @@ def create_fastapi_app(context: "AppContext" = None):
     # Dependencies
     # =========================================================================
 
-    def get_state_manager():
+    def get_state_manager(design_id: str = None):
         if context and context.container:
             try:
                 from magnet.core.state_manager import StateManager
-                return context.container.resolve(StateManager)
+                from magnet.deployment.design_store import DesignStore, DesignNotFound
+
+                store = DesignStore(context.container)
+                if design_id:
+                    return store.load(design_id)
+
+                # Fallback to currently loaded design (if any) for non-parameterized dependencies.
+                sm = context.container.resolve(StateManager)
+                return sm
+            except DesignNotFound as e:
+                logger.warning(str(e))
+                return None
             except Exception as e:
                 logger.warning(f"Could not resolve StateManager: {e}")
         return None
