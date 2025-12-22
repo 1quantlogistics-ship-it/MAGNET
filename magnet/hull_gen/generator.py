@@ -86,6 +86,13 @@ class HullGenerator:
 
     def _generate_sections(self, definition: HullDefinition) -> List[HullSection]:
         """Generate transverse sections."""
+        if definition.hull_type == HullType.CATAMARAN:
+            return self._generate_catamaran_sections(definition)
+        else:
+            return self._generate_monohull_sections(definition)
+
+    def _generate_monohull_sections(self, definition: HullDefinition) -> List[HullSection]:
+        """Generate sections for monohull (existing logic)."""
         sections = []
         lwl = definition.dimensions.lwl
         num_sections = self.config.num_sections
@@ -98,6 +105,151 @@ class HullGenerator:
             sections.append(section)
 
         return sections
+
+    def _generate_catamaran_sections(self, definition: HullDefinition) -> List[HullSection]:
+        """
+        Generate sections for catamaran.
+
+        Catamaran has two demihulls offset from centerline.
+        Each demihull is slender (beam = total_beam / 4 typical).
+
+        The sections represent the PORT demihull only (y > 0).
+        The tessellator will mirror to create the starboard demihull.
+        """
+        import logging
+        logger = logging.getLogger("hull_gen.generator")
+
+        sections = []
+        lwl = definition.dimensions.lwl
+        num_sections = self.config.num_sections
+
+        # Get hull spacing (distance between hull centerlines)
+        hull_spacing = definition.features.hull_spacing
+        if hull_spacing <= 0:
+            # Default: spacing = 0.25 * LOA (typical for catamarans)
+            hull_spacing = lwl * 0.25
+            logger.debug(f"Using default hull_spacing: {hull_spacing:.2f}m")
+
+        # Demihull beam is typically 1/4 of total beam (PROVISIONAL heuristic)
+        demihull_beam = definition.dimensions.beam_max / 4
+
+        # Validation: warn if demihull beam seems unreasonable
+        if demihull_beam < 0.1 * definition.dimensions.beam_max:
+            logger.warning(f"Demihull beam ({demihull_beam:.2f}m) unusually narrow — check hull_spacing")
+        if demihull_beam > 0.4 * definition.dimensions.beam_max:
+            logger.warning(f"Demihull beam ({demihull_beam:.2f}m) unusually wide for catamaran")
+
+        # Generate sections for PORT demihull (y > 0)
+        # Demihull centerline at y = +hull_spacing/2
+        port_offset = hull_spacing / 2
+
+        for i in range(num_sections):
+            station = i / (num_sections - 1)
+            x_pos = station * lwl
+
+            # Generate demihull section (narrower beam)
+            section = self._generate_demihull_section(
+                definition, station, x_pos, demihull_beam, port_offset
+            )
+            sections.append(section)
+
+        return sections
+
+    def _generate_demihull_section(
+        self,
+        definition: HullDefinition,
+        station: float,
+        x_pos: float,
+        demihull_beam: float,
+        y_offset: float,
+    ) -> HullSection:
+        """
+        Generate section for a single demihull.
+
+        The section is generated centered at y=y_offset.
+        Points go from keel (centerline of demihull) outward.
+        """
+        section = HullSection(station=station, x_position=x_pos)
+
+        draft = self._get_draft_at_station(definition, station)
+        deadrise = definition.deadrise.get_deadrise_at(station)
+
+        # Local beam for this station (scaled to demihull)
+        local_demihull_half_beam = demihull_beam / 2
+
+        # Apply longitudinal beam variation
+        beam_factor = self._get_beam_factor_at_station(definition, station)
+        local_demihull_half_beam *= beam_factor
+
+        section.half_beam = local_demihull_half_beam
+        section.draft_local = draft
+        section.deadrise_deg = deadrise
+
+        points = []
+        num_points = self.config.points_per_section
+
+        deadrise_rad = math.radians(deadrise)
+        deck_z = definition.dimensions.depth - draft
+
+        # Generate points from keel to deck for the demihull
+        # Keel point (at demihull centerline, offset from ship centerline)
+        keel = SectionPoint(
+            position=Point3D(x=x_pos, y=y_offset, z=-draft),
+            is_keel=True,
+        )
+        points.append(keel)
+
+        # Points from keel outward (increasing y)
+        for i in range(1, num_points):
+            t = i / (num_points - 1)
+
+            # Y increases from demihull centerline to outer edge
+            y = y_offset + t * local_demihull_half_beam
+
+            # Z follows chine/round profile
+            if t < 0.5:
+                # Bottom section - apply deadrise
+                z = -draft + (t * 2) * local_demihull_half_beam * math.tan(deadrise_rad)
+            else:
+                # Upper section - transition to deck
+                bottom_top_z = -draft + local_demihull_half_beam * math.tan(deadrise_rad)
+                z = bottom_top_z + (t - 0.5) * 2 * (deck_z - bottom_top_z)
+
+            is_chine = (0.45 < t < 0.55)  # Mark chine region
+            points.append(SectionPoint(
+                position=Point3D(x=x_pos, y=y, z=z),
+                is_chine=is_chine,
+            ))
+
+        section.points = points
+        section.compute_area(0.0)
+
+        return section
+
+    def _get_beam_factor_at_station(self, definition: HullDefinition, station: float) -> float:
+        """
+        Get beam variation factor at station (0-1 range).
+
+        Coordinate frame: station=0 at AP (stern), station=1 at FP (bow).
+        """
+        lcb = definition.coefficients.lcb
+        transom_fraction = definition.features.transom_width_fraction
+
+        if station < 0.1:
+            # Transom area (stern) - starts at transom fraction
+            t = station / 0.1
+            return transom_fraction + (1.0 - transom_fraction) * t
+        elif station < lcb:
+            # Run (aft of midship) - full beam
+            return 1.0
+        elif station < 0.9:
+            # Forward of LCB - gradual reduction toward bow
+            t = (station - lcb) / (0.9 - lcb)
+            return 1.0 - 0.1 * t
+        else:
+            # Bow entrance - narrows to fine entry
+            t = (station - 0.9) / 0.1
+            return 0.9 - 0.8 * t ** 1.5
 
     def _generate_section_at_station(
         self,
@@ -278,34 +430,40 @@ class HullGenerator:
     def _get_half_beam_at_station(
         self, definition: HullDefinition, station: float
     ) -> float:
-        """Get half-beam at longitudinal station."""
-        beam_wl = definition.dimensions.beam_wl / 2
+        """
+        Get half-beam at longitudinal station.
 
-        # Sectional area curve approximation
-        # Entrance region (bow) narrows
-        # Parallel middle body
-        # Run (stern) narrows
+        Coordinate frame: station=0 at AP (stern), station=1 at FP (bow).
+        - Station 0-0.1: Transom area (stern) - starts at transom width
+        - Station 0.1-LCB: Run (aft body) - gradual increase toward midship
+        - Station LCB-0.9: Parallel middle body and forward transition
+        - Station 0.9-1.0: Entrance (bow) - narrows to fine entry
+        """
+        beam_wl = definition.dimensions.beam_wl / 2
 
         cp = definition.coefficients.cp
         lcb = definition.coefficients.lcb
+        transom_fraction = definition.features.transom_width_fraction
 
         if station < 0.1:
-            # Bow entrance - narrowing
+            # Transom area (stern) - starts at transom width, expands forward
             t = station / 0.1
-            return beam_wl * t * t
+            # At station=0 (transom): use transom_fraction
+            # At station=0.1: full beam
+            return beam_wl * (transom_fraction + (1.0 - transom_fraction) * t)
         elif station < lcb:
-            # Forward of LCB - gradual increase
-            t = (station - 0.1) / (lcb - 0.1)
-            return beam_wl * (0.01 + 0.99 * t ** 0.5)
+            # Run (aft of midship) - full beam region
+            return beam_wl
         elif station < 0.9:
-            # Aft of LCB - gradual decrease
+            # Forward of LCB - gradual reduction toward bow
             t = (station - lcb) / (0.9 - lcb)
-            return beam_wl * (1.0 - 0.2 * t ** 2)
+            # Reduce to ~90% beam at station 0.9
+            return beam_wl * (1.0 - 0.1 * t)
         else:
-            # Transom - may be full or reduced
+            # Bow entrance - narrows to fine entry
             t = (station - 0.9) / 0.1
-            transom_fraction = definition.features.transom_width_fraction
-            return beam_wl * (1.0 - (1 - transom_fraction) * t)
+            # Start at 90% beam (matching previous region), end at ~10%
+            return beam_wl * (0.9 - 0.8 * t ** 1.5)
 
     def _get_draft_at_station(
         self, definition: HullDefinition, station: float

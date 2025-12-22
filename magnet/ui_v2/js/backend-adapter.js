@@ -124,6 +124,9 @@ class MAGNETBackendAdapter {
 
         // Debug mode logs all messages
         this.debug = config.debug || false;
+
+        // Session toggle for LLM guess auto-apply (default off until tests are green)
+        this._autoApplyGuesses = false;
     }
 
     setAuthToken(token) {
@@ -385,6 +388,29 @@ class MAGNETBackendAdapter {
                 }
             }
 
+            if (cmd === 'auto-apply guesses on') {
+                this._autoApplyGuesses = true;
+                MagnetStudio.terminal.info('Auto-apply guesses: ON (session)');
+                MagnetStudio.setStatus('Ready');
+                MagnetStudio.terminal.cursor();
+                return;
+            }
+
+            if (cmd === 'auto-apply guesses off') {
+                this._autoApplyGuesses = false;
+                MagnetStudio.terminal.info('Auto-apply guesses: OFF (session)');
+                MagnetStudio.setStatus('Ready');
+                MagnetStudio.terminal.cursor();
+                return;
+            }
+
+            if (cmd === 'auto-apply guesses status') {
+                MagnetStudio.terminal.info(`Auto-apply guesses is ${this._autoApplyGuesses ? 'ON' : 'OFF'}`);
+                MagnetStudio.setStatus('Ready');
+                MagnetStudio.terminal.cursor();
+                return;
+            }
+
             // Natural language → validate then auto-apply (compound mode)
             try {
                 console.log('[MAGNET] Sending command to API:', command);
@@ -396,7 +422,8 @@ class MAGNETBackendAdapter {
 
                 const approved = preview.approved || [];
                 const proposed = preview.proposed_actions || [];
-                const hasActions = approved.length || proposed.length;
+                const actions = preview.actions || [];
+                const hasActions = approved.length || proposed.length || actions.length;
 
                 if (!hasActions) {
                     MagnetStudio.terminal.info(preview.guidance || 'No actions recognized');
@@ -410,6 +437,13 @@ class MAGNETBackendAdapter {
                 if (approved.length) {
                     MagnetStudio.terminal.info('MAGNET understood:');
                     approved.forEach(a => {
+                        MagnetStudio.terminal.data([
+                            { key: a.path, value: `${a.value}${a.unit ? ' ' + a.unit : ''}` }
+                        ]);
+                    });
+                } else if (actions.length) {
+                    MagnetStudio.terminal.info('MAGNET understood (proposed):');
+                    actions.forEach(a => {
                         MagnetStudio.terminal.data([
                             { key: a.path, value: `${a.value}${a.unit ? ' ' + a.unit : ''}` }
                         ]);
@@ -443,15 +477,41 @@ class MAGNETBackendAdapter {
                     preview.warnings.forEach(w => MagnetStudio.terminal.info(`⚠ ${w}`));
                 }
 
-                if (!preview.apply_payload) {
-                    MagnetStudio.terminal.error('No apply payload returned; nothing applied');
-                    MagnetStudio.setStatus('Ready');
-                    MagnetStudio.terminal.cursor();
-                    return;
-                }
+                const provenance = preview.provenance || 'deterministic';
+                const applyPayload = preview.apply_payload;
 
-                // Auto-apply immediately
-                await this._applyPreview(preview);
+                if (provenance === 'llm_guess') {
+                    if (!applyPayload) {
+                        MagnetStudio.terminal.info('MAGNET guessed (not applied — server policy):');
+                        approved.forEach(a => {
+                            MagnetStudio.terminal.data([{ key: a.path, value: `${a.value}${a.unit ? ' ' + a.unit : ''}` }]);
+                        });
+                        MagnetStudio.terminal.info('Ask with explicit numbers for deterministic apply, or enable server guessing with MAGNET_CHAT_GUESS_APPLY=true (server) and `auto-apply guesses on` (session).');
+                        MagnetStudio.terminal.info('Undo is always available for any applied change: type `undo`.');
+                        MagnetStudio.setStatus('Ready');
+                        MagnetStudio.terminal.cursor();
+                        return;
+                    }
+
+                    if (this._autoApplyGuesses) {
+                        MagnetStudio.terminal.info('MAGNET guessed and will auto-apply (undo if wrong).');
+                        await this._applyPreview(preview);
+                    } else {
+                        MagnetStudio.terminal.info('MAGNET guessed (not applied — session policy):');
+                        approved.forEach(a => {
+                            MagnetStudio.terminal.data([{ key: a.path, value: `${a.value}${a.unit ? ' ' + a.unit : ''}` }]);
+                        });
+                        MagnetStudio.terminal.info('Type "auto-apply guesses on" to enable auto-apply for guesses in this session.');
+                    }
+                } else {
+                    if (!applyPayload) {
+                        MagnetStudio.terminal.error('No apply payload returned; nothing applied');
+                        MagnetStudio.setStatus('Ready');
+                        MagnetStudio.terminal.cursor();
+                        return;
+                    }
+                    await this._applyPreview(preview);
+                }
 
             } catch (error) {
                 MagnetStudio.terminal.error(error.message);

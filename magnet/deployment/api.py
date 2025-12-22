@@ -19,6 +19,8 @@ from datetime import datetime, timezone
 import logging
 import asyncio
 import os
+import json
+import hashlib
 
 if TYPE_CHECKING:
     from magnet.bootstrap.app import AppContext
@@ -30,6 +32,25 @@ FRONTEND_DIST_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "app", 
 
 # Module 65.2: Serve ui_v2 directly (no build step required)
 UI_V2_PATH = os.path.join(os.path.dirname(__file__), "..", "ui_v2")
+
+# LLM fallback allowlist (matches kernel baseline/delta policy)
+LLM_ALLOWED_PATHS = {
+    # Hull
+    "hull.loa",
+    "hull.beam",
+    "hull.draft",
+    "hull.depth",
+    # Mission
+    "mission.max_speed_kts",
+    "mission.cruise_speed_kts",
+    "mission.range_nm",
+    "mission.crew_berthed",
+    "mission.passengers",
+    # Propulsion
+    "propulsion.total_installed_power_kw",
+}
+
+LLM_PROMPT_VERSION = "intent_fallback_v67x"
 
 
 # =============================================================================
@@ -105,6 +126,19 @@ try:
         design_version_before: Optional[int] = None
         mode: Optional[str] = "single"  # Module 65.1: "single" or "compound"
 
+    class LLMActionProposal(BaseModel):
+        """Structured LLM proposal for a single action (fallback compiler)."""
+        action_type: str
+        path: str
+        value: Optional[Any] = None
+        amount: Optional[float] = None
+        unit: Optional[str] = None
+        bucket: Optional[str] = None
+
+    class LLMProposals(BaseModel):
+        """Structured LLM proposal envelope."""
+        actions: List[LLMActionProposal]
+
     _PYDANTIC_AVAILABLE = True
 
 except ImportError:
@@ -125,6 +159,10 @@ except ImportError:
     class ActionSubmit:
         pass
     class IntentPreviewRequest:
+        pass
+    class LLMActionProposal:
+        pass
+    class LLMProposals:
         pass
 
 
@@ -208,6 +246,224 @@ def check_gates_on_hypothetical(phase: str, hypothetical_view: HypotheticalState
             })
 
     return missing
+
+
+# =============================================================================
+# LLM FALLBACK COMPILER (Module 67.x)
+# =============================================================================
+
+def _compile_intent_with_llm_fallback(
+    design_id: str,
+    request,
+    state_manager,
+    validator,
+    mode: str,
+    llm_client=None,
+):
+    """
+    Deterministic-first compilation with LLM fallback.
+
+    Returns preview payload with provenance and optional apply_payload (gated).
+    """
+    import uuid
+    from magnet.deployment.intent_parser import (
+        parse_intent_to_actions,
+        extract_compound_intent,
+    )
+    from magnet.core.field_aliases import normalize_path
+    from magnet.core.refinable_schema import is_refinable
+    from magnet.kernel.intent_protocol import Action, ActionPlan, ActionType
+
+    version_before = getattr(request, "design_version_before", None) or state_manager.design_version
+    unsupported_mentions = []
+
+    if mode == "compound":
+        compound = extract_compound_intent(request.text)
+        actions = compound["proposed_actions"]
+        unsupported_mentions = compound.get("unsupported_mentions", [])
+    else:
+        actions = parse_intent_to_actions(request.text)
+
+    def _serialize_actions(actions_list):
+        return [
+            {
+                "action_type": a.action_type.value,
+                "path": a.path,
+                "value": getattr(a, "value", None),
+                "amount": getattr(a, "amount", None),
+                "unit": a.unit,
+            }
+            for a in actions_list
+        ]
+
+    # Deterministic path
+    det_plan_id = f"det_preview_{uuid.uuid4().hex[:8]}"
+    det_intent_id = f"det_intent_{uuid.uuid4().hex[:8]}"
+    det_plan = ActionPlan(
+        plan_id=det_plan_id,
+        intent_id=det_intent_id,
+        design_id=design_id,
+        design_version_before=version_before,
+        actions=actions,
+        proposed_at=datetime.now(timezone.utc),
+    )
+
+    result = validator.validate(det_plan, state_manager, check_stale=False)
+    if result.approved:
+        intent_status = "complete"
+        apply_payload = {
+            "plan_id": det_plan_id,
+            "intent_id": det_intent_id,
+            "design_version_before": state_manager.design_version,
+            "actions": _serialize_actions(result.approved),
+        }
+        return {
+            "preview": True,
+            "intent_mode": mode,
+            "plan_id": det_plan_id,
+            "intent_id": det_intent_id,
+            "design_version_before": state_manager.design_version,
+            "actions": _serialize_actions(det_plan.actions),
+            "approved": _serialize_actions(result.approved),
+            "rejected": [
+                {"action": {"path": a.path, "value": getattr(a, 'value', None)}, "reason": reason}
+                for a, reason in result.rejected
+            ],
+            "warnings": result.warnings,
+            "unsupported_mentions": unsupported_mentions,
+            "missing_required": [],
+            "intent_status": intent_status,
+            "provenance": "deterministic",
+            "apply_payload": apply_payload,
+        }
+
+    # No deterministic approvals → LLM fallback
+    if not llm_client or not _PYDANTIC_AVAILABLE:
+        return {
+            "preview": True,
+            "intent_mode": mode,
+            "plan_id": None,
+            "intent_id": None,
+            "design_version_before": state_manager.design_version,
+            "actions": _serialize_actions(det_plan.actions),
+            "approved": [],
+            "rejected": [],
+            "warnings": result.warnings,
+            "unsupported_mentions": unsupported_mentions,
+            "missing_required": [],
+            "intent_status": "blocked",
+            "provenance": "deterministic",
+            "apply_payload": None,
+        }
+
+    # Call LLM for structured proposal
+    llm_response = llm_client.complete_json(
+        request.text,
+        LLMProposals,
+        temperature=0,
+        prompt_version=LLM_PROMPT_VERSION,
+    )
+    proposals = getattr(llm_response, "actions", [])
+
+    # Canonical hash for auditability
+    try:
+        canonical_json = llm_response.model_dump_json(sort_keys=True)
+    except Exception:
+        canonical_json = json.dumps(proposals, default=str, sort_keys=True)
+    llm_output_sha256 = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+    llm_actions = []
+    for proposal in proposals:
+        try:
+            action_type = ActionType(proposal.action_type)
+        except Exception:
+            continue
+
+        path = normalize_path(proposal.path)
+        if not is_refinable(path):
+            continue
+        if path not in LLM_ALLOWED_PATHS:
+            continue
+
+        if action_type in (ActionType.INCREASE, ActionType.DECREASE):
+            bucket = proposal.bucket
+            if not bucket and proposal.unit and str(proposal.unit).startswith("bucket:"):
+                _, _, bucket_token = str(proposal.unit).partition(":")
+                bucket = bucket_token or "normal"
+            if bucket:
+                unit = f"bucket:{bucket}"
+                llm_actions.append(Action(action_type=action_type, path=path, amount=None, unit=unit))
+            elif proposal.amount is not None:
+                llm_actions.append(
+                    Action(
+                        action_type=action_type,
+                        path=path,
+                        amount=proposal.amount,
+                        unit=proposal.unit,
+                    )
+                )
+        elif action_type == ActionType.SET:
+            llm_actions.append(
+                Action(
+                    action_type=action_type,
+                    path=path,
+                    value=proposal.value,
+                    unit=proposal.unit,
+                )
+            )
+
+    llm_plan_id = f"llm_preview_{uuid.uuid4().hex[:8]}"
+    llm_intent_id = f"llm_intent_{uuid.uuid4().hex[:8]}"
+    llm_plan = ActionPlan(
+        plan_id=llm_plan_id,
+        intent_id=llm_intent_id,
+        design_id=design_id,
+        design_version_before=version_before,
+        actions=llm_actions,
+        proposed_at=datetime.now(timezone.utc),
+    )
+
+    llm_result = validator.validate(llm_plan, state_manager, check_stale=False)
+    apply_payload = None
+    allow_apply = os.getenv("MAGNET_CHAT_GUESS_APPLY", "false").lower() == "true"
+    if llm_result.approved and allow_apply:
+        apply_payload = {
+            "plan_id": llm_plan_id,
+            "intent_id": llm_intent_id,
+            "design_version_before": state_manager.design_version,
+            "actions": _serialize_actions(llm_result.approved),
+        }
+
+    intent_status = "complete" if llm_result.approved else "blocked"
+
+    llm_meta = {
+        "provider": getattr(getattr(llm_client, "provider", None), "name", None) or "llm_client",
+        "model": getattr(getattr(llm_client, "provider", None), "model", None),
+        "temperature": 0,
+        "prompt_version": LLM_PROMPT_VERSION,
+    }
+
+    return {
+        "preview": True,
+        "intent_mode": mode,
+        "plan_id": llm_plan_id,
+        "intent_id": llm_intent_id,
+        "design_version_before": state_manager.design_version,
+        "actions": _serialize_actions(llm_plan.actions),
+        "approved": _serialize_actions(llm_result.approved),
+        "rejected": [
+            {"action": {"path": a.path, "value": getattr(a, 'value', None)}, "reason": reason}
+            for a, reason in llm_result.rejected
+        ],
+        "warnings": llm_result.warnings,
+        "unsupported_mentions": unsupported_mentions,
+        "missing_required": [],
+        "intent_status": intent_status,
+        "provenance": "llm_guess",
+        "llm_meta": llm_meta,
+        "llm_output_sha256": llm_output_sha256,
+        "apply_payload": apply_payload,
+    }
 
 
 def create_fastapi_app(context: "AppContext" = None):
@@ -401,6 +657,16 @@ def create_fastapi_app(context: "AppContext" = None):
             return EventDispatcher(design_id=design_id)
         except Exception as e:
             logger.warning(f"Could not create EventDispatcher: {e}")
+        return None
+
+    def get_llm_client():
+        """Get LLMClient via DI (fallback compiler)."""
+        if context and context.container:
+            try:
+                from magnet.agents.llm_client import LLMClient
+                return context.container.resolve(LLMClient)
+            except Exception as e:
+                logger.warning(f"Could not resolve LLMClient: {e}")
         return None
 
     # =========================================================================
@@ -943,6 +1209,7 @@ def create_fastapi_app(context: "AppContext" = None):
         request: IntentPreviewRequest,
         state_manager=Depends(get_state_manager),
         validator=Depends(get_action_validator),
+        llm_client=Depends(get_llm_client),
     ):
         """
         Preview an intent without executing (Module 63 / 65.1).
@@ -978,99 +1245,23 @@ def create_fastapi_app(context: "AppContext" = None):
 
         if mode == "compound":
             return await _preview_intent_compound(
-                design_id, request, state_manager, validator
+                design_id, request, state_manager, validator, llm_client
             )
-
-        # Legacy single-action mode
-        from magnet.deployment.intent_parser import parse_intent_to_actions, get_guidance_message
-
-        actions = parse_intent_to_actions(request.text)
-
-        if not actions:
-            return {
-                "preview": True,
-                "intent_mode": "single",
-                "plan_id": None,
-                "intent_id": None,
-                "design_version_before": state_manager.design_version,
-                "actions": [],
-                "approved": [],
-                "rejected": [],
-                "warnings": [],
-                "guidance": get_guidance_message(),
-            }
-
-        # Build ActionPlan
-        from magnet.kernel.intent_protocol import ActionPlan
-
-        plan_id = f"preview_{uuid.uuid4().hex[:8]}"
-        intent_id = f"intent_{uuid.uuid4().hex[:8]}"
-        version_before = request.design_version_before or state_manager.design_version
-
-        plan = ActionPlan(
-            plan_id=plan_id,
-            intent_id=intent_id,
-            design_id=design_id,
-            design_version_before=version_before,
-            actions=actions,
-            proposed_at=datetime.now(timezone.utc),
-        )
-
-        # Validate via firewall (NO execution, check_stale=False for preview)
+        # Single-action mode with fallback
         try:
-            result = validator.validate(plan, state_manager, check_stale=False)
+            return _compile_intent_with_llm_fallback(
+                design_id=design_id,
+                request=request,
+                state_manager=state_manager,
+                validator=validator,
+                mode="single",
+                llm_client=llm_client,
+            )
+        except HTTPException:
+            raise
         except Exception as e:
-            logger.error(f"Validation error: {e}")
-            raise HTTPException(status_code=500, detail=f"Validation error: {e}")
-
-        # Return validator's exact output
-        return {
-            "preview": True,
-            "plan_id": plan_id,
-            "intent_id": intent_id,
-            "design_version_before": state_manager.design_version,
-            "actions": [
-                {
-                    "action_type": a.action_type.value,
-                    "path": a.path,
-                    "value": a.value,
-                    "amount": a.amount,
-                    "unit": a.unit,
-                }
-                for a in plan.actions
-            ],
-            "approved": [
-                {
-                    "action_type": a.action_type.value,
-                    "path": a.path,
-                    "value": a.value,
-                    "amount": a.amount,
-                    "unit": a.unit,
-                }
-                for a in result.approved
-            ],
-            "rejected": [
-                {"action": {"path": a.path, "value": a.value}, "reason": reason}
-                for a, reason in result.rejected
-            ],
-            "warnings": result.warnings,
-            # Module 63.1: apply_payload - exact shape for POST /actions
-            "apply_payload": {
-                "plan_id": plan_id,
-                "intent_id": intent_id,
-                "design_version_before": state_manager.design_version,
-                "actions": [
-                    {
-                        "action_type": a.action_type.value,
-                        "path": a.path,
-                        "value": a.value,
-                        "amount": a.amount,
-                        "unit": a.unit,
-                    }
-                    for a in result.approved
-                ]
-            },
-        }
+            logger.error(f"Preview error: {e}")
+            raise HTTPException(status_code=500, detail=f"Preview error: {e}")
 
     # =========================================================================
     # Module 65.1: Compound Intent Preview Helper
@@ -1081,6 +1272,7 @@ def create_fastapi_app(context: "AppContext" = None):
         request,
         state_manager,
         validator,
+        llm_client=None,
     ):
         """
         Compound mode preview with gate reuse on hypothetical state.
@@ -1122,8 +1314,8 @@ def create_fastapi_app(context: "AppContext" = None):
             }
 
         # Step 2: Build ActionPlan and validate
-        plan_id = f"preview_{uuid.uuid4().hex[:8]}"
-        intent_id = f"intent_{uuid.uuid4().hex[:8]}"
+        plan_id = f"det_preview_{uuid.uuid4().hex[:8]}"
+        intent_id = f"det_intent_{uuid.uuid4().hex[:8]}"
         version_before = request.design_version_before or state_manager.design_version
 
         plan = ActionPlan(
@@ -1145,6 +1337,17 @@ def create_fastapi_app(context: "AppContext" = None):
                 "error": str(e),
                 "intent_status": "blocked",
             }
+
+        # Fallback to LLM if no deterministic approvals
+        if not result.approved:
+            return _compile_intent_with_llm_fallback(
+                design_id=design_id,
+                request=request,
+                state_manager=state_manager,
+                validator=validator,
+                mode="compound",
+                llm_client=llm_client,
+            )
 
         # Step 3: Create HypotheticalStateView with approved actions
         hypothetical = HypotheticalStateView(state_manager, result.approved)
@@ -1214,6 +1417,7 @@ def create_fastapi_app(context: "AppContext" = None):
             "missing_required": missing_required,
             "unsupported_mentions": unsupported_mentions,
             "intent_status": intent_status,
+            "provenance": "deterministic",
             "apply_payload": {
                 "plan_id": plan_id,
                 "intent_id": intent_id,

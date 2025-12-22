@@ -116,6 +116,16 @@ class ActionExecutor:
         design_id = plan.design_id if plan else self._state_manager._state.design_id
         version_before = self._state_manager.design_version
 
+        plan_id = plan.plan_id if plan else "unknown"
+        intent_id = plan.intent_id if plan else "unknown"
+        if plan_id.startswith("det_"):
+            provenance = "deterministic"
+        elif plan_id.startswith("llm_"):
+            provenance = "llm_guess"
+        else:
+            provenance = "external"
+        source = f"action_executor|prov={provenance}|plan={plan_id}|intent={intent_id}"
+
         if not actions:
             return ExecutionResult(
                 success=True,
@@ -127,7 +137,7 @@ class ActionExecutor:
 
         # Begin transaction
         try:
-            self._state_manager.begin_transaction()
+            txn_id = self._state_manager.begin_transaction()
         except Exception as e:
             logger.error(f"Failed to begin transaction: {e}")
             return ExecutionResult(
@@ -142,13 +152,11 @@ class ActionExecutor:
         executed_count = 0
         try:
             for action in actions:
-                result = self._execute_action(action, design_id)
-                if result.success:
-                    executed_count += 1
-                    warnings.extend(result.warnings)
-                else:
-                    errors.extend(result.errors)
-                    # Continue executing other actions (partial success)
+                result = self._execute_action(action, design_id, source)
+                if not result.success:
+                    raise RuntimeError(result.errors[0] if result.errors else "Action execution failed")
+                executed_count += 1
+                warnings.extend(result.warnings)
 
             # Commit transaction
             new_version = self._state_manager.commit()
@@ -177,7 +185,10 @@ class ActionExecutor:
         except Exception as e:
             logger.error(f"Execution failed, rolling back: {e}")
             try:
-                self._state_manager.rollback_transaction()
+                if hasattr(self._state_manager, "rollback_transaction"):
+                    self._state_manager.rollback_transaction(txn_id)
+                elif hasattr(self._state_manager, "rollback"):
+                    self._state_manager.rollback()
             except Exception as rollback_error:
                 logger.error(f"Rollback failed: {rollback_error}")
 
@@ -206,6 +217,7 @@ class ActionExecutor:
         self,
         action: Action,
         design_id: str,
+        source: str,
     ) -> ExecutionResult:
         """
         Execute a single action.
@@ -219,11 +231,11 @@ class ActionExecutor:
         """
         try:
             if action.action_type == ActionType.SET:
-                return self._execute_set(action, design_id)
+                return self._execute_set(action, design_id, source)
             elif action.action_type == ActionType.LOCK:
-                return self._execute_lock(action, design_id)
+                return self._execute_lock(action, design_id, source)
             elif action.action_type == ActionType.UNLOCK:
-                return self._execute_unlock(action, design_id)
+                return self._execute_unlock(action, design_id, source)
             elif action.action_type == ActionType.RUN_PHASES:
                 return self._execute_run_phases(action, design_id)
             elif action.action_type == ActionType.EXPORT:
@@ -256,10 +268,10 @@ class ActionExecutor:
                 errors=[str(e)],
             )
 
-    def _execute_set(self, action: Action, design_id: str) -> ExecutionResult:
+    def _execute_set(self, action: Action, design_id: str, source: str) -> ExecutionResult:
         """Execute a SET action."""
         old_value = self._state_manager.get(action.path)
-        self._state_manager.set(action.path, action.value, source="action_executor")
+        self._state_manager.set(action.path, action.value, source=source)
 
         # Emit state mutated event
         if self._events:
@@ -269,7 +281,7 @@ class ActionExecutor:
                 path=action.path,
                 old_value=old_value,
                 new_value=action.value,
-                source="action_executor",
+                source=source,
             ))
 
             self._events.emit(ActionExecutedEvent(
@@ -280,6 +292,7 @@ class ActionExecutor:
                 old_value=old_value,
                 new_value=action.value,
                 unit=action.unit,
+                source=source,
             ))
 
         return ExecutionResult(
@@ -289,7 +302,7 @@ class ActionExecutor:
             design_version_after=0,
         )
 
-    def _execute_lock(self, action: Action, design_id: str) -> ExecutionResult:
+    def _execute_lock(self, action: Action, design_id: str, source: str) -> ExecutionResult:
         """Execute a LOCK action."""
         self._state_manager.lock_parameter(action.path)
 
@@ -298,7 +311,7 @@ class ActionExecutor:
                 design_id=design_id,
                 design_version=self._state_manager.design_version,
                 path=action.path,
-                locked_by="action_executor",
+                locked_by=source,
             ))
 
         return ExecutionResult(
@@ -308,7 +321,7 @@ class ActionExecutor:
             design_version_after=0,
         )
 
-    def _execute_unlock(self, action: Action, design_id: str) -> ExecutionResult:
+    def _execute_unlock(self, action: Action, design_id: str, source: str) -> ExecutionResult:
         """Execute an UNLOCK action."""
         self._state_manager.unlock_parameter(action.path)
 

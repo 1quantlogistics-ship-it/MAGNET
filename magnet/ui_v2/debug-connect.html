@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MAGNET Debug Connect</title>
+    <style>
+        body { font-family: monospace; background: #1a1a1a; color: #0f0; padding: 20px; }
+        .log { margin: 4px 0; }
+        .error { color: #f00; }
+        .success { color: #0f0; }
+        .warn { color: #ff0; }
+        .info { color: #0ff; }
+        button { padding: 10px 20px; margin: 10px 5px 10px 0; font-size: 14px; cursor: pointer; }
+        #output { white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>MAGNET Debug Connect</h1>
+    <p>Design ID: <strong id="designId">MAGNET-20251220-0418</strong></p>
+
+    <button onclick="testMeta()">1. Test /api/v1/meta</button>
+    <button onclick="testDesigns()">2. Test /api/v1/designs</button>
+    <button onclick="testDesign()">3. Test /api/v1/designs/ID</button>
+    <button onclick="testGLB()">4. Test GLB endpoint</button>
+    <button onclick="loadGLB()">5. Load GLB in Three.js</button>
+
+    <hr>
+    <div id="output"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+
+    <script>
+        const DESIGN_ID = 'MAGNET-20251220-0418';
+        const out = document.getElementById('output');
+
+        function log(msg, type = 'log') {
+            const div = document.createElement('div');
+            div.className = 'log ' + type;
+            div.textContent = new Date().toLocaleTimeString() + ' ' + msg;
+            out.appendChild(div);
+            console.log(msg);
+        }
+
+        async function testMeta() {
+            log('Testing /api/v1/meta...', 'info');
+            try {
+                const resp = await fetch('/api/v1/meta');
+                log('Status: ' + resp.status);
+                const data = await resp.json();
+                log('Response: ' + JSON.stringify(data), 'success');
+            } catch (e) {
+                log('ERROR: ' + e.message, 'error');
+            }
+        }
+
+        async function testDesigns() {
+            log('Testing /api/v1/designs...', 'info');
+            try {
+                const resp = await fetch('/api/v1/designs');
+                log('Status: ' + resp.status);
+                const data = await resp.json();
+                log('Response: ' + JSON.stringify(data), 'success');
+                const designs = data.designs || [];
+                log('Designs count: ' + designs.length);
+                if (designs.length > 0) {
+                    log('First design: ' + designs[0].design_id + ' - ' + designs[0].name);
+                }
+            } catch (e) {
+                log('ERROR: ' + e.message, 'error');
+            }
+        }
+
+        async function testDesign() {
+            log('Testing /api/v1/designs/' + DESIGN_ID + '...', 'info');
+            try {
+                const resp = await fetch('/api/v1/designs/' + DESIGN_ID);
+                log('Status: ' + resp.status);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    log('Design version: ' + data.design_version, 'success');
+                    log('Hull LWL: ' + (data.hull?.lwl || 'not set'));
+                } else {
+                    log('FAILED: HTTP ' + resp.status, 'error');
+                }
+            } catch (e) {
+                log('ERROR: ' + e.message, 'error');
+            }
+        }
+
+        async function testGLB() {
+            log('Testing GLB endpoint...', 'info');
+            try {
+                const url = '/api/v1/designs/' + DESIGN_ID + '/3d/export/glb';
+                const resp = await fetch(url);
+                log('Status: ' + resp.status);
+                log('Content-Type: ' + resp.headers.get('content-type'));
+                if (resp.ok) {
+                    const blob = await resp.blob();
+                    log('Size: ' + blob.size + ' bytes', 'success');
+                    if (blob.size > 0) {
+                        log('GLB VALID - ready for Three.js', 'success');
+                    } else {
+                        log('GLB EMPTY - geometry generation failed', 'error');
+                    }
+                } else {
+                    log('FAILED: HTTP ' + resp.status, 'error');
+                }
+            } catch (e) {
+                log('ERROR: ' + e.message, 'error');
+            }
+        }
+
+        async function loadGLB() {
+            log('Loading GLB into Three.js scene...', 'info');
+            try {
+                const loader = new THREE.GLTFLoader();
+                const url = '/api/v1/designs/' + DESIGN_ID + '/3d/export/glb?v=' + Date.now();
+                log('URL: ' + url);
+
+                const gltf = await loader.loadAsync(url);
+                log('GLTF loaded successfully!', 'success');
+
+                let vertices = 0, faces = 0;
+                gltf.scene.traverse(child => {
+                    if (child.isMesh && child.geometry) {
+                        vertices += child.geometry.attributes.position?.count || 0;
+                        faces += (child.geometry.index?.count || 0) / 3;
+                    }
+                });
+
+                log('Vertices: ' + vertices, 'success');
+                log('Faces: ' + Math.round(faces), 'success');
+                log('THREE.JS RENDER WORKING', 'success');
+            } catch (e) {
+                log('THREE.JS ERROR: ' + e.message, 'error');
+                console.error(e);
+            }
+        }
+
+        // Auto-run all tests
+        (async () => {
+            log('=== MAGNET Debug Connect ===', 'info');
+            log('Design ID: ' + DESIGN_ID);
+            log('');
+            await testMeta();
+            log('');
+            await testDesigns();
+            log('');
+            await testDesign();
+            log('');
+            await testGLB();
+            log('');
+            log('Click button 5 to test Three.js GLB loading', 'info');
+        })();
+    </script>
+</body>
+</html>

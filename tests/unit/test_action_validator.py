@@ -28,6 +28,7 @@ def mock_state_manager():
     mock.design_version = 5
     mock.is_locked = Mock(return_value=False)
     mock.get = Mock(return_value=100.0)  # Default current value for deltas
+    mock.get_strict = Mock(return_value=None)
     return mock
 
 
@@ -300,9 +301,84 @@ class TestDeltaActionValidation:
         assert len(result.approved) == 1
         assert result.approved[0].value == 2000.0  # 1000 + 1000
 
-    def test_rejects_delta_on_unset_value(self, validator, mock_state_manager):
-        """Rejects delta on unset value."""
+    def test_delta_on_unset_hull_loa_uses_baseline(self, validator, mock_state_manager):
+        """Unset hull.loa uses baseline before applying delta."""
         mock_state_manager.get = Mock(return_value=None)
+        mock_state_manager.get_strict = Mock(return_value=None)
+
+        plan = ActionPlan(
+            plan_id="p1",
+            intent_id="i1",
+            design_id="d1",
+            actions=[
+                Action(
+                    action_type=ActionType.INCREASE,
+                    path="hull.loa",
+                    amount=2.0,
+                    unit="m",
+                ),
+            ],
+            design_version_before=5,
+            proposed_at=datetime.utcnow(),
+        )
+
+        result = validator.validate(plan, mock_state_manager)
+        assert len(result.approved) == 1
+        assert result.approved[0].action_type == ActionType.SET
+        assert result.approved[0].value == pytest.approx(32.0)
+        assert any("baseline_used:hull.loa=30.0" in w for w in result.warnings)
+
+    def test_delta_on_unset_non_baselined_path_rejects(self, validator, mock_state_manager):
+        """Unset refinable path without baseline still rejects delta."""
+        mock_state_manager.get = Mock(return_value=None)
+        mock_state_manager.get_strict = Mock(return_value=None)
+
+        plan = ActionPlan(
+            plan_id="p1",
+            intent_id="i1",
+            design_id="d1",
+            actions=[
+                Action(
+                    action_type=ActionType.INCREASE,
+                    path="hull.cb",
+                    amount=0.05,
+                ),
+            ],
+            design_version_before=5,
+            proposed_at=datetime.utcnow(),
+        )
+
+        result = validator.validate(plan, mock_state_manager)
+        assert len(result.rejected) == 1
+        assert "unset" in result.rejected[0][1].lower() or "baseline" in result.rejected[0][1].lower()
+
+    def test_bucket_delta_hull_loa_normal_adds_2m(self, validator, mock_state_manager):
+        """Bucket delta (normal) adds 2m to hull.loa."""
+        mock_state_manager.get = Mock(return_value=30.0)
+
+        plan = ActionPlan(
+            plan_id="p1",
+            intent_id="i1",
+            design_id="d1",
+            actions=[
+                Action(
+                    action_type=ActionType.INCREASE,
+                    path="hull.loa",
+                    amount=None,
+                    unit="bucket:normal",
+                ),
+            ],
+            design_version_before=5,
+            proposed_at=datetime.utcnow(),
+        )
+
+        result = validator.validate(plan, mock_state_manager)
+        assert len(result.approved) == 1
+        assert result.approved[0].value == pytest.approx(32.0)
+
+    def test_bucket_delta_power_way_adds_bounded_percent(self, validator, mock_state_manager):
+        """Bucket delta 'way' uses bounded percent for installed power."""
+        mock_state_manager.get = Mock(return_value=2000.0)
 
         plan = ActionPlan(
             plan_id="p1",
@@ -312,7 +388,32 @@ class TestDeltaActionValidation:
                 Action(
                     action_type=ActionType.INCREASE,
                     path="propulsion.total_installed_power_kw",
-                    amount=500
+                    amount=None,
+                    unit="bucket:way",
+                ),
+            ],
+            design_version_before=5,
+            proposed_at=datetime.utcnow(),
+        )
+
+        result = validator.validate(plan, mock_state_manager)
+        assert len(result.approved) == 1
+        assert result.approved[0].value == pytest.approx(2700.0)
+
+    def test_bucket_delta_unknown_path_rejects(self, validator, mock_state_manager):
+        """Bucket delta on a path without policy is rejected."""
+        mock_state_manager.get = Mock(return_value=0.5)
+
+        plan = ActionPlan(
+            plan_id="p1",
+            intent_id="i1",
+            design_id="d1",
+            actions=[
+                Action(
+                    action_type=ActionType.INCREASE,
+                    path="hull.cb",
+                    amount=None,
+                    unit="bucket:normal",
                 ),
             ],
             design_version_before=5,
@@ -321,7 +422,7 @@ class TestDeltaActionValidation:
 
         result = validator.validate(plan, mock_state_manager)
         assert len(result.rejected) == 1
-        assert "unset" in result.rejected[0][1].lower()
+        assert "bucket" in result.rejected[0][1].lower()
 
 
 # =============================================================================

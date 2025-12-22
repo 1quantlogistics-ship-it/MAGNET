@@ -111,6 +111,7 @@ class ActionExecutedEvent(KernelEvent):
     new_value: Optional[Any] = None
     unit: Optional[str] = None
     was_clamped: bool = False
+    source: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         base = super().to_dict()
@@ -121,6 +122,7 @@ class ActionExecutedEvent(KernelEvent):
             "new_value": self.new_value,
             "unit": self.unit,
             "was_clamped": self.was_clamped,
+            "source": self.source,
         })
         return base
 

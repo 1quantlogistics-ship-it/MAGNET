@@ -399,6 +399,13 @@ class HullFeatures:
     tunnel_width_m: float = 0.0
     tunnel_depth_m: float = 0.0
 
+    # === MULTIHULL ===
+    hull_spacing: float = 0.0
+    """Distance between hull centerlines for catamaran/trimaran (m)."""
+
+    num_hulls: int = 1
+    """Number of hulls (1=mono, 2=cat, 3=tri)."""
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "chine_type": self.chine_type.value,
@@ -415,6 +422,8 @@ class HullFeatures:
             "has_tunnels": self.has_tunnels,
             "tunnel_width_m": self.tunnel_width_m,
             "tunnel_depth_m": self.tunnel_depth_m,
+            "hull_spacing": self.hull_spacing,
+            "num_hulls": self.num_hulls,
         }
 
     @classmethod
@@ -435,6 +444,8 @@ class HullFeatures:
             has_tunnels=data.get("has_tunnels", False),
             tunnel_width_m=data.get("tunnel_width_m", 0.0),
             tunnel_depth_m=data.get("tunnel_depth_m", 0.0),
+            hull_spacing=data.get("hull_spacing", 0.0),
+            num_hulls=data.get("num_hulls", 1),
         )
 
 
