@@ -126,7 +126,8 @@ class MAGNETBackendAdapter {
         this.debug = config.debug || false;
 
         // Session toggle for LLM guess auto-apply (default off until tests are green)
-        this._autoApplyGuesses = false;
+        // 67.7: LLM-first translator means most commands are LLM-sourced; auto-apply by default.
+        this._autoApplyGuesses = true;
     }
 
     setAuthToken(token) {
@@ -678,7 +679,12 @@ class MAGNETBackendAdapter {
             'propulsion.propeller_count', 'propulsion.propeller_diameter'
         ];
 
-        for (const action of actions || []) {
+        const iterableActions = Array.isArray(actions)
+            ? actions
+            : Array.isArray(actions?.actions)
+              ? actions.actions
+              : [];
+        for (const action of iterableActions) {
             if (HULL_PATHS.includes(action.path)) return 'hull';
             if (PROPULSION_PATHS.includes(action.path)) return 'propulsion';
         }
