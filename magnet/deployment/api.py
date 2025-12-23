@@ -252,7 +252,7 @@ def check_gates_on_hypothetical(phase: str, hypothetical_view: HypotheticalState
 # LLM FALLBACK COMPILER (Module 67.x)
 # =============================================================================
 
-def _compile_intent_with_llm_fallback(
+async def _compile_intent_with_llm_fallback(
     design_id: str,
     request,
     state_manager,
@@ -261,7 +261,11 @@ def _compile_intent_with_llm_fallback(
     llm_client=None,
 ):
     """
-    Deterministic-first compilation with LLM fallback.
+    LLM-first compilation with deterministic fallback.
+
+    Translator contract:
+    - LLM is the primary translator from human text → kernel Actions.
+    - Deterministic parser is fallback only if LLM is unavailable or fails.
 
     Returns preview payload with provenance and optional apply_payload (gated).
     """
@@ -270,30 +274,15 @@ def _compile_intent_with_llm_fallback(
     from magnet.deployment.intent_parser import (
         parse_intent_to_actions,
         extract_compound_intent,
+        get_guidance_message,
     )
     from magnet.core.field_aliases import normalize_path
-    from magnet.core.refinable_schema import is_refinable
+    from magnet.core.refinable_schema import is_refinable, REFINABLE_SCHEMA
     from magnet.kernel.intent_protocol import Action, ActionPlan, ActionType
+    from magnet.llm import LLMOptions
 
     version_before = getattr(request, "design_version_before", None) or state_manager.design_version
     unsupported_mentions = []
-
-    if mode == "compound":
-        compound = extract_compound_intent(request.text)
-        actions = compound["proposed_actions"]
-        unsupported_mentions = compound.get("unsupported_mentions", [])
-    else:
-        actions = parse_intent_to_actions(request.text)
-
-    logger.info(
-        "[intent_preview] deterministic_extract",
-        extra={
-            "design_id": design_id,
-            "mode": mode,
-            "text": getattr(request, "text", ""),
-            "det_actions": len(actions),
-        },
-    )
 
     def _serialize_actions(actions_list):
         return [
@@ -307,7 +296,276 @@ def _compile_intent_with_llm_fallback(
             for a in actions_list
         ]
 
-    # Deterministic path
+    def _build_translator_system_prompt() -> str:
+        """
+        Minimal viable translator prompt:
+        - Valid paths + kernel units (from REFINABLE_SCHEMA)
+        - Valid action types: set/increase/decrease
+        - Bucket vocabulary (kernel resolves magnitudes)
+        """
+        lines = []
+        for p in sorted(LLM_ALLOWED_PATHS):
+            field = REFINABLE_SCHEMA.get(p)
+            unit = getattr(field, "kernel_unit", None) if field else None
+            lines.append(f"- {p} ({unit})" if unit else f"- {p}")
+
+        allowed_paths_block = "\n".join(lines)
+
+        return (
+            "You are MAGNET's kernel translator. Convert the user's text into kernel actions.\n"
+            "\n"
+            "Valid action_type values:\n"
+            "- set\n"
+            "- increase\n"
+            "- decrease\n"
+            "\n"
+            "Valid paths (path and kernel unit):\n"
+            f"{allowed_paths_block}\n"
+            "\n"
+            "Bucket vocabulary (use when user implies magnitude without a number):\n"
+            "- a_bit\n"
+            "- normal\n"
+            "- way\n"
+            "\n"
+            "Rules:\n"
+            "- Only output actions using the valid paths above.\n"
+            "- For relative changes: use increase/decrease with either bucket OR amount+unit.\n"
+            "- If ambiguous, prefer bucket=normal.\n"
+            "- If you cannot map the request to the valid paths, return an empty actions list.\n"
+        )
+
+    def _compute_missing_required(approved_actions: list) -> list:
+        """Compute missing gates for phases touched by approved actions (compound mode only)."""
+        from magnet.core.phase_ownership import get_phase_for_path
+
+        hypothetical = HypotheticalStateView(state_manager, approved_actions)
+
+        target_phases = set()
+        for a in approved_actions:
+            phase = get_phase_for_path(a.path)
+            if phase:
+                target_phases.add(phase)
+
+        missing_required = []
+        for phase in target_phases:
+            missing_required.extend(check_gates_on_hypothetical(phase, hypothetical))
+
+        # Dedupe by path
+        seen = set()
+        unique_missing = []
+        for m in missing_required:
+            if m.get("path") not in seen:
+                unique_missing.append(m)
+                seen.add(m.get("path"))
+        return unique_missing
+
+    async def _try_llm_first():
+        if not llm_client or not _PYDANTIC_AVAILABLE:
+            if not llm_client:
+                logger.info("[intent_preview] llm_unavailable: llm_client=None")
+            if not _PYDANTIC_AVAILABLE:
+                logger.info("[intent_preview] llm_unavailable: pydantic_missing")
+            return None
+        # 67.7 debug: bypass is_available() as a hard gate and attempt the LLM call
+        # to surface the real exception (availability checks can hide root causes).
+        if hasattr(llm_client, "is_available"):
+            try:
+                available = llm_client.is_available()
+                if not available:
+                    logger.warning("[intent_preview] llm_is_available=false (bypassing gate; attempting call anyway)")
+            except Exception as e:
+                logger.exception(f"LLM availability check failed (bypassing gate): {type(e).__name__}: {e}")
+
+        system_prompt = _build_translator_system_prompt()
+        try:
+            llm_response = await llm_client.complete_json(
+                request.text,
+                LLMProposals,
+                system_prompt=system_prompt,
+                options=LLMOptions(temperature=0),
+            )
+        except Exception as e:
+            logger.exception(f"LLM call failed: {type(e).__name__}: {e}")
+            return None
+
+        proposals = getattr(llm_response, "actions", []) or []
+
+        # Canonical hash for auditability
+        try:
+            canonical_json = llm_response.model_dump_json(sort_keys=True)
+        except Exception:
+            canonical_json = json.dumps(proposals, default=str, sort_keys=True)
+        llm_output_sha256 = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+        llm_actions = []
+        for proposal in proposals:
+            try:
+                action_type = ActionType(proposal.action_type)
+            except Exception:
+                continue
+
+            # Per 67.7 direction: translator outputs only SET/INCREASE/DECREASE
+            if action_type not in (ActionType.SET, ActionType.INCREASE, ActionType.DECREASE):
+                continue
+
+            path = normalize_path(proposal.path)
+            if not is_refinable(path):
+                continue
+            if path not in LLM_ALLOWED_PATHS:
+                continue
+
+            if action_type in (ActionType.INCREASE, ActionType.DECREASE):
+                bucket = proposal.bucket
+                if not bucket and proposal.unit and str(proposal.unit).startswith("bucket:"):
+                    _, _, bucket_token = str(proposal.unit).partition(":")
+                    bucket = bucket_token or "normal"
+
+                if bucket:
+                    llm_actions.append(
+                        Action(action_type=action_type, path=path, amount=None, unit=f"bucket:{bucket}")
+                    )
+                elif proposal.amount is not None:
+                    llm_actions.append(
+                        Action(
+                            action_type=action_type,
+                            path=path,
+                            amount=proposal.amount,
+                            unit=proposal.unit,
+                        )
+                    )
+                else:
+                    # Allow kernel to apply default bucket ("normal") for bucket-enabled paths
+                    llm_actions.append(Action(action_type=action_type, path=path, amount=None, unit=None))
+
+            elif action_type == ActionType.SET:
+                if proposal.value is None:
+                    continue
+                llm_actions.append(
+                    Action(
+                        action_type=action_type,
+                        path=path,
+                        value=proposal.value,
+                        unit=proposal.unit,
+                    )
+                )
+
+        if not llm_actions:
+            # Treat empty translation as "failed to translate" so deterministic fallback can try.
+            logger.info("[intent_preview] llm_translated_no_usable_actions; falling back")
+            return None
+
+        llm_plan_id = f"llm_preview_{uuid.uuid4().hex[:8]}"
+        llm_intent_id = f"llm_intent_{uuid.uuid4().hex[:8]}"
+        llm_plan = ActionPlan(
+            plan_id=llm_plan_id,
+            intent_id=llm_intent_id,
+            design_id=design_id,
+            design_version_before=version_before,
+            actions=llm_actions,
+            proposed_at=datetime.now(timezone.utc),
+        )
+
+        llm_result = validator.validate(llm_plan, state_manager, check_stale=False)
+
+        missing_required = _compute_missing_required(llm_result.approved) if mode == "compound" else []
+
+        apply_payload = None
+        allow_apply = os.getenv("MAGNET_CHAT_GUESS_APPLY", "true").lower() == "true"
+        if llm_result.approved and allow_apply:
+            apply_payload = {
+                "plan_id": llm_plan_id,
+                "intent_id": llm_intent_id,
+                "design_version_before": state_manager.design_version,
+                "actions": _serialize_actions(llm_result.approved),
+            }
+
+        if not llm_result.approved:
+            intent_status = "blocked"
+        elif missing_required:
+            intent_status = "partial"
+        else:
+            intent_status = "complete"
+
+        llm_meta = {
+            "provider": getattr(getattr(llm_client, "provider", None), "name", None) or "llm_client",
+            "model": getattr(getattr(llm_client, "provider", None), "model", None),
+            "temperature": 0,
+            "prompt_version": LLM_PROMPT_VERSION,
+        }
+
+        resp = {
+            "preview": True,
+            "intent_mode": mode,
+            "plan_id": llm_plan_id,
+            "intent_id": llm_intent_id,
+            "design_version_before": state_manager.design_version,
+            "actions": _serialize_actions(llm_plan.actions),
+            "approved": _serialize_actions(llm_result.approved),
+            "rejected": [
+                {"action": {"path": a.path, "value": getattr(a, 'value', None)}, "reason": reason}
+                for a, reason in llm_result.rejected
+            ],
+            "warnings": llm_result.warnings,
+            "unsupported_mentions": unsupported_mentions,
+            "missing_required": missing_required,
+            "intent_status": intent_status,
+            "provenance": "llm_guess",
+            "llm_meta": llm_meta,
+            "llm_output_sha256": llm_output_sha256,
+            "apply_payload": apply_payload,
+        }
+
+        # Preserve compound response shape expected by clients
+        if mode == "compound":
+            resp["proposed_actions"] = _serialize_actions(llm_plan.actions)
+        return resp
+
+    # === LLM-first ===
+    llm_resp = await _try_llm_first()
+    if llm_resp is not None:
+        return llm_resp
+
+    # === Deterministic fallback ===
+    actions = []
+    if mode == "compound":
+        compound = extract_compound_intent(request.text)
+        actions = compound["proposed_actions"]
+        unsupported_mentions = compound.get("unsupported_mentions", [])
+    else:
+        actions = parse_intent_to_actions(request.text)
+
+    logger.info(
+        "[intent_preview] deterministic_fallback_extract",
+        extra={
+            "design_id": design_id,
+            "mode": mode,
+            "text": getattr(request, "text", ""),
+            "det_actions": len(actions),
+        },
+    )
+
+    if not actions:
+        resp = {
+            "preview": True,
+            "intent_mode": mode,
+            "plan_id": None,
+            "intent_id": None,
+            "design_version_before": state_manager.design_version,
+            "actions": [],
+            "approved": [],
+            "rejected": [],
+            "warnings": [],
+            "unsupported_mentions": unsupported_mentions,
+            "missing_required": [],
+            "intent_status": "blocked",
+            "provenance": "deterministic",
+            "guidance": get_guidance_message(),
+            "apply_payload": None,
+        }
+        if mode == "compound":
+            resp["proposed_actions"] = []
+        return resp
+
     det_plan_id = f"det_preview_{uuid.uuid4().hex[:8]}"
     det_intent_id = f"det_intent_{uuid.uuid4().hex[:8]}"
     det_plan = ActionPlan(
@@ -319,162 +577,47 @@ def _compile_intent_with_llm_fallback(
         proposed_at=datetime.now(timezone.utc),
     )
 
-    result = validator.validate(det_plan, state_manager, check_stale=False)
-    if result.approved:
-        intent_status = "complete"
-        apply_payload = {
-            "plan_id": det_plan_id,
-            "intent_id": det_intent_id,
-            "design_version_before": state_manager.design_version,
-            "actions": _serialize_actions(result.approved),
-        }
-        return {
-            "preview": True,
-            "intent_mode": mode,
-            "plan_id": det_plan_id,
-            "intent_id": det_intent_id,
-            "design_version_before": state_manager.design_version,
-            "actions": _serialize_actions(det_plan.actions),
-            "approved": _serialize_actions(result.approved),
-            "rejected": [
-                {"action": {"path": a.path, "value": getattr(a, 'value', None)}, "reason": reason}
-                for a, reason in result.rejected
-            ],
-            "warnings": result.warnings,
-            "unsupported_mentions": unsupported_mentions,
-            "missing_required": [],
-            "intent_status": intent_status,
-            "provenance": "deterministic",
-            "apply_payload": apply_payload,
-        }
+    det_result = validator.validate(det_plan, state_manager, check_stale=False)
+    missing_required = _compute_missing_required(det_result.approved) if mode == "compound" else []
 
-    # No deterministic approvals → LLM fallback
-    if not llm_client or not _PYDANTIC_AVAILABLE:
-        return {
-            "preview": True,
-            "intent_mode": mode,
-            "plan_id": None,
-            "intent_id": None,
-            "design_version_before": state_manager.design_version,
-            "actions": _serialize_actions(det_plan.actions),
-            "approved": [],
-            "rejected": [],
-            "warnings": result.warnings,
-            "unsupported_mentions": unsupported_mentions,
-            "missing_required": [],
-            "intent_status": "blocked",
-            "provenance": "deterministic",
-            "apply_payload": None,
-        }
-
-    # Call LLM for structured proposal
-    llm_response = llm_client.complete_json(
-        request.text,
-        LLMProposals,
-        temperature=0,
-        prompt_version=LLM_PROMPT_VERSION,
-    )
-    proposals = getattr(llm_response, "actions", [])
-
-    # Canonical hash for auditability
-    try:
-        canonical_json = llm_response.model_dump_json(sort_keys=True)
-    except Exception:
-        canonical_json = json.dumps(proposals, default=str, sort_keys=True)
-    llm_output_sha256 = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
-
-    llm_actions = []
-    for proposal in proposals:
-        try:
-            action_type = ActionType(proposal.action_type)
-        except Exception:
-            continue
-
-        path = normalize_path(proposal.path)
-        if not is_refinable(path):
-            continue
-        if path not in LLM_ALLOWED_PATHS:
-            continue
-
-        if action_type in (ActionType.INCREASE, ActionType.DECREASE):
-            bucket = proposal.bucket
-            if not bucket and proposal.unit and str(proposal.unit).startswith("bucket:"):
-                _, _, bucket_token = str(proposal.unit).partition(":")
-                bucket = bucket_token or "normal"
-            if bucket:
-                unit = f"bucket:{bucket}"
-                llm_actions.append(Action(action_type=action_type, path=path, amount=None, unit=unit))
-            elif proposal.amount is not None:
-                llm_actions.append(
-                    Action(
-                        action_type=action_type,
-                        path=path,
-                        amount=proposal.amount,
-                        unit=proposal.unit,
-                    )
-                )
-        elif action_type == ActionType.SET:
-            llm_actions.append(
-                Action(
-                    action_type=action_type,
-                    path=path,
-                    value=proposal.value,
-                    unit=proposal.unit,
-                )
-            )
-
-    llm_plan_id = f"llm_preview_{uuid.uuid4().hex[:8]}"
-    llm_intent_id = f"llm_intent_{uuid.uuid4().hex[:8]}"
-    llm_plan = ActionPlan(
-        plan_id=llm_plan_id,
-        intent_id=llm_intent_id,
-        design_id=design_id,
-        design_version_before=version_before,
-        actions=llm_actions,
-        proposed_at=datetime.now(timezone.utc),
-    )
-
-    llm_result = validator.validate(llm_plan, state_manager, check_stale=False)
     apply_payload = None
-    allow_apply = os.getenv("MAGNET_CHAT_GUESS_APPLY", "false").lower() == "true"
-    if llm_result.approved and allow_apply:
+    if det_result.approved:
         apply_payload = {
-            "plan_id": llm_plan_id,
-            "intent_id": llm_intent_id,
+            "plan_id": det_plan_id,
+            "intent_id": det_intent_id,
             "design_version_before": state_manager.design_version,
-            "actions": _serialize_actions(llm_result.approved),
+            "actions": _serialize_actions(det_result.approved),
         }
 
-    intent_status = "complete" if llm_result.approved else "blocked"
+    if not det_result.approved:
+        intent_status = "blocked"
+    elif missing_required:
+        intent_status = "partial"
+    else:
+        intent_status = "complete"
 
-    llm_meta = {
-        "provider": getattr(getattr(llm_client, "provider", None), "name", None) or "llm_client",
-        "model": getattr(getattr(llm_client, "provider", None), "model", None),
-        "temperature": 0,
-        "prompt_version": LLM_PROMPT_VERSION,
-    }
-
-    return {
+    resp = {
         "preview": True,
         "intent_mode": mode,
-        "plan_id": llm_plan_id,
-        "intent_id": llm_intent_id,
+        "plan_id": det_plan_id if det_result.approved else None,
+        "intent_id": det_intent_id if det_result.approved else None,
         "design_version_before": state_manager.design_version,
-        "actions": _serialize_actions(llm_plan.actions),
-        "approved": _serialize_actions(llm_result.approved),
+        "actions": _serialize_actions(det_plan.actions),
+        "approved": _serialize_actions(det_result.approved),
         "rejected": [
             {"action": {"path": a.path, "value": getattr(a, 'value', None)}, "reason": reason}
-            for a, reason in llm_result.rejected
+            for a, reason in det_result.rejected
         ],
-        "warnings": llm_result.warnings,
+        "warnings": det_result.warnings,
         "unsupported_mentions": unsupported_mentions,
-        "missing_required": [],
+        "missing_required": missing_required,
         "intent_status": intent_status,
-        "provenance": "llm_guess",
-        "llm_meta": llm_meta,
-        "llm_output_sha256": llm_output_sha256,
+        "provenance": "deterministic",
         "apply_payload": apply_payload,
     }
+    if mode == "compound":
+        resp["proposed_actions"] = _serialize_actions(det_plan.actions)
+    return resp
 
 
 def create_fastapi_app(context: "AppContext" = None):
@@ -800,6 +943,27 @@ def create_fastapi_app(context: "AppContext" = None):
         if design.mission:
             for key, value in design.mission.items():
                 set_state_value(state_manager, f"mission.{key}", value, "api")
+
+        # Initialize hull dimensions with kernel baselines to satisfy positive validators
+        hull_baselines = {
+            "hull.loa": 30.0,
+            "hull.beam": 8.0,
+            "hull.draft": 2.0,
+            "hull.depth": 4.0,
+        }
+        txn_id = None
+        try:
+            txn_id = state_manager.begin_transaction()
+            for path, value in hull_baselines.items():
+                state_manager.set(path, value, source="api|design_init")
+            state_manager.commit()
+        except Exception as e:
+            if txn_id:
+                try:
+                    state_manager.rollback_transaction(txn_id)
+                except Exception:
+                    pass
+            logger.warning(f"Failed to initialize hull baselines: {e}")
 
         # v1.1: Initialize phases via PhaseMachine (fixes blocker #11)
         phases = ["mission", "hull_form", "structure", "propulsion",
@@ -1238,7 +1402,6 @@ def create_fastapi_app(context: "AppContext" = None):
             Preview with approved/rejected/warnings from ActionPlanValidator
             Plus (compound mode): missing_required, unsupported_mentions
         """
-        import uuid
         from magnet.ui.utils import get_state_value
 
         if not state_manager:
@@ -1253,19 +1416,13 @@ def create_fastapi_app(context: "AppContext" = None):
 
         # Module 65.1: Compound mode
         mode = getattr(request, 'mode', 'single') or 'single'
-
-        if mode == "compound":
-            return await _preview_intent_compound(
-                design_id, request, state_manager, validator, llm_client
-            )
-        # Single-action mode with fallback
         try:
-            return _compile_intent_with_llm_fallback(
+            return await _compile_intent_with_llm_fallback(
                 design_id=design_id,
                 request=request,
                 state_manager=state_manager,
                 validator=validator,
-                mode="single",
+                mode=mode,
                 llm_client=llm_client,
             )
         except HTTPException:
@@ -1273,187 +1430,6 @@ def create_fastapi_app(context: "AppContext" = None):
         except Exception as e:
             logger.error(f"Preview error: {e}")
             raise HTTPException(status_code=500, detail=f"Preview error: {e}")
-
-    # =========================================================================
-    # Module 65.1: Compound Intent Preview Helper
-    # =========================================================================
-
-    async def _preview_intent_compound(
-        design_id: str,
-        request,
-        state_manager,
-        validator,
-        llm_client=None,
-    ):
-        """
-        Compound mode preview with gate reuse on hypothetical state.
-
-        Module 65.1: Multi-pass extraction + gate checks.
-        Uses HypotheticalStateView and check_gates_on_hypothetical().
-
-        ZERO MUTATION - no state.set(), no begin_transaction(), no commit().
-        """
-        import uuid
-        from magnet.deployment.intent_parser import (
-            extract_compound_intent,
-            get_guidance_message,
-        )
-        from magnet.kernel.intent_protocol import ActionPlan
-        from magnet.core.phase_ownership import get_phase_for_path
-
-        # Step 1: Multi-pass extraction
-        compound = extract_compound_intent(request.text)
-        proposed_actions = compound["proposed_actions"]
-        unsupported_mentions = compound["unsupported_mentions"]
-
-        if not proposed_actions:
-            if llm_client:
-                return _compile_intent_with_llm_fallback(
-                    design_id=design_id,
-                    request=request,
-                    state_manager=state_manager,
-                    validator=validator,
-                    mode="compound",
-                    llm_client=llm_client,
-                )
-            return {
-                "preview": True,
-                "intent_mode": "compound",
-                "plan_id": None,
-                "intent_id": None,
-                "design_version_before": state_manager.design_version,
-                "proposed_actions": [],
-                "approved": [],
-                "rejected": [],
-                "warnings": [],
-                "missing_required": [],
-                "unsupported_mentions": unsupported_mentions,
-                "intent_status": "blocked",
-                "guidance": get_guidance_message(),
-                "apply_payload": None,
-            }
-
-        # Step 2: Build ActionPlan and validate
-        plan_id = f"det_preview_{uuid.uuid4().hex[:8]}"
-        intent_id = f"det_intent_{uuid.uuid4().hex[:8]}"
-        version_before = request.design_version_before or state_manager.design_version
-
-        plan = ActionPlan(
-            plan_id=plan_id,
-            intent_id=intent_id,
-            design_id=design_id,
-            design_version_before=version_before,
-            actions=proposed_actions,
-            proposed_at=datetime.now(timezone.utc),
-        )
-
-        try:
-            result = validator.validate(plan, state_manager, check_stale=False)
-        except Exception as e:
-            logger.error(f"Validation error: {e}")
-            return {
-                "preview": True,
-                "intent_mode": "compound",
-                "error": str(e),
-                "intent_status": "blocked",
-            }
-
-        # Fallback to LLM if no deterministic approvals
-        if not result.approved:
-            return _compile_intent_with_llm_fallback(
-                design_id=design_id,
-                request=request,
-                state_manager=state_manager,
-                validator=validator,
-                mode="compound",
-                llm_client=llm_client,
-            )
-
-        # Step 3: Create HypotheticalStateView with approved actions
-        hypothetical = HypotheticalStateView(state_manager, result.approved)
-
-        # Step 4: Determine target phases and check gates on hypothetical
-        target_phases = set()
-        for action in result.approved:
-            phase = get_phase_for_path(action.path)
-            if phase:
-                target_phases.add(phase)
-
-        missing_required = []
-        for phase in target_phases:
-            phase_missing = check_gates_on_hypothetical(phase, hypothetical)
-            missing_required.extend(phase_missing)
-
-        # Remove duplicates (same path might appear from multiple phases)
-        seen_paths = set()
-        unique_missing = []
-        for m in missing_required:
-            if m["path"] not in seen_paths:
-                unique_missing.append(m)
-                seen_paths.add(m["path"])
-        missing_required = unique_missing
-
-        # Step 5: Compute intent_status
-        if not result.approved:
-            intent_status = "blocked"
-        elif missing_required:
-            intent_status = "partial"
-        else:
-            intent_status = "complete"
-
-        # Return compound preview response
-        return {
-            "preview": True,
-            "intent_mode": "compound",
-            "plan_id": plan_id,
-            "intent_id": intent_id,
-            "design_version_before": state_manager.design_version,
-            "proposed_actions": [
-                {
-                    "action_type": a.action_type.value,
-                    "path": a.path,
-                    "value": a.value,
-                    "amount": getattr(a, 'amount', None),
-                    "unit": a.unit,
-                    "source": "extracted",
-                }
-                for a in proposed_actions
-            ],
-            "approved": [
-                {
-                    "action_type": a.action_type.value,
-                    "path": a.path,
-                    "value": a.value,
-                    "amount": getattr(a, 'amount', None),
-                    "unit": a.unit,
-                }
-                for a in result.approved
-            ],
-            "rejected": [
-                {"action": {"path": a.path, "value": a.value}, "reason": reason}
-                for a, reason in result.rejected
-            ],
-            "warnings": result.warnings,
-            "missing_required": missing_required,
-            "unsupported_mentions": unsupported_mentions,
-            "intent_status": intent_status,
-            "provenance": "deterministic",
-            "apply_payload": {
-                "plan_id": plan_id,
-                "intent_id": intent_id,
-                "design_version_before": state_manager.design_version,
-                "actions": [
-                    {
-                        "action_type": a.action_type.value,
-                        "path": a.path,
-                        "value": a.value,
-                        "amount": getattr(a, 'amount', None),
-                        "unit": a.unit,
-                    }
-                    for a in result.approved
-                ]
-            } if result.approved else None,
-        }
 
     # =========================================================================
     # Phase Endpoints with PhaseMachine integration (fixes blocker #11)
