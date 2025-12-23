@@ -257,7 +257,33 @@ class StateGeometryAdapter:
 
     @property
     def lwl(self) -> float:
-        return self._get_hull_value('lwl', 23.0)
+        """
+        Waterline length (LWL).
+
+        IMPORTANT (Hull Form UX): the parametric hull generator spaces stations along LWL.
+        If LWL is unset, default it to LOA so that user-facing LOA changes visibly
+        regenerate the hull geometry (until a dedicated LWL workflow is implemented).
+        """
+        # Prefer explicit hull.lwl when present
+        try:
+            from magnet.ui.utils import get_state_value
+            v = get_state_value(self._sm, "hull.lwl", None)
+            if v is not None:
+                v = float(v)
+                if v > 0:
+                    return v
+        except Exception:
+            pass
+
+        # Default LWL from LOA (keeps geometry responsive to LOA edits)
+        try:
+            loa = float(self.loa)
+            if loa > 0:
+                return loa
+        except Exception:
+            pass
+
+        return 23.0
 
     @property
     def beam(self) -> float:
