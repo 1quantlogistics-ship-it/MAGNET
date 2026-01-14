@@ -726,12 +726,12 @@ class HullGeometryPipeline:
                     except Exception:
                         pass
 
+                    # Avoid top-level import cycle by importing here.
+                    from magnet.webgl.interfaces import SectionVertex, Point3D as InterfacePoint3D
                     if edge_type is not None:
-                        # Avoid top-level import cycle by importing here.
-                        from magnet.webgl.interfaces import SectionVertex, Point3D
-                        new_points.append(SectionVertex(position=Point3D(x=x, y=y, z=z), edge_type=edge_type))
+                        new_points.append(SectionVertex(position=InterfacePoint3D(x=x, y=y, z=z), edge_type=edge_type))
                     else:
-                        new_points.append(Point3D(x=x, y=y, z=z))
+                        new_points.append(InterfacePoint3D(x=x, y=y, z=z))
 
                 out.append(HullSection(station=station, points=new_points, body_id=getattr(a, "body_id", "main")))
 
