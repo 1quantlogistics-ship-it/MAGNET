@@ -6,7 +6,7 @@ Natural language chat compiles into `ActionPlan` via an **LLM-first translator**
 ### 2) Control Flow (canonical)
 User text  
 → LLM translator (primary) (`magnet/deployment/api.py::_compile_intent_with_llm_fallback`)  
-  - system_prompt injects allowed paths + kernel units from `REFINABLE_SCHEMA`  
+  - system_prompt injects refinable paths from `REFINABLE_SCHEMA` (enums include allowed values; numerics include units/bounds)  
   - `options=LLMOptions(temperature=0)`  
 → Build ActionPlan (`magnet/kernel/intent_protocol.py`)  
 → Validate (no mutation) (`magnet/kernel/action_validator.py`)  
@@ -21,7 +21,7 @@ User text
 ### 3) Key Files (ownership)
 - `magnet/kernel/action_validator.py`: `_BASELINE_VALUES`, `_DELTA_POLICY`, bucket-to-numeric delta conversion, unit normalize, clamp, type coercion, lock checks, stale plan detection.
 - `magnet/kernel/action_executor.py`: provenance derivation from plan_id prefix, structured source string into `StateManager.set`, atomic transactions with rollback-on-any-error, emits events with provenance.
-- `magnet/deployment/api.py`: `_compile_intent_with_llm_fallback()` (**LLM-first translator**, deterministic fallback, allowlist filtering, system_prompt path+unit injection from `REFINABLE_SCHEMA`, `LLMOptions(temperature=0)`, `llm_meta` + `llm_output_sha256`, apply_payload gating), preview endpoints wiring.
+- `magnet/deployment/api.py`: `_compile_intent_with_llm_fallback()` (**LLM-first translator**, deterministic fallback, schema-driven prompt from `REFINABLE_SCHEMA`, `LLMOptions(temperature=0)`, `llm_meta` + `llm_output_sha256`, apply_payload gating), preview endpoints wiring.
 - `magnet/ui_v2/js/backend-adapter.js`: session toggle `auto-apply guesses on|off|status`, provenance-aware preview handling for guesses vs deterministic, undo/rest hooks.
 
 ### 4) Bucket Deltas (path-aware)
@@ -43,7 +43,7 @@ User text
   - the LLM call throws, **or**
   - the LLM returns no usable actions after filtering.
 - LLM call uses `LLMClient.complete_json(prompt, schema, system_prompt=..., options=LLMOptions(temperature=0))`.
-- Allowlist: only paths in `LLM_ALLOWED_PATHS` (mirrors baseline/delta policy); non-refinable or non-allowlisted proposals are dropped pre-validation.
+- Gatekeeping: proposals are kept only if `is_refinable(path)`; the kernel validator enforces types/units/bounds/locks.
 - LLM path builds `llm_*` plan_id/intent_id, validates via the same validator, returns `llm_meta` + `llm_output_sha256`.
 - `apply_payload` for LLM results is gated by `MAGNET_CHAT_GUESS_APPLY` (default **true** in code; can be disabled by setting `MAGNET_CHAT_GUESS_APPLY=false`).
 - `LLM_PROMPT_VERSION` is included in `llm_meta` for audit, but is not routed through the provider layer.
@@ -54,7 +54,7 @@ User text
 - `ActionExecutedEvent` and `StateMutatedEvent` carry `source`.
 
 ### 8) How to Extend Safely
-- New refinable paths requiring baselines/deltas: add to `_BASELINE_VALUES`, add path-aware entry to `_DELTA_POLICY`, and add to `LLM_ALLOWED_PATHS` (api.py) if LLM should propose it.
+- New refinable paths: add to `REFINABLE_SCHEMA` (type/unit/bounds/allowed_values). The prompt updates automatically.\n+- If you want bucket deltas or baseline-on-null deltas for a path, add to `_DELTA_POLICY` / `_BASELINE_VALUES` (kernel owns these semantics).
 - Keep bucket policies path-specific; do not introduce global percentages.
 - Maintain LLM-first translation inside `_compile_intent_with_llm_fallback()`; do not scatter LLM calls across routes.
 - Preserve atomic execution: any multi-action apply must roll back entirely on error.

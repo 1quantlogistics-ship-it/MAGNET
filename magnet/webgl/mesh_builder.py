@@ -1,26 +1,44 @@
 """
-webgl/mesh_builder.py - Mesh construction utilities v1.1
+webgl/mesh_builder.py - Mesh construction utilities v1.2
 
 Module 58: WebGL 3D Visualization
 ALPHA OWNS THIS FILE.
 
 Provides utilities for building triangle meshes with proper normals.
+
+v1.2 Changes:
+- Added EdgeType support for hard edge rendering
+- Added split normal computation at hard edges
+- Added mark_hard_edge() method
 """
 
 from __future__ import annotations
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Set, Dict
 from dataclasses import dataclass, field
+from enum import Enum
 import math
 import logging
 
 from .schema import MeshData
+from magnet.core.constants import EPSILON_VECTOR, EPSILON_GEOMETRY
 
 logger = logging.getLogger("webgl.mesh_builder")
 
 
+# Import EdgeType from hull_gen if available, otherwise define locally
+try:
+    from magnet.hull_gen.geometry import EdgeType
+except ImportError:
+    class EdgeType(Enum):
+        """Edge rendering type (local fallback)."""
+        SMOOTH = "smooth"
+        HARD = "hard"
+        CREASE = "crease"
+
+
 class MeshBuilder:
     """
-    Builder for constructing triangle meshes.
+    Builder for constructing triangle meshes with hard edge support.
 
     Usage:
         builder = MeshBuilder()
@@ -29,16 +47,56 @@ class MeshBuilder:
         v2 = builder.add_vertex(0, 1, 0)
         builder.add_triangle(v0, v1, v2)
         mesh = builder.build()
+        
+    v1.2: Support for hard edges via edge_type parameter and mark_hard_edge().
     """
 
     def __init__(self):
         self._vertices: List[float] = []
         self._indices: List[int] = []
+        self._normals: List[float] = []  # v1.3: Explicit normals for faceted surfaces
         self._vertex_count = 0
+        
+        # v1.2: Edge type tracking for split normal support
+        self._vertex_edge_types: List[EdgeType] = []
+        self._hard_edges: Set[Tuple[int, int]] = set()  # Pairs of vertex indices (ordered)
 
-    def add_vertex(self, x: float, y: float, z: float) -> int:
-        """Add a vertex and return its index."""
+    def add_vertex(
+        self, 
+        x: float, 
+        y: float, 
+        z: float,
+        edge_type: EdgeType = EdgeType.SMOOTH,
+    ) -> int:
+        """Add a vertex with optional edge type and return its index."""
         self._vertices.extend([x, y, z])
+        self._vertex_edge_types.append(edge_type)
+        idx = self._vertex_count
+        self._vertex_count += 1
+        return idx
+    
+    def add_vertex_with_normal(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        nx: float,
+        ny: float,
+        nz: float,
+        edge_type: EdgeType = EdgeType.SMOOTH,
+    ) -> int:
+        """
+        Add a vertex with explicit normal.
+        
+        Phase 6: Used for faceted tessellation and deck surfaces where
+        normals are computed per-face rather than averaged.
+        """
+        self._vertices.extend([x, y, z])
+        self._vertex_edge_types.append(edge_type)
+        # Extend normals array to match vertex count
+        while len(self._normals) < len(self._vertices) - 3:
+            self._normals.extend([0.0, 0.0, 1.0])
+        self._normals.extend([nx, ny, nz])
         idx = self._vertex_count
         self._vertex_count += 1
         return idx
@@ -80,10 +138,40 @@ class MeshBuilder:
         for i in range(len(ring) - 1):
             self.add_triangle(center, ring[i], ring[i + 1])
 
+    def mark_hard_edge(self, v0: int, v1: int) -> None:
+        """
+        Mark edge between v0 and v1 as hard.
+        
+        v1.2: Hard edges cause normal splitting at these vertices.
+        """
+        # Store as ordered tuple for consistent lookup
+        edge = (min(v0, v1), max(v0, v1))
+        self._hard_edges.add(edge)
+
     def build(self, compute_normals: bool = True) -> MeshData:
-        """Build the final mesh."""
+        """
+        Build the final mesh.
+        
+        v1.2: If any vertices have EdgeType.HARD or hard edges are marked,
+        uses split normal computation instead of smooth averaging.
+        """
+        has_hard_edges = (
+            self._hard_edges or 
+            any(et == EdgeType.HARD for et in self._vertex_edge_types)
+        )
+        
         if compute_normals:
-            normals = compute_vertex_normals(self._vertices, self._indices)
+            if has_hard_edges:
+                # Use split normal algorithm
+                vertices, indices, normals = self._compute_split_normals()
+                return MeshData(
+                    vertices=vertices,
+                    indices=indices,
+                    normals=normals,
+                )
+            else:
+                # Use standard smooth normals
+                normals = compute_vertex_normals(self._vertices, self._indices)
         else:
             normals = [0.0, 1.0, 0.0] * self._vertex_count
 
@@ -92,6 +180,211 @@ class MeshBuilder:
             indices=self._indices,
             normals=normals,
         )
+
+    def _compute_split_normals(self) -> Tuple[List[float], List[int], List[float]]:
+        """
+        Compute normals with vertex splitting at hard edges.
+        
+        Algorithm:
+        1. Compute face normals for all triangles
+        2. For each vertex, group adjacent faces by hard edge boundaries
+        3. For each group, average face normals
+        4. If vertex has multiple groups, duplicate vertex
+        5. Return expanded vertex/normal/index arrays
+        
+        v1.2: Foundation for hard chine rendering.
+        """
+        num_vertices = self._vertex_count
+        num_triangles = len(self._indices) // 3
+        
+        if num_vertices == 0 or num_triangles == 0:
+            return self._vertices.copy(), self._indices.copy(), [0.0, 0.0, 1.0] * num_vertices
+        
+        # Step 1: Compute face normals
+        face_normals = self._compute_face_normals()
+        
+        # Step 2: Build vertex -> face adjacency
+        vertex_faces: Dict[int, List[int]] = {i: [] for i in range(num_vertices)}
+        for face_idx in range(num_triangles):
+            for j in range(3):
+                v = self._indices[face_idx * 3 + j]
+                vertex_faces[v].append(face_idx)
+        
+        # Step 3-4: Process each vertex
+        new_vertices: List[float] = []
+        new_normals: List[float] = []
+        new_indices: List[int] = list(self._indices)  # Will be updated
+        
+        # Track vertex remapping: (old_vertex_idx, face_idx) -> new_vertex_idx
+        vertex_remap: Dict[Tuple[int, int], int] = {}
+        
+        for v_idx in range(num_vertices):
+            edge_type = self._vertex_edge_types[v_idx] if v_idx < len(self._vertex_edge_types) else EdgeType.SMOOTH
+            faces = vertex_faces[v_idx]
+            
+            if not faces:
+                # Orphan vertex - keep as-is with default normal
+                new_v_idx = len(new_vertices) // 3
+                new_vertices.extend(self._vertices[v_idx*3 : v_idx*3+3])
+                new_normals.extend([0.0, 0.0, 1.0])
+                continue
+            
+            if edge_type == EdgeType.SMOOTH and not self._vertex_has_hard_edge(v_idx, faces):
+                # Single vertex, averaged normal (standard behavior)
+                avg_normal = self._average_face_normals([face_normals[f] for f in faces])
+                new_v_idx = len(new_vertices) // 3
+                new_vertices.extend(self._vertices[v_idx*3 : v_idx*3+3])
+                new_normals.extend(avg_normal)
+                
+                # Update all face references
+                for face_idx in faces:
+                    for j in range(3):
+                        if self._indices[face_idx * 3 + j] == v_idx:
+                            new_indices[face_idx * 3 + j] = new_v_idx
+            
+            else:
+                # Hard edge vertex - group faces and split
+                face_groups = self._group_faces_by_hard_edges(v_idx, faces)
+                
+                for group_faces in face_groups:
+                    avg_normal = self._average_face_normals([face_normals[f] for f in group_faces])
+                    new_v_idx = len(new_vertices) // 3
+                    new_vertices.extend(self._vertices[v_idx*3 : v_idx*3+3])
+                    new_normals.extend(avg_normal)
+                    
+                    # Update face references for this group
+                    for face_idx in group_faces:
+                        for j in range(3):
+                            if self._indices[face_idx * 3 + j] == v_idx:
+                                new_indices[face_idx * 3 + j] = new_v_idx
+        
+        return new_vertices, new_indices, new_normals
+
+    def _compute_face_normals(self) -> List[Tuple[float, float, float]]:
+        """Compute normal for each triangle face."""
+        normals = []
+        num_triangles = len(self._indices) // 3
+        
+        for i in range(num_triangles):
+            i0, i1, i2 = self._indices[i * 3], self._indices[i * 3 + 1], self._indices[i * 3 + 2]
+            
+            p0 = self._get_vertex(i0)
+            p1 = self._get_vertex(i1)
+            p2 = self._get_vertex(i2)
+            
+            # Cross product of edges
+            e1 = (p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2])
+            e2 = (p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2])
+            
+            nx = e1[1] * e2[2] - e1[2] * e2[1]
+            ny = e1[2] * e2[0] - e1[0] * e2[2]
+            nz = e1[0] * e2[1] - e1[1] * e2[0]
+            
+            # Normalize
+            length = math.sqrt(nx*nx + ny*ny + nz*nz)
+            if length > EPSILON_VECTOR:
+                nx, ny, nz = nx/length, ny/length, nz/length
+            else:
+                nx, ny, nz = 0.0, 0.0, 1.0
+            
+            normals.append((nx, ny, nz))
+        
+        return normals
+
+    def _get_vertex(self, idx: int) -> Tuple[float, float, float]:
+        """Get vertex position by index."""
+        return (
+            self._vertices[idx * 3],
+            self._vertices[idx * 3 + 1],
+            self._vertices[idx * 3 + 2],
+        )
+
+    def _average_face_normals(self, normals: List[Tuple[float, float, float]]) -> List[float]:
+        """Average a list of face normals."""
+        if not normals:
+            return [0.0, 0.0, 1.0]
+        
+        nx = sum(n[0] for n in normals)
+        ny = sum(n[1] for n in normals)
+        nz = sum(n[2] for n in normals)
+        
+        length = math.sqrt(nx*nx + ny*ny + nz*nz)
+        if length > EPSILON_VECTOR:
+            return [nx/length, ny/length, nz/length]
+        else:
+            return [0.0, 0.0, 1.0]
+
+    def _vertex_has_hard_edge(self, vertex_idx: int, faces: List[int]) -> bool:
+        """Check if vertex is connected to any hard edge."""
+        for face_idx in faces:
+            for j in range(3):
+                v0 = self._indices[face_idx * 3 + j]
+                v1 = self._indices[face_idx * 3 + (j + 1) % 3]
+                
+                if v0 == vertex_idx or v1 == vertex_idx:
+                    edge = (min(v0, v1), max(v0, v1))
+                    if edge in self._hard_edges:
+                        return True
+        return False
+
+    def _group_faces_by_hard_edges(self, vertex_idx: int, faces: List[int]) -> List[List[int]]:
+        """
+        Group faces around a vertex by hard edge boundaries.
+        
+        Faces in the same group share smooth edges.
+        Hard edges create group boundaries.
+        """
+        if not faces:
+            return []
+        
+        if not self._hard_edges and not any(
+            self._vertex_edge_types[vertex_idx] == EdgeType.HARD 
+            for _ in [0] if vertex_idx < len(self._vertex_edge_types)
+        ):
+            # No hard edges, all faces in one group
+            return [faces]
+        
+        # Build face adjacency (faces sharing an edge at this vertex, excluding hard edges)
+        face_neighbors: Dict[int, Set[int]] = {f: set() for f in faces}
+        
+        for i, f1 in enumerate(faces):
+            for f2 in faces[i+1:]:
+                shared_edge = self._get_shared_edge(f1, f2, vertex_idx)
+                if shared_edge is not None and shared_edge not in self._hard_edges:
+                    face_neighbors[f1].add(f2)
+                    face_neighbors[f2].add(f1)
+        
+        # Flood fill to find connected groups
+        groups = []
+        remaining = set(faces)
+        
+        while remaining:
+            group = []
+            start = remaining.pop()
+            stack = [start]
+            
+            while stack:
+                f = stack.pop()
+                group.append(f)
+                for neighbor in face_neighbors[f]:
+                    if neighbor in remaining:
+                        remaining.remove(neighbor)
+                        stack.append(neighbor)
+            
+            groups.append(group)
+        
+        return groups
+
+    def _get_shared_edge(self, f1: int, f2: int, vertex_idx: int) -> Optional[Tuple[int, int]]:
+        """Get the edge shared by two faces at a given vertex, if any."""
+        verts1 = set(self._indices[f1*3 : f1*3+3])
+        verts2 = set(self._indices[f2*3 : f2*3+3])
+        shared = verts1 & verts2
+        
+        if vertex_idx in shared and len(shared) == 2:
+            other = (shared - {vertex_idx}).pop()
+            return (min(vertex_idx, other), max(vertex_idx, other))
+        return None
 
     @property
     def vertex_count(self) -> int:
@@ -149,7 +442,7 @@ def compute_vertex_normals(vertices: List[float], indices: List[int]) -> List[fl
         nz = normals[i * 3 + 2]
 
         length = math.sqrt(nx * nx + ny * ny + nz * nz)
-        if length > 1e-10:
+        if length > EPSILON_VECTOR:
             normals[i * 3] = nx / length
             normals[i * 3 + 1] = ny / length
             normals[i * 3 + 2] = nz / length
@@ -248,7 +541,7 @@ def compute_tangents(
 
         # Calculate tangent and bitangent
         denom = duv1[0] * duv2[1] - duv2[0] * duv1[1]
-        if abs(denom) < 1e-10:
+        if abs(denom) < EPSILON_GEOMETRY:
             continue
 
         r = 1.0 / denom
@@ -292,7 +585,7 @@ def compute_tangents(
 
         # Normalize
         length = math.sqrt(t_ortho[0] ** 2 + t_ortho[1] ** 2 + t_ortho[2] ** 2)
-        if length > 1e-10:
+        if length > EPSILON_VECTOR:
             t_ortho = (t_ortho[0] / length, t_ortho[1] / length, t_ortho[2] / length)
         else:
             t_ortho = (1.0, 0.0, 0.0)

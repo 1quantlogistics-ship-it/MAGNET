@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 import math
 
 from .geometry import Point3D
+from magnet.core.constants import EPSILON_VECTOR, EPSILON_PARAMETER, EPSILON_GEOMETRY
 
 
 @dataclass
@@ -81,8 +82,8 @@ class NURBSCurve:
         if not self.knot_vector:
             self.generate_uniform_knots()
 
-        # Clamp u
-        u = max(0.0, min(1.0 - 1e-10, u))
+        # Clamp u to valid parameter range
+        u = max(0.0, min(1.0 - EPSILON_PARAMETER, u))
 
         # Find knot span
         span = self._find_span(u)
@@ -238,7 +239,7 @@ class NURBSCurve:
         cross = d1.cross(d2)
         d1_mag = d1.length()
 
-        if d1_mag < 1e-10:
+        if d1_mag < EPSILON_VECTOR:
             return 0.0
 
         return cross.length() / (d1_mag ** 3)
@@ -354,9 +355,9 @@ class NURBSSurface:
         if not self.knot_vector_u:
             self.generate_uniform_knots()
 
-        # Clamp parameters
-        u = max(0.0, min(1.0 - 1e-10, u))
-        v = max(0.0, min(1.0 - 1e-10, v))
+        # Clamp parameters to valid range
+        u = max(0.0, min(1.0 - EPSILON_PARAMETER, u))
+        v = max(0.0, min(1.0 - EPSILON_PARAMETER, v))
 
         # Create temporary curves in U direction
         temp_points = []
@@ -480,7 +481,7 @@ class NURBSSurface:
 
         # Gaussian curvature K = (LN - M^2) / (EG - F^2)
         denom = E * G - F * F
-        if abs(denom) < 1e-10:
+        if abs(denom) < EPSILON_GEOMETRY:
             return 0.0
 
         return (L * N - M * M) / denom

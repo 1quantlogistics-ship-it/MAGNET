@@ -75,10 +75,19 @@ def kelvin_to_celsius(k: float) -> float:
 
 # ==================== Naval Architecture Constants ====================
 
-# Froude number thresholds
-FROUDE_DISPLACEMENT_MAX = 0.4
-FROUDE_SEMI_DISPLACEMENT_MAX = 0.9
-FROUDE_PLANING_THRESHOLD = 1.0
+# Froude number thresholds (canonical)
+# NOTE: These are used for high-level regime classification and method validity gating.
+FN_DISPLACEMENT_MAX = 0.40      # Below this: displacement regime
+FN_SEMI_DISPLACEMENT_MAX = 0.70 # Below this: semi-displacement; at/above: planing regime
+
+# Resistance method validity (Holtrop-Mennen)
+FN_HOLTROP_VALID_MAX = FN_DISPLACEMENT_MAX   # Holtrop generally valid/accurate
+FN_HOLTROP_USABLE_MAX = FN_SEMI_DISPLACEMENT_MAX  # Holtrop approximate; beyond: invalid
+
+# Backwards compatibility (legacy names used in older modules)
+FROUDE_DISPLACEMENT_MAX = FN_DISPLACEMENT_MAX
+FROUDE_SEMI_DISPLACEMENT_MAX = FN_SEMI_DISPLACEMENT_MAX
+FROUDE_PLANING_THRESHOLD = FN_SEMI_DISPLACEMENT_MAX
 
 # Hull coefficient typical ranges
 CB_PLANING_TYPICAL = (0.35, 0.45)
@@ -177,6 +186,25 @@ TOLERANCE_LENGTH_M = 0.001  # 1mm
 TOLERANCE_MASS_KG = 0.1
 TOLERANCE_ANGLE_DEG = 0.01
 TOLERANCE_PERCENTAGE = 0.01  # 1%
+
+# ==================== Geometry Tolerances (MAGNET Standard) ====================
+# Centralized tolerance definitions - DO NOT use 1e-X literals elsewhere
+# See docs/architecture/GEOMETRY_CONVENTIONS.md
+
+# Mesh operations (vertex deduplication, edge detection)
+EPSILON_MESH = 1e-6  # 1 micrometer - for vertex merging and deduplication
+
+# Geometry validation (area/volume integration, normal calculation)
+EPSILON_GEOMETRY = 1e-10  # For numerical integration and zero-checks
+
+# Convergence criteria (iterative solvers, optimization)
+EPSILON_CONVERGENCE = 1e-4  # For iterative algorithms
+
+# Vector normalization (prevent division by zero)
+EPSILON_VECTOR = 1e-10  # For vector length checks before normalization
+
+# Parameter clamping (u/v parameters in NURBS)
+EPSILON_PARAMETER = 1e-10  # For clamping parameters to [0, 1-epsilon]
 
 # Phase configuration
 DESIGN_PHASES = [

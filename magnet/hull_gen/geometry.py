@@ -3,13 +3,37 @@ hull_gen/geometry.py - Hull geometry data structures.
 
 BRAVO OWNS THIS FILE.
 
-Module 17 v1.0 - Hull geometry representation.
+Module 17 v1.1 - Hull geometry representation with edge type support.
+
+v1.1 Changes:
+- Added EdgeType enum for hard edge rendering support
+- Extended SectionPoint with edge_type and feature_id fields
 """
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 import math
+
+if TYPE_CHECKING:
+    from magnet.hull_gen.deck_generator import DeckGeometry
+
+
+class EdgeType(Enum):
+    """
+    Edge rendering type for mesh generation.
+    
+    Controls how normals are computed at vertices:
+    - SMOOTH: Averaged normals across adjacent faces (default behavior)
+    - HARD: Split normals, each face gets its own normal at this vertex
+    - CREASE: Hard edge only above specified angle threshold
+    
+    Phase 1: Foundation for hard chine rendering.
+    """
+    SMOOTH = "smooth"
+    HARD = "hard"
+    CREASE = "crease"
 
 
 @dataclass
@@ -20,7 +44,7 @@ class Point3D:
     """Longitudinal position (m from AP, positive forward)."""
 
     y: float = 0.0
-    """Transverse position (m from centerline, positive starboard)."""
+    """Transverse position (m from centerline, positive port). See docs/architecture/GEOMETRY_CONVENTIONS.md."""
 
     z: float = 0.0
     """Vertical position (m from baseline, positive up)."""
@@ -88,7 +112,9 @@ class SectionPoint:
     """
     Point on a hull section curve.
 
-    Includes curvature and normal information.
+    Includes curvature, normal, and edge type information.
+    
+    v1.1: Added edge_type for hard edge rendering support.
     """
 
     position: Point3D = field(default_factory=Point3D)
@@ -106,6 +132,16 @@ class SectionPoint:
     is_keel: bool = False
     """Whether this point is at keel centerline."""
 
+    # === v1.1: Edge rendering control ===
+    edge_type: EdgeType = field(default=EdgeType.SMOOTH)
+    """Edge rendering type (SMOOTH, HARD, CREASE)."""
+
+    crease_angle_deg: float = 0.0
+    """Crease angle threshold in degrees (only used if edge_type == CREASE)."""
+
+    feature_id: Optional[str] = None
+    """Feature identification for debugging/visualization (e.g., 'chine_main', 'spray_rail_1')."""
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "position": self.position.to_dict(),
@@ -113,6 +149,8 @@ class SectionPoint:
             "curvature": round(self.curvature, 6),
             "is_chine": self.is_chine,
             "is_keel": self.is_keel,
+            "edge_type": self.edge_type.value,
+            "feature_id": self.feature_id,
         }
 
 
@@ -304,6 +342,34 @@ class Buttock:
 
 
 @dataclass
+class LongitudinalFeature:
+    """
+    A longitudinal feature line (spray rail, knuckle, etc.).
+    
+    Phase 4: Tracks feature lines for mesh edge rendering.
+    """
+    feature_type: str = ""
+    """Feature type: 'spray_rail', 'knuckle', etc."""
+    
+    feature_id: str = ""
+    """Unique identifier for the feature."""
+    
+    points: List[Point3D] = field(default_factory=list)
+    """Points along the feature from stern to bow."""
+    
+    is_hard: bool = True
+    """Whether this is a hard edge requiring split normals."""
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "feature_type": self.feature_type,
+            "feature_id": self.feature_id,
+            "points": [p.to_dict() for p in self.points],
+            "is_hard": self.is_hard,
+        }
+
+
+@dataclass
 class HullGeometry:
     """
     Complete hull geometry representation.
@@ -338,6 +404,22 @@ class HullGeometry:
 
     transom_outline: List[Point3D] = field(default_factory=list)
     """Transom perimeter curve."""
+    
+    # === Phase 3: Bow panel edges ===
+    bow_panel_edges: List[Any] = field(default_factory=list)
+    """Hard edges from bow panels (BowPanelEdge objects)."""
+    
+    # === Phase 4: Longitudinal features ===
+    longitudinal_features: List['LongitudinalFeature'] = field(default_factory=list)
+    """Longitudinal features (spray rails, knuckle lines)."""
+    
+    # === Phase 5: Transom features ===
+    transom_hard_edges: List[Tuple[int, int, str]] = field(default_factory=list)
+    """Hard edges on transom: (start_idx, end_idx, feature_id)."""
+    
+    # === Phase 6: Deck geometry ===
+    deck_geometry: Optional['DeckGeometry'] = None
+    """Generated deck surface (if enabled)."""
 
     # === COMPUTED PROPERTIES ===
     volume: float = 0.0

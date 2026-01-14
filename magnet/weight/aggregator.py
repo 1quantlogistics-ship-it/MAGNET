@@ -52,9 +52,10 @@ class LightshipSummary:
 
     All weights in metric tons (MT), distances in meters (m).
 
-    LCG Convention: From forward perpendicular (FP), positive aft
+    MAGNET Standard Conventions (see docs/architecture/GEOMETRY_CONVENTIONS.md):
+    LCG Convention: From after perpendicular (AP), positive forward
     VCG Convention: From baseline, positive up
-    TCG Convention: From centerline, positive starboard
+    TCG Convention: From centerline, positive port
     """
     # Total lightship values (including margins)
     lightship_weight_mt: float
