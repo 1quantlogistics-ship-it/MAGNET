@@ -90,6 +90,17 @@ PHASE_OWNERSHIP: Dict[str, List[str]] = {
         "resistance.total_resistance_kn",
         "resistance.froude_number",
         "resistance.reynolds_number",
+        # NEW: Geometry primitives (MAGNET_Merge_Implementation_Plan.md Phase 0.3)
+        # These enable the design language path for trillions of forms
+        "design_program",
+        "hull.geometry",
+        "resources.geometry.section",
+        "resources.geometry.body",
+        "resources.geometry.surface",
+        "resources.geometry.discontinuity",
+        "resources.geometry.flow_path",
+        "resources.geometry.opening",
+        "resources.geometry.attachment",
     ],
 
     "structure": [
@@ -235,6 +246,84 @@ PARAMETER_TO_PHASE: Dict[str, str] = {}
 for phase, params in PHASE_OWNERSHIP.items():
     for param in params:
         PARAMETER_TO_PHASE[param] = phase
+
+
+def resolve_parameter(param: str, state: Dict[str, Any]) -> Tuple[bool, Any, Optional[str]]:
+    """
+    Resolve parameter with geometry aliases (Q9).
+    
+    When geometry is created via design language, traditional parameters
+    like `hull.beam` may not be directly in state, but can be extracted
+    from `hull.geometry.beam` or computed from geometry.
+    
+    This enables CascadeExecutor to work with both old and new paths.
+    
+    Args:
+        param: Parameter name (e.g., "hull.beam")
+        state: Current design state
+    
+    Returns:
+        (found, value, error_message)
+        - found: True if parameter could be resolved
+        - value: The resolved value (if found)
+        - error_message: Explanation if not found
+    
+    Example:
+        # Old path: hull.beam directly in state
+        >>> resolve_parameter("hull.beam", {"hull": {"beam": 8.0}})
+        (True, 8.0, None)
+        
+        # New path: extract from geometry
+        >>> resolve_parameter("hull.beam", {"hull": {"geometry": {"beam": 8.0}}})
+        (True, 8.0, None)
+        
+        # Missing: fail loud
+        >>> resolve_parameter("hull.beam", {"hull": {}})
+        (False, None, "hull.beam not found in state or geometry")
+    
+    Reference: MAGNET_Critical_Corrections.md Part III Q9
+    """
+    # Try direct lookup first
+    parts = param.split(".")
+    value = state
+    
+    for part in parts:
+        if isinstance(value, dict) and part in value:
+            value = value[part]
+        else:
+            # Direct lookup failed, try geometry alias
+            break
+    else:
+        # Successfully traversed all parts
+        return (True, value, None)
+    
+    # Try geometry aliases for hull parameters
+    if param.startswith("hull.") and len(parts) == 2:
+        hull_param = parts[1]
+        
+        # Check if geometry exists
+        hull = state.get("hull", {})
+        geometry = hull.get("geometry")
+        
+        if geometry and hasattr(geometry, hull_param):
+            # Extract from HullGeometry object
+            value = getattr(geometry, hull_param)
+            return (True, value, None)
+        
+        elif isinstance(geometry, dict) and hull_param in geometry:
+            # Extract from geometry dict
+            value = geometry[hull_param]
+            return (True, value, None)
+    
+    # Parameter not found — FAIL LOUD
+    error_msg = f"Parameter '{param}' not found in state"
+    
+    if param.startswith("hull."):
+        error_msg += ". Tried direct lookup and geometry extraction. "
+        error_msg += "Ensure geometry is compiled or parameter is explicitly set."
+    
+    logger.error(f"Dependency resolution failed: {error_msg}")
+    return (False, None, error_msg)
 
 
 def get_phase_for_parameter(param: str) -> Optional[str]:

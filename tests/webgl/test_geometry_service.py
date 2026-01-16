@@ -62,6 +62,44 @@ class TestGeometryMode:
         assert data["geometry_mode"] == "authoritative"
 
 
+class TestUniversalPrimitivesInSceneMetadata:
+    """Phase 3: primitives must be surfaced to UI as diagnostic markers (no semantics implied)."""
+
+    def test_scene_metadata_includes_primitives_from_grm(self):
+        from magnet.webgl.geometry_service import GeometryService
+        from magnet.webgl.schema import MeshData, LODLevel, GeometryMode
+        from magnet.webgl.interfaces import HullGeometryData
+
+        mock_sm = Mock()
+        mock_sm.get = Mock(side_effect=lambda path, default=None: {"design_version": 1}.get(path, default))
+
+        svc = GeometryService(state_manager=mock_sm)
+
+        # Patch GRM provider and tessellation so the test is fast and deterministic.
+        fake_geom = HullGeometryData(
+            design_id="d1",
+            version_id="d1:v1",
+            sections=[],
+            keel_profile=[],
+            stem_profile=[],
+            openings=[{"_id": "o1"}],
+            flow_paths=[{"_id": "f1"}],
+            attachments=[{"_id": "a1"}],
+        )
+
+        with patch.object(svc._grm_provider, "get_hull_geometry", return_value=fake_geom), \
+             patch.object(svc, "_tessellate_grm", return_value=MeshData(mesh_id="hull", vertices=[0, 0, 0], indices=[])):
+            scene = svc.get_scene(design_id="d1", lod=LODLevel.MEDIUM, allow_visual_only=False)
+            assert scene.geometry_mode == GeometryMode.AUTHORITATIVE
+            md = scene.metadata or {}
+            assert "primitives" in md
+            prim = md["primitives"]
+            assert prim.get("semantics") == "diagnostic_only"
+            assert len(prim.get("openings") or []) == 1
+            assert len(prim.get("flow_paths") or []) == 1
+            assert len(prim.get("attachments") or []) == 1
+
+
 class TestGeometryConfig:
     """Tests for geometry configuration."""
 

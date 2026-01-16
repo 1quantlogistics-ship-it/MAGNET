@@ -68,7 +68,7 @@ class WeightItem:
     - VCG: from baseline (keel), positive up
     - TCG: from centerline, positive to port
     
-    See docs/architecture/GEOMETRY_CONVENTIONS.md for full specification.
+    See docs/0-architecture/GEOMETRY_CONVENTIONS.md for full specification.
 
     Attributes:
         name: Descriptive name for the item

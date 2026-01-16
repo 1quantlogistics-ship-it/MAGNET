@@ -178,6 +178,9 @@ class SynthesisProposal:
     lcb_fraction: Optional[float] = None
     deadrise_deg: Optional[float] = None
     deadrise_transom_deg: Optional[float] = None
+    
+    # TASK-003: Geometry-derived synthesis fields
+    froude_number: Optional[float] = None  # Operating Froude number
 
     @property
     def is_complete(self) -> bool:
@@ -659,6 +662,263 @@ class HullSynthesizer:
             except Exception as e:
                 logger.error(f"Synthesis failed: {e}")
                 return self._create_fallback_result(request, str(e))
+
+    def synthesize_from_geometry(self, request: GeometrySynthesisRequest) -> SynthesisResult:
+        """
+        TASK-003: Geometry-based synthesis entry point.
+        
+        Uses physics-derived defaults instead of HullFamily enumeration.
+        This is the PREFERRED synthesis method.
+        
+        Args:
+            request: GeometrySynthesisRequest with physics constraints
+            
+        Returns:
+            SynthesisResult with complete hull proposal
+        """
+        criteria = request.convergence_criteria or DEFAULT_CONVERGENCE
+        
+        with self.lock.exclusive_access("hull_synthesizer"):
+            try:
+                return self._geometry_synthesis_loop(request, criteria)
+            except Exception as e:
+                logger.error(f"Geometry synthesis failed: {e}")
+                return self._create_geometry_fallback_result(request, str(e))
+
+    def _score_proposal(self, proposal: SynthesisProposal) -> Tuple[float, List[str]]:
+        """
+        Score a synthesis proposal using geometry-based heuristics.
+        
+        TASK-003: This is a simplified scoring for geometry-based synthesis.
+        Returns (score, warnings) where score is 0-100.
+        """
+        warnings: List[str] = []
+        score = 100.0
+        
+        # Check basic validity
+        if not proposal.is_complete:
+            return 0.0, ["Proposal is incomplete"]
+        
+        # Check proportions
+        lb_ratio = proposal.lwl_m / proposal.beam_m if proposal.beam_m > 0 else 0
+        bd_ratio = proposal.beam_m / proposal.draft_m if proposal.draft_m > 0 else 0
+        
+        # L/B ratio check (typical range 3-8)
+        if lb_ratio < 3.0:
+            score -= 10.0
+            warnings.append(f"L/B ratio {lb_ratio:.1f} is low (typical: 3-8)")
+        elif lb_ratio > 8.0:
+            score -= 5.0
+            warnings.append(f"L/B ratio {lb_ratio:.1f} is high (typical: 3-8)")
+        
+        # B/D ratio check (typical range 2-5)
+        if bd_ratio < 2.0:
+            score -= 5.0
+            warnings.append(f"B/D ratio {bd_ratio:.1f} is low (typical: 2-5)")
+        elif bd_ratio > 5.0:
+            score -= 5.0
+            warnings.append(f"B/D ratio {bd_ratio:.1f} is high (typical: 2-5)")
+        
+        # Block coefficient check
+        if proposal.cb < 0.3 or proposal.cb > 0.8:
+            score -= 10.0
+            warnings.append(f"Block coefficient {proposal.cb:.2f} outside typical range (0.3-0.8)")
+        
+        # Depth/draft check
+        if proposal.depth_m < proposal.draft_m:
+            score -= 20.0
+            warnings.append("Depth is less than draft")
+        
+        return max(0.0, score), warnings
+
+    def _geometry_synthesis_loop(
+        self,
+        request: GeometrySynthesisRequest,
+        criteria: ConvergenceCriteria,
+    ) -> SynthesisResult:
+        """
+        TASK-003: Geometry-based synthesis loop.
+        
+        Uses physics-derived defaults instead of HullFamily priors.
+        """
+        # Get physics-derived defaults
+        defaults = request.get_physics_defaults()
+        
+        # Create initial proposal from physics defaults
+        proposal, clamp_warnings = self._create_initial_proposal_from_geometry(request, defaults)
+        best_proposal = proposal
+        best_score = float('-inf')
+        score_history: List[float] = []
+        all_warnings: List[str] = list(clamp_warnings)
+        
+        # Stagnation tracking
+        stagnation_count = 0
+        last_best_score = float('-inf')
+        
+        for iteration in range(request.max_iterations):
+            # Score proposal
+            score, score_warnings = self._score_proposal(proposal)
+            all_warnings.extend(score_warnings)
+            score_history.append(score)
+            
+            if score > best_score:
+                best_score = score
+                best_proposal = proposal
+                stagnation_count = 0
+            else:
+                stagnation_count += 1
+            
+            # Check convergence
+            if score >= criteria.target_score:
+                logger.info(f"Geometry synthesis converged at iteration {iteration + 1}")
+                break
+            
+            # Check stagnation
+            if stagnation_count >= criteria.stagnation_limit:
+                logger.warning(f"Geometry synthesis stagnated after {iteration + 1} iterations")
+                break
+            
+            # Mutate proposal
+            proposal = self._mutate_proposal_geometry_based(proposal, defaults, iteration)
+            last_best_score = best_score
+        
+        # Build result
+        converged = best_score >= criteria.target_score
+        termination = TerminationReason.CONVERGED if converged else TerminationReason.MAX_ITERATIONS
+        return SynthesisResult(
+            proposal=best_proposal,
+            termination=termination,
+            termination_message="Geometry-based synthesis complete",
+            iterations_used=len(score_history),
+            score_history=score_history,
+            validator_results=[],  # Geometry synthesis doesn't run validators
+            warnings=all_warnings,
+        )
+
+    def _create_initial_proposal_from_geometry(
+        self,
+        request: GeometrySynthesisRequest,
+        defaults: Dict[str, Any],
+    ) -> Tuple[SynthesisProposal, List[str]]:
+        """
+        TASK-003: Create initial proposal from geometry-derived defaults.
+        """
+        warnings: List[str] = []
+        
+        # Extract defaults
+        lwl_m = defaults.get("lwl_m", 30.0)
+        beam_m = request.beam_m or defaults.get("beam_m", 6.0)
+        draft_m = request.draft_m or defaults.get("draft_m", 2.0)
+        depth_m = defaults.get("depth_m", draft_m * 1.5)
+        cb = defaults.get("cb", 0.5)
+        deadrise_deg = defaults.get("deadrise_deg", 15.0)
+        froude_number = defaults.get("froude_number", 0.5)
+        
+        # Use request LOA if provided
+        if request.loa_m:
+            lwl_m = request.loa_m * 0.95
+        
+        # Estimate displacement
+        displacement_m3 = lwl_m * beam_m * draft_m * cb
+        
+        # Create proposal
+        proposal = SynthesisProposal(
+            lwl_m=lwl_m,
+            beam_m=beam_m,
+            draft_m=draft_m,
+            depth_m=depth_m,
+            cb=cb,
+            cp=defaults.get("cp", cb + 0.15),
+            cm=defaults.get("cm", 0.85),
+            cwp=defaults.get("cwp", 0.75),
+            deadrise_deg=deadrise_deg,
+            displacement_m3=displacement_m3,
+            confidence=0.7,  # Lower initial confidence for geometry-based
+            iteration=0,
+            source="geometry_defaults",
+            froude_number=froude_number,
+        )
+        
+        return proposal, warnings
+
+    def _mutate_proposal_geometry_based(
+        self,
+        proposal: SynthesisProposal,
+        defaults: Dict[str, Any],
+        iteration: int,
+    ) -> SynthesisProposal:
+        """
+        TASK-003: Mutate proposal using geometry-derived constraints.
+        """
+        import random
+        
+        # Small random perturbations toward physics-optimal values
+        scale = 0.1 / (1 + iteration * 0.1)  # Decrease with iteration
+        
+        new_lwl = proposal.lwl_m * (1 + random.gauss(0, scale))
+        new_beam = proposal.beam_m * (1 + random.gauss(0, scale))
+        new_draft = proposal.draft_m * (1 + random.gauss(0, scale))
+        new_cb = max(0.3, min(0.8, proposal.cb + random.gauss(0, scale * 0.5)))
+        
+        new_displacement = new_lwl * new_beam * new_draft * new_cb
+        
+        return SynthesisProposal(
+            lwl_m=new_lwl,
+            beam_m=new_beam,
+            draft_m=new_draft,
+            depth_m=new_draft * defaults.get("depth_draft_ratio", 1.5),
+            cb=new_cb,
+            cp=new_cb + 0.15,
+            cm=defaults.get("cm", 0.85),
+            cwp=defaults.get("cwp", 0.75),
+            deadrise_deg=defaults.get("deadrise_deg", 15.0),
+            displacement_m3=new_displacement,
+            confidence=proposal.confidence,
+            iteration=iteration + 1,
+            source="geometry_mutation",
+            froude_number=defaults.get("froude_number", 0.5),
+        )
+
+    def _create_geometry_fallback_result(
+        self,
+        request: GeometrySynthesisRequest,
+        error_message: str,
+    ) -> SynthesisResult:
+        """
+        TASK-003: Create fallback result for geometry-based synthesis.
+        """
+        defaults = request.get_physics_defaults()
+        
+        lwl_m = request.loa_m * 0.95 if request.loa_m else 30.0
+        beam_m = request.beam_m or defaults.get("beam_m", 6.0)
+        draft_m = request.draft_m or defaults.get("draft_m", 2.0)
+        
+        fallback_proposal = SynthesisProposal(
+            lwl_m=lwl_m,
+            beam_m=beam_m,
+            draft_m=draft_m,
+            depth_m=draft_m * 1.5,
+            cb=defaults.get("cb", 0.5),
+            cp=defaults.get("cp", 0.65),
+            cm=defaults.get("cm", 0.85),
+            cwp=defaults.get("cwp", 0.75),
+            deadrise_deg=defaults.get("deadrise_deg", 15.0),
+            displacement_m3=lwl_m * beam_m * draft_m * 0.5,
+            confidence=0.3,  # Low confidence for fallback
+            iteration=0,
+            source="geometry_fallback",
+            froude_number=defaults.get("froude_number", 0.5),
+        )
+        
+        return SynthesisResult(
+            proposal=fallback_proposal,
+            termination=TerminationReason.FALLBACK,
+            termination_message=f"Fallback: {error_message}",
+            iterations_used=0,
+            score_history=[],
+            validator_results=[],
+            warnings=[f"Using fallback due to: {error_message}"],
+        )
 
     def _synthesis_loop(
         self,

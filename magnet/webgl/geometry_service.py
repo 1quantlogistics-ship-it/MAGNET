@@ -31,6 +31,8 @@ from .interfaces import (
     GeometryReferenceModelProvider,
     StateGeometryAdapter,
     HullGeneratorAdapter,
+    DesignLanguageAdapter,
+    CompositeGeometryProvider,
     HullGeometryData,
 )
 from .errors import (
@@ -82,7 +84,13 @@ class GeometryService:
 
         # Create adapters
         self._inputs = StateGeometryAdapter(state_manager)
-        self._grm_provider = HullGeneratorAdapter(state_manager)
+        # IMPORTANT: Prefer enum-free design-language compilation whenever resources exist.
+        # The legacy hull generator is only a fallback for designs with no primitives.
+        self._grm_provider = CompositeGeometryProvider(
+            design_language=DesignLanguageAdapter(state_manager),
+            legacy=HullGeneratorAdapter(state_manager),
+            state_manager=state_manager,
+        )
 
         # Cache for generated meshes
         self._mesh_cache: Dict[str, Tuple[MeshData, GeometryMode, float]] = {}
@@ -143,7 +151,7 @@ class GeometryService:
 
         # Try authoritative source
         try:
-            hull_geom = self._grm_provider.get_hull_geometry(design_id)
+            hull_geom = self._grm_provider.get_hull_geometry(design_id, lod=lod)
             logger.info(f"[AUTHORITATIVE] Hull geometry generated for {design_id}")
             mesh = self._tessellate_grm(hull_geom, lod)
             mode = GeometryMode.AUTHORITATIVE
@@ -228,12 +236,42 @@ class GeometryService:
         """
         design_id = design_id or self._inputs.design_id
 
-        # Get hull geometry
-        hull_mesh, geometry_mode = self.get_hull_geometry(
-            design_id=design_id,
-            lod=lod,
-            allow_visual_only=allow_visual_only,
-        )
+        # Build authoritative hull geometry + meshes.
+        # For multi-body designs, we must tessellate PER BODY to avoid stitching.
+        hull_meshes = None
+        geometry_mode = GeometryMode.AUTHORITATIVE
+        hull_mesh = None
+        try:
+            hull_geom = self._grm_provider.get_hull_geometry(design_id, lod=lod)
+            geometry_mode = GeometryMode.AUTHORITATIVE
+
+            # Partition by body_id if present; otherwise keep single hull mesh.
+            from .geometry_pipeline import HullGeometryPipeline, TessellationConfig
+            tess_config = TessellationConfig.from_lod(lod)
+            pipeline = HullGeometryPipeline(hull_geom=hull_geom, config=tess_config)
+            by_body = pipeline.tessellate_by_body()
+
+            # If only one body, preserve legacy shape.
+            if len(by_body) <= 1:
+                hull_mesh = next(iter(by_body.values())) if by_body else pipeline.tessellate()
+            else:
+                # Multiple bodies: keep a list for export + a primary for legacy clients.
+                hull_meshes = [by_body[k] for k in sorted(by_body.keys())]
+                hull_mesh = hull_meshes[0]
+
+        except Exception as e:
+            # Authoritative unavailable: optionally fall back to parametric approximation.
+            from .errors import GeometryUnavailableError
+            if not allow_visual_only:
+                raise
+            # Visual-only approximation (single mesh)
+            logger.warning(f"[VISUAL-ONLY] Authoritative scene unavailable for {design_id}: {e}")
+            hull_mesh, _mode = self.get_hull_geometry(
+                design_id=design_id,
+                lod=lod,
+                allow_visual_only=True,
+            )
+            geometry_mode = GeometryMode.VISUAL_ONLY
 
         # Get version info
         version_id = self._grm_provider.get_geometry_version(design_id) or ""
@@ -245,12 +283,44 @@ class GeometryService:
             version_id=version_id,
             geometry_mode=geometry_mode,
             hull=hull_mesh,
+            hulls=hull_meshes,
             materials=self._get_default_materials(),
             metadata={
                 "lod": lod.value,
                 "generated_at": time.time(),
             },
         )
+
+        # Phase 3: Universal primitives (diagnostic markers only)
+        # These are preserved for UI/inspection. Semantics are staged:
+        # - diagnostic_only: pass-through markers only
+        # - explicit_volume_semantics: some primitives include explicit volume fields used for hydrostatics correction
+        try:
+            if hull_geom is not None:
+                openings = list(getattr(hull_geom, "openings", []) or [])
+                flow_paths = list(getattr(hull_geom, "flow_paths", []) or [])
+                attachments = list(getattr(hull_geom, "attachments", []) or [])
+
+                def _has_explicit_semantics() -> bool:
+                    for o in openings:
+                        if isinstance(o, dict) and (o.get("void_volume_m3") is not None or o.get("through_hull_length_m") is not None):
+                            return True
+                    for f in flow_paths:
+                        if isinstance(f, dict) and (f.get("void_volume_m3") is not None):
+                            return True
+                    for a in attachments:
+                        if isinstance(a, dict) and (a.get("buoyancy_volume_m3") is not None):
+                            return True
+                    return False
+
+                scene.metadata["primitives"] = {
+                    "semantics": "explicit_volume_semantics" if _has_explicit_semantics() else "diagnostic_only",
+                    "openings": openings,
+                    "flow_paths": flow_paths,
+                    "attachments": attachments,
+                }
+        except Exception:
+            pass
 
         # Add deck if available
         try:

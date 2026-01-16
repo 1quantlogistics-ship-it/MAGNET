@@ -22,13 +22,15 @@ class TestHullStructureEstimator:
     def test_basic_estimate(self):
         """Test basic hull estimation."""
         estimator = HullStructureEstimator()
+        # TASK-017: Use geometry-based parameters instead of hull_type
         items = estimator.estimate(
             lwl=50.0,
             beam=10.0,
             depth=4.0,
             cb=0.55,
             material="aluminum_5083",
-            hull_type="monohull",
+            body_count=1,  # Monohull
+            froude_number=0.3,
         )
         assert len(items) > 0
         total_weight = sum(item.weight_kg for item in items)
@@ -78,18 +80,21 @@ class TestHullStructureEstimator:
         assert aluminum_weight < steel_weight
 
     def test_catamaran_heavier_than_monohull(self):
-        """Test catamaran has more structure than monohull."""
+        """Test catamaran (multi-body) has more structure than monohull."""
         estimator = HullStructureEstimator()
 
+        # TASK-017: Use body_count instead of hull_type
         mono_items = estimator.estimate(
             lwl=50.0, beam=10.0, depth=4.0, cb=0.55,
-            hull_type="monohull",
+            body_count=1,  # Monohull
+            froude_number=0.3,
         )
         mono_weight = sum(item.weight_kg for item in mono_items)
 
         cat_items = estimator.estimate(
             lwl=50.0, beam=10.0, depth=4.0, cb=0.55,
-            hull_type="catamaran",
+            body_count=2,  # Catamaran
+            froude_number=0.3,
         )
         cat_weight = sum(item.weight_kg for item in cat_items)
 

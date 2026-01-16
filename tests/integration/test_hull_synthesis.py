@@ -41,14 +41,16 @@ class TestHullFamilyPriors:
         prior = get_family_prior(HullFamily.PATROL)
         assert prior["lwl_beam"] == 5.5  # L/B ratio
         assert prior["cb"] == 0.45  # Block coefficient
-        assert prior["froude_design"] == 0.45  # High-speed target
+        # Patrol craft target semi-planing regime (Fn ~0.55-1.0+)
+        assert prior["froude_design"] > 0.7
 
     def test_workboat_prior_values(self):
         """Workboat family has displacement-type values."""
         prior = get_family_prior(HullFamily.WORKBOAT)
         assert prior["lwl_beam"] < 5.0  # Fuller beam
         assert prior["cb"] > 0.5  # Higher block coefficient
-        assert prior["froude_design"] < 0.35  # Lower speed
+        # Workboats target semi-displacement regime (Fn ~0.35-0.55)
+        assert 0.35 <= prior["froude_design"] <= 0.55
 
 
 class TestSynthesisRequest:
@@ -275,6 +277,167 @@ class TestHullSynthesizer:
         assert result.proposal.lwl_m < 20.0
         assert result.proposal.lwl_m > 18.0
 
+    def test_loa_locked_prevents_lwl_scaling_in_displacement_clamp(self):
+        """
+        Regression: when loa_is_hard_constraint=True, displacement bounds clamping must
+        NOT scale LWL (it must remain ~0.95×LOA).
+        """
+        sm = StateManager()
+        synthesizer = HullSynthesizer(executor=None, state_manager=sm)
+
+        request = SynthesisRequest(
+            hull_family=HullFamily.WORKBOAT,
+            max_speed_kts=12.0,
+            loa_m=20.0,
+            loa_is_hard_constraint=True,
+            max_iterations=1,
+        )
+
+        # Build an intentionally oversized proposal so displacement > family max,
+        # triggering the displacement clamp path in _clamp_to_bounds().
+        lwl = 0.95 * 20.0
+        cb = 0.60
+        beam = 20.0
+        draft = 5.0
+        displacement_m3 = lwl * beam * draft * cb
+
+        proposal = SynthesisProposal(
+            lwl_m=lwl,
+            beam_m=beam,
+            draft_m=draft,
+            depth_m=8.0,
+            cb=cb,
+            cp=0.68,
+            cm=0.88,
+            cwp=0.78,
+            displacement_m3=displacement_m3,
+            confidence=0.5,
+            iteration=0,
+            source="test",
+            loa_m=20.0,
+        )
+
+        clamped, _warnings = synthesizer._clamp_to_bounds(proposal, HullFamily.WORKBOAT, request=request)
+        assert clamped.lwl_m == pytest.approx(lwl, abs=1e-6)
+
+    def test_synthesis_iterates_and_does_not_fallback(self):
+        """
+        Regression: synthesis loop should iterate without throwing and falling back.
+
+        We force non-convergence by setting min_score unrealistically high, which
+        ensures the loop runs until max_iterations (exercising _mutate()).
+        """
+        sm = StateManager()
+        synthesizer = HullSynthesizer(executor=None, state_manager=sm)
+
+        criteria = ConvergenceCriteria(min_score=1e9)  # impossible to reach
+        request = SynthesisRequest(
+            hull_family=HullFamily.PATROL,
+            max_speed_kts=35.0,
+            loa_m=20.0,
+            crew_count=8,
+            range_nm=300.0,
+            max_iterations=5,
+            convergence_criteria=criteria,
+        )
+
+        result = synthesizer.synthesize(request)
+        assert result is not None
+        assert result.is_usable
+        assert not result.is_fallback
+        assert result.termination == TerminationReason.MAX_ITERATIONS
+        assert result.iterations_used == 5
+
+    def test_displacement_estimate_realistic_for_20m_patrol(self):
+        """
+        P0 regression: LOA-based lightship scaling should produce an engineering-realistic
+        displacement estimate for a normal patrol craft (no longer ~4m³).
+        """
+        sm = StateManager()
+        synthesizer = HullSynthesizer(executor=None, state_manager=sm)
+
+        request = SynthesisRequest(
+            hull_family=HullFamily.PATROL,
+            max_speed_kts=35.0,
+            loa_m=20.0,
+            crew_count=8,
+            range_nm=300.0,
+        )
+
+        disp_m3, _warnings = synthesizer._estimate_required_displacement_m3(request)
+        assert disp_m3 is not None
+        assert 25.0 <= disp_m3 <= 50.0, f"Expected 25-50 m³, got {disp_m3:.1f} m³"
+
+    def test_normal_patrol_not_clamped_to_family_min(self):
+        """
+        P0 regression: Normal 20m patrol missions should not be forced up to the
+        family minimum displacement via clamping.
+        """
+        sm = StateManager()
+        synthesizer = HullSynthesizer(executor=None, state_manager=sm)
+
+        request = SynthesisRequest(
+            hull_family=HullFamily.PATROL,
+            max_speed_kts=35.0,
+            loa_m=20.0,
+            crew_count=8,
+            range_nm=300.0,
+            max_iterations=1,
+        )
+
+        result = synthesizer.synthesize(request)
+        assert result is not None
+        assert result.is_usable
+
+        # Specifically ensure the displacement target was not clamped.
+        assert not any(("disp_target" in w and "clamped" in w) for w in (result.warnings or [])), (
+            f"Unexpected displacement clamp warnings: {result.warnings}"
+        )
+
+    def test_displacement_estimate_scales_with_loa(self):
+        """P0 regression: larger LOA should imply larger lightship → larger displacement estimate."""
+        sm = StateManager()
+        synthesizer = HullSynthesizer(executor=None, state_manager=sm)
+
+        req_10 = SynthesisRequest(hull_family=HullFamily.PATROL, max_speed_kts=25.0, loa_m=10.0)
+        req_20 = SynthesisRequest(hull_family=HullFamily.PATROL, max_speed_kts=25.0, loa_m=20.0)
+        req_30 = SynthesisRequest(hull_family=HullFamily.PATROL, max_speed_kts=25.0, loa_m=30.0)
+
+        disp10, _ = synthesizer._estimate_required_displacement_m3(req_10)
+        disp20, _ = synthesizer._estimate_required_displacement_m3(req_20)
+        disp30, _ = synthesizer._estimate_required_displacement_m3(req_30)
+
+        assert disp10 is not None and disp20 is not None and disp30 is not None
+        assert disp30 > disp20 > disp10, f"Expected disp30>disp20>disp10, got {disp30}, {disp20}, {disp10}"
+
+    def test_catamaran_demihull_beam_not_extreme(self):
+        """
+        P0 regression: catamaran beam semantics should not yield absurd demihull widths.
+
+        Note: hull_gen currently derives demihull_beam ≈ beam_max / 4 for cats; we enforce
+        that implied demihull beam stays in a sane range for a mid-size cat.
+        """
+        sm = StateManager()
+        synthesizer = HullSynthesizer(executor=None, state_manager=sm)
+
+        request = SynthesisRequest(
+            hull_family=HullFamily.CATAMARAN,
+            max_speed_kts=35.0,
+            loa_m=40.0,
+            crew_count=12,
+            range_nm=500.0,
+            max_iterations=1,
+        )
+
+        result = synthesizer.synthesize(request)
+        assert result is not None
+        assert result.is_usable
+
+        demihull_beam = result.proposal.beam_m / 4.0
+        assert 1.5 <= demihull_beam <= 3.5, (
+            f"Demihull beam {demihull_beam:.2f}m out of expected range for 40m cat"
+        )
+
 
 class TestConductorIntegration:
     """Tests for conductor integration with synthesis."""
@@ -307,11 +470,16 @@ class TestConductorIntegration:
         with refinable_write_context(sm):
             sm.set("mission.max_speed_kts", 30.0, "test")
             sm.set("hull.hull_type", "patrol", "test")
+            sm.set("mission.crew_berthed", 8, "test")
+            sm.set("mission.passengers", 20, "test")
+            sm.set("mission.cargo_capacity_mt", 10.0, "test")
 
         request = conductor._build_synthesis_request()
         assert request is not None
         assert request.hull_family == HullFamily.PATROL
         assert request.max_speed_kts == 30.0
+        assert request.crew_count == 28  # 8 crew + 20 passengers
+        assert request.payload_kg == pytest.approx(10000.0, abs=1e-6)
 
     def test_run_hull_synthesis(self):
         """Conductor runs synthesis and writes to state."""

@@ -1,0 +1,106 @@
+{
+  "version": "2.1",
+  "design_program": {
+    "required": ["operations"],
+    "optional": ["program_id", "version", "constraints"],
+    "notes": [
+      "This JSON can be pasted directly into the UIv2 command box using the `json:` prefix.",
+      "Backend supports operations: CREATE, UPDATE, DELETE, SET, LOFT, MIRROR, CONSTRAIN."
+    ]
+  },
+  "operation_format": {
+    "common_fields": ["op"],
+    "create_fields": ["op", "type", "id", "params"],
+    "update_fields": ["op", "id", "params"],
+    "delete_fields": ["op", "id"],
+    "set_fields": ["op", "path", "value"],
+    "loft_fields": ["op", "id", "sections"],
+    "mirror_fields": ["op", "source", "target"],
+    "constrain_fields": ["op", "path", "operator", "value"]
+  },
+  "primitives": {
+    "geometry.body": {
+      "required": ["body_id", "section_ids"],
+      "optional": ["body_type", "physics_category", "offset_x_m", "offset_y_m", "offset_z_m"],
+      "rules": [
+        "body_id is a stable identifier (string)",
+        "section_ids is an ordered list of geometry.section ids (bow→stern)",
+        "body_type and physics_category are freeform strings (NOT enums)"
+      ]
+    },
+    "geometry.section": {
+      "required": ["section_id", "body_id", "station", "points"],
+      "optional": ["edge_types", "resample_points", "definition_type", "control_points", "knots", "degree"],
+      "rules": [
+        "station: 0-1 (normalized longitudinal position)",
+        "points: [[y,z],...] (polygon section points are strictly 2D; X is derived from station)",
+        "half-breadth convention: y >= 0",
+        "z=0 is baseline (keel datum); waterline elevation is z=draft; below-water points typically have z < draft",
+        "points trace an OPEN curve from keel→sheer (do not close the polygon)",
+        "edge_types: optional per-vertex markers; use \"hard\" to create a controlled crease (e.g., a chine) without introducing new primitives",
+        "resample_points: optional integer; if set to the current point count, the compiler will preserve point indices (useful to keep a crease location stable across sections)",
+        "definition_type: \"polygon\" (default) or \"nurbs\"; NURBS uses control_points/knots/degree"
+      ]
+    },
+    "geometry.surface": {
+      "required": ["surface_id", "body_id", "section_ids"],
+      "optional": ["definition_type", "physics_category"],
+      "rules": ["section_ids ordered bow→stern"]
+    },
+    "geometry.discontinuity": {
+      "required": ["discontinuity_id", "body_id"],
+      "optional": ["type", "station_start", "station_end", "point_index", "depth_m"],
+      "rules": ["type is a freeform string describing the discontinuity mechanism"]
+    },
+    "geometry.flow_path": {
+      "required": ["id", "medium", "inlet_point", "outlet_point"],
+      "optional": ["cross_section_m2", "body_id"],
+      "rules": [
+        "medium is a freeform string (e.g., air, water, exhaust)",
+        "inlet_point/outlet_point are [x,y,z] in meters"
+      ]
+    },
+    "geometry.opening": {
+      "required": ["id", "surface_id", "position", "dimensions"],
+      "optional": ["purpose"],
+      "rules": [
+        "position is [x,y,z] in meters",
+        "dimensions is freeform (e.g., [length,width] or [diameter])"
+      ]
+    },
+    "geometry.attachment": {
+      "required": ["id", "parent_body_id", "child_body_id"],
+      "optional": ["attachment_type", "offset_x_m", "offset_y_m", "offset_z_m"]
+    }
+  },
+  "coords": {
+    "x": "longitudinal, 0=stern (AP), LOA=bow (FP)",
+    "y": "lateral, 0=centerline, +port",
+    "z": "vertical, 0=baseline, +up (waterline is z=draft)",
+    "station": "normalized x, 0=stern (AP), 1=bow (FP)"
+  },
+  "ops": {
+    "CREATE": "Create new resource",
+    "UPDATE": "Modify existing resource",
+    "DELETE": "Remove resource",
+    "LOFT": "Create surface from ordered sections",
+    "MIRROR": "Mirror body across centerline",
+    "ALIGN": "Align resource to reference",
+    "BOOLEAN": "union|subtract|intersect bodies"
+  },
+  "constraints": {
+    "CONSTRAIN": "CONSTRAIN path op value",
+    "SPACING": "SPACING body_a body_b >= value",
+    "CLEARANCE": "CLEARANCE surface datum >= value"
+  },
+  "quality_defaults": {
+    "sections": ">= 7",
+    "points_per_section": ">= 12",
+    "points_must_match": true,
+    "z_must_increase": true,
+    "chine_index_consistent": true,
+    "beam_progression_smooth": true,
+    "deadrise_progression_smooth": true
+  }
+}
+

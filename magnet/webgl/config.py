@@ -58,12 +58,15 @@ class LODConfig:
 
 
 # Predefined LOD configurations
+# Station counts per MAGNET_Rendering_Quality_And_Performance.md §1B audit table:
+# LOW=11, MEDIUM=21, HIGH=41, ULTRA=81 stations
+# Points per section: LOW=16, MEDIUM=32, HIGH=48, ULTRA=64
 LOD_CONFIGS: Dict[LODLevel, LODConfig] = {
     LODLevel.LOW: LODConfig(
         level=LODLevel.LOW,
-        sections_count=10,
+        sections_count=11,           # Draft quality - visible kinks at bow/transom
         waterlines_count=5,
-        circumferential_points=8,
+        circumferential_points=16,   # 11*16 = 176 control points
         max_vertices=5_000,
         max_faces=10_000,
         max_memory_mb=16,
@@ -73,9 +76,9 @@ LOD_CONFIGS: Dict[LODLevel, LODConfig] = {
     ),
     LODLevel.MEDIUM: LODConfig(
         level=LODLevel.MEDIUM,
-        sections_count=20,
+        sections_count=21,           # Smooth for most hulls
         waterlines_count=10,
-        circumferential_points=16,
+        circumferential_points=32,   # 21*32 = 672 control points
         max_vertices=25_000,
         max_faces=50_000,
         max_memory_mb=64,
@@ -85,9 +88,9 @@ LOD_CONFIGS: Dict[LODLevel, LODConfig] = {
     ),
     LODLevel.HIGH: LODConfig(
         level=LODLevel.HIGH,
-        sections_count=40,
+        sections_count=41,           # Demo quality - smooth even for compound curves
         waterlines_count=20,
-        circumferential_points=32,
+        circumferential_points=48,   # 41*48 = 1968 control points
         max_vertices=100_000,
         max_faces=200_000,
         max_memory_mb=256,
@@ -97,9 +100,9 @@ LOD_CONFIGS: Dict[LODLevel, LODConfig] = {
     ),
     LODLevel.ULTRA: LODConfig(
         level=LODLevel.ULTRA,
-        sections_count=80,
+        sections_count=81,           # Export/screenshot quality
         waterlines_count=40,
-        circumferential_points=64,
+        circumferential_points=64,   # 81*64 = 5184 control points
         max_vertices=500_000,
         max_faces=1_000_000,
         max_memory_mb=1024,
@@ -107,6 +110,7 @@ LOD_CONFIGS: Dict[LODLevel, LODConfig] = {
         normal_smoothing=True,
         compute_uvs=True,
         compute_tangents=True,
+        # WARNING: Will thermal throttle MacBook Air after ~30s orbit
     ),
 }
 
@@ -180,7 +184,10 @@ class TessellationConfig:
     hard_edge_angle_deg: float = 30.0
 
     # Deck and transom
-    include_deck: bool = True
+    # 67.7 Hull Form UX: default OFF. The current deck mesh is a simple placeholder
+    # and shows up as a "floating box" in the viewer, which is distracting during
+    # hull-form iteration. Can be re-enabled later behind an explicit toggle.
+    include_deck: bool = False
     include_transom: bool = True
     deck_camber_height: float = 0.0  # meters
 

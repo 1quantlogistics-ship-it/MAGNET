@@ -13,7 +13,7 @@ Validates ActionPlans against:
 INVARIANT: LLM never directly drives state. Validator enforces all constraints.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from magnet.kernel.intent_protocol import Action, ActionPlan, ActionType
@@ -31,6 +31,21 @@ _BASELINE_VALUES: Dict[str, float] = {
     "hull.beam": 8.0,
     "hull.draft": 2.0,
     "hull.depth": 4.0,
+    "hull.hull_spacing_m": 6.0,
+    "hull.cb": 0.45,
+    "hull.cp": 0.65,
+    "hull.cm": 0.70,
+    "hull.cwp": 0.75,
+    "hull.deadrise_deg": 15.0,
+    "hull.deadrise_transom_deg": 10.0,
+    "hull.lcb_fraction": 0.52,
+    "hull.transom_beam_ratio": 0.7,
+    "hull.bow_entrance_deg": 25.0,
+    "hull.bow_flare_deg": 15.0,
+    "hull.stem_rake_deg": 10.0,
+    "hull.freeboard_m": 1.5,
+    "hull.draft_fwd_m": 2.0,
+    "hull.draft_aft_m": 2.0,
     # Mission
     "mission.max_speed_kts": 25.0,
     "mission.cruise_speed_kts": 18.0,
@@ -48,6 +63,21 @@ _DELTA_POLICY: Dict[str, Dict[str, float]] = {
     "hull.beam": {"type": "absolute", "a_bit": 0.2, "normal": 0.5, "way": 1.0},
     "hull.draft": {"type": "absolute", "a_bit": 0.10, "normal": 0.25, "way": 0.50},
     "hull.depth": {"type": "absolute", "a_bit": 0.20, "normal": 0.50, "way": 1.00},
+    "hull.hull_spacing_m": {"type": "absolute", "a_bit": 1.0, "normal": 3.0, "way": 6.0},
+    "hull.freeboard_m": {"type": "absolute", "a_bit": 0.2, "normal": 0.5, "way": 1.0},
+    "hull.draft_fwd_m": {"type": "absolute", "a_bit": 0.1, "normal": 0.25, "way": 0.5},
+    "hull.draft_aft_m": {"type": "absolute", "a_bit": 0.1, "normal": 0.25, "way": 0.5},
+    "hull.cb": {"type": "absolute", "a_bit": 0.02, "normal": 0.05, "way": 0.10},
+    "hull.cp": {"type": "absolute", "a_bit": 0.02, "normal": 0.05, "way": 0.10},
+    "hull.cm": {"type": "absolute", "a_bit": 0.02, "normal": 0.05, "way": 0.08},
+    "hull.cwp": {"type": "absolute", "a_bit": 0.02, "normal": 0.05, "way": 0.10},
+    "hull.deadrise_deg": {"type": "absolute", "a_bit": 2.0, "normal": 5.0, "way": 10.0},
+    "hull.deadrise_transom_deg": {"type": "absolute", "a_bit": 2.0, "normal": 4.0, "way": 8.0},
+    "hull.lcb_fraction": {"type": "absolute", "a_bit": 0.01, "normal": 0.02, "way": 0.04},
+    "hull.transom_beam_ratio": {"type": "absolute", "a_bit": 0.05, "normal": 0.10, "way": 0.20},
+    "hull.bow_entrance_deg": {"type": "absolute", "a_bit": 2.0, "normal": 5.0, "way": 10.0},
+    "hull.bow_flare_deg": {"type": "absolute", "a_bit": 2.0, "normal": 5.0, "way": 10.0},
+    "hull.stem_rake_deg": {"type": "absolute", "a_bit": 2.0, "normal": 5.0, "way": 8.0},
     # Mission (absolute kts / nm / counts)
     "mission.max_speed_kts": {"type": "absolute", "a_bit": 1.0, "normal": 3.0, "way": 7.0},
     "mission.cruise_speed_kts": {"type": "absolute", "a_bit": 1.0, "normal": 2.0, "way": 5.0},
@@ -224,6 +254,8 @@ class ActionPlanValidator:
             return ActionValidation(approved=True, action=action)
         elif action.action_type == ActionType.NOOP:
             return ActionValidation(approved=True, action=action)
+        elif action.action_type == ActionType.QUERY:
+            return self._validate_query(action)
         else:
             return ActionValidation(
                 approved=False,
@@ -263,6 +295,7 @@ class ActionPlanValidator:
 
         # 3. Normalize unit
         value = action.value
+        normalized_unit = action.unit  # Track the final unit after conversion
         if action.unit and action.unit != field.kernel_unit:
             if action.unit not in field.allowed_units:
                 return ActionValidation(
@@ -272,6 +305,7 @@ class ActionPlanValidator:
                 )
             try:
                 value = UnitConverter.normalize(value, action.unit, field.kernel_unit)
+                normalized_unit = field.kernel_unit  # Update to kernel unit after conversion
             except UnitConversionError as e:
                 return ActionValidation(
                     approved=False,
@@ -305,10 +339,11 @@ class ActionPlanValidator:
                 )
                 value = clamped
 
-        # Return approved action with normalized/clamped value
+        # Return approved action with normalized/clamped value and correct unit
+        normalized_action = replace(action, value=value, unit=normalized_unit)
         return ActionValidation(
             approved=True,
-            action=action.with_value(value),
+            action=normalized_action,
             warnings=warnings
         )
 
@@ -329,6 +364,13 @@ class ActionPlanValidator:
             )
 
         field = self._schema[action.path]
+
+        # 1.5 Delta actions are only valid for numeric fields
+        if field.type not in ("int", "float"):
+            return ActionValidation(
+                approved=False,
+                reason=f"Delta not supported for non-numeric field: {action.path} (type={field.type})"
+            )
 
         # 2. Check for lock
         if state_manager.is_locked(action.path):
@@ -418,15 +460,15 @@ class ActionPlanValidator:
                 if action.unit not in field.allowed_units:
                     return ActionValidation(
                         approved=False,
-                        reason=f"Unit not allowed for {action.path}: {action.unit}"
-                    )
-                try:
-                    amount = UnitConverter.normalize(amount, action.unit, field.kernel_unit)
-                except UnitConversionError as e:
-                    return ActionValidation(
-                        approved=False,
-                        reason=f"Unit conversion failed: {e}"
-                    )
+                    reason=f"Unit not allowed for {action.path}: {action.unit}"
+                )
+            try:
+                amount = UnitConverter.normalize(amount, action.unit, field.kernel_unit)
+            except UnitConversionError as e:
+                return ActionValidation(
+                    approved=False,
+                    reason=f"Unit conversion failed: {e}"
+                )
 
         # 5. Calculate new value
         if action.action_type == ActionType.INCREASE:
@@ -535,6 +577,32 @@ class ActionPlanValidator:
             return ActionValidation(
                 approved=False,
                 reason=f"Invalid phase names: {invalid}. Valid: {valid_phases}"
+            )
+
+        return ActionValidation(approved=True, action=action)
+
+    # ---------------------------------------------------------------------
+    # QUERY (read-only analysis)
+    # ---------------------------------------------------------------------
+
+    _QUERYABLE_TARGETS = frozenset([
+        "hull.proportions",
+        "hull.regime",
+    ])
+
+    def _validate_query(self, action: Action) -> ActionValidation:
+        """Validate a QUERY action (no mutation)."""
+        target = getattr(action, "query_target", None)
+        if not target:
+            return ActionValidation(
+                approved=False,
+                reason="QUERY action requires query_target"
+            )
+
+        if target not in self._QUERYABLE_TARGETS:
+            return ActionValidation(
+                approved=False,
+                reason=f"Unknown query target: {target}. Valid: {sorted(self._QUERYABLE_TARGETS)}"
             )
 
         return ActionValidation(approved=True, action=action)

@@ -189,7 +189,7 @@ TOLERANCE_PERCENTAGE = 0.01  # 1%
 
 # ==================== Geometry Tolerances (MAGNET Standard) ====================
 # Centralized tolerance definitions - DO NOT use 1e-X literals elsewhere
-# See docs/architecture/GEOMETRY_CONVENTIONS.md
+# See docs/0-architecture/GEOMETRY_CONVENTIONS.md
 
 # Mesh operations (vertex deduplication, edge detection)
 EPSILON_MESH = 1e-6  # 1 micrometer - for vertex merging and deduplication

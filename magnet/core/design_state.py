@@ -157,6 +157,12 @@ class DesignState:
     phase_states: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     phase_metadata: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
+    # ==================== Design Language Resources ====================
+    # Persisted store for kernel/stdlib geometry primitives (resources.*).
+    # This enables the declarative geometry language without adding new kernel code
+    # for each novel form: agents write geometry primitives, kernel compiles + validates.
+    resources: Dict[str, Any] = field(default_factory=dict)
+
     # ==================== Agent Layer ====================
     agents: Dict[str, Any] = field(default_factory=dict)
     orchestration: Dict[str, Any] = field(default_factory=dict)
@@ -229,6 +235,8 @@ class DesignState:
             # Phase integration
             "phase_states": self.phase_states,
             "phase_metadata": self.phase_metadata,
+            # Design language resources (geometry primitives)
+            "resources": self.resources,
             # Agent layer
             "agents": self.agents,
             "orchestration": self.orchestration,
@@ -291,8 +299,8 @@ class DesignState:
             if key in data:
                 kwargs[key] = data[key]
 
-        # Extract phase/agent fields
-        for key in ["phase_states", "phase_metadata", "agents", "orchestration", "decisions", "metadata", "history"]:
+        # Extract phase/agent/resource fields
+        for key in ["phase_states", "phase_metadata", "resources", "agents", "orchestration", "decisions", "metadata", "history"]:
             if key in data:
                 kwargs[key] = data[key]
 

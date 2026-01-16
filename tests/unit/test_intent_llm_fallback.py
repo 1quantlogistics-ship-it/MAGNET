@@ -109,8 +109,8 @@ async def test_llm_non_refinable_paths_filtered_then_deterministic_fallback(monk
 
 
 @pytest.mark.asyncio
-async def test_llm_paths_not_in_allowlist_filtered_then_deterministic_fallback(monkeypatch, state_manager, validator):
-    """Refinable but not allowlisted paths are filtered out; deterministic fallback runs if empty."""
+async def test_llm_refinable_paths_not_filtered_by_allowlist(monkeypatch, state_manager, validator):
+    """Refinable LLM proposals are gated only by REFINABLE_SCHEMA (no manual allowlist)."""
     monkeypatch.setattr(
         "magnet.deployment.intent_parser.parse_intent_to_actions",
         lambda text: [],
@@ -134,10 +134,10 @@ async def test_llm_paths_not_in_allowlist_filtered_then_deterministic_fallback(m
     )
 
     llm_client.complete_json.assert_awaited()
-    assert resp["provenance"] == "deterministic"
-    assert resp["approved"] == []
-    assert resp["apply_payload"] is None
-    assert "guidance" in resp
+    assert resp["provenance"] == "llm_guess"
+    assert resp["approved"]
+    assert resp["approved"][0]["path"] == "hull.cb"
+    assert resp["apply_payload"] is not None
 
 
 @pytest.mark.asyncio
@@ -179,6 +179,47 @@ async def test_llm_called_with_options_temperature_zero_and_system_prompt(monkey
     assert "hull.loa" in system_prompt
     assert resp["provenance"] == "llm_guess"
     assert resp["llm_output_sha256"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path,value,unit",
+    [
+        ("hull.lcb_fraction", 0.54, None),
+        ("hull.transom_beam_ratio", 0.9, None),
+        ("hull.bow_entrance_deg", 15.0, "deg"),
+        ("hull.freeboard_m", 2.0, "m"),
+        ("hull.draft_fwd_m", 1.8, "m"),
+        ("hull.draft_aft_m", 2.2, "m"),
+        ("hull.bow_flare_deg", 20.0, "deg"),
+        ("hull.stem_rake_deg", 12.0, "deg"),
+        ("hull.deadrise_transom_deg", 8.0, "deg"),
+    ],
+)
+async def test_llm_can_set_new_hull_form_parameters(state_manager, validator, path, value, unit):
+    """LLM proposals for newly added hull-form paths are accepted (gated by REFINABLE_SCHEMA only)."""
+    proposals = LLMProposals(actions=[
+        LLMActionProposal(action_type="set", path=path, value=value, unit=unit)
+    ])
+    llm_client = Mock()
+    llm_client.is_available = Mock(return_value=True)
+    llm_client.complete_json = AsyncMock(return_value=proposals)
+
+    request = SimpleNamespace(text="set a hull parameter", design_version_before=None)
+
+    resp = await _compile_intent_with_llm_fallback(
+        design_id="d1",
+        request=request,
+        state_manager=state_manager,
+        validator=validator,
+        mode="single",
+        llm_client=llm_client,
+    )
+
+    assert resp["provenance"] == "llm_guess"
+    assert resp["approved"]
+    assert resp["approved"][0]["path"] == path
+    assert resp["apply_payload"] is not None
 
 
 @pytest.mark.asyncio

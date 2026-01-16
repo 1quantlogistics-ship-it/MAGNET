@@ -70,7 +70,7 @@ PHYSICS_VALIDATORS = [
         depends_on_parameters=[
             "hull.loa", "hull.lwl", "hull.beam", "hull.depth", "hull.draft",
             "hull.cb", "hull.cp", "hull.cm", "hull.cwp",
-            "hull.hull_type", "hull.deadrise_deg"
+            "hull.deadrise_deg"
         ],
         # v1.2: Updated from 5 to 11 outputs
         produces_parameters=[
@@ -99,7 +99,7 @@ PHYSICS_VALIDATORS = [
         priority=ValidatorPriority.CRITICAL,
         phase="hull",  # Canonical name (not "hull_form")
         is_gate_condition=True,
-        gate_requirement=GateRequirement.REQUIRED,  # v1.1: MUST pass for hull phase
+        gate_requirement=GateRequirement.OPTIONAL,  # GATE_VS_GRADES: advisory grade only (hydrostatics is the only gate)
         depends_on_validators=["physics/hydrostatics"],
         depends_on_parameters=[
             "hull.loa", "hull.beam", "hull.draft",
@@ -112,6 +112,33 @@ PHYSICS_VALIDATORS = [
         timeout_seconds=180,
         resource_requirements=ResourceRequirements(cpu_cores=2, ram_gb=2.0),
         tags=["core", "hull", "propulsion"],
+    ),
+
+    ValidatorDefinition(
+        validator_id="physics/equilibrium_draft",
+        name="Equilibrium Draft Solver",
+        description="Solves draft where buoyancy equals estimated weight (Phase 3C)",
+        category=ValidatorCategory.PHYSICS,
+        priority=ValidatorPriority.HIGH,
+        phase="weight",
+        is_gate_condition=False,  # Advisory: never blocks advancement
+        gate_requirement=GateRequirement.OPTIONAL,
+        depends_on_validators=["physics/hydrostatics", "weight/estimation"],
+        depends_on_parameters=[
+            "hull.depth", "hull.draft",
+            "weight.lightship_weight_mt",  # preferred
+            "weight.lightship_mt",  # legacy alias
+        ],
+        produces_parameters=[
+            "hull.equilibrium_draft_m",
+            "hull.equilibrium_converged",
+            "hull.equilibrium_iterations",
+            "hull.equilibrium_residual_mt",
+            "hull.equilibrium_target_displacement_mt",
+        ],
+        timeout_seconds=120,
+        resource_requirements=ResourceRequirements(cpu_cores=2, ram_gb=1.0),
+        tags=["physics", "equilibrium", "draft", "phase3c"],
     ),
 
     ValidatorDefinition(
@@ -260,7 +287,7 @@ STABILITY_VALIDATORS = [
         priority=ValidatorPriority.CRITICAL,
         phase="stability",
         is_gate_condition=True,
-        gate_requirement=GateRequirement.REQUIRED,  # v1.1: MUST pass for stability phase
+        gate_requirement=GateRequirement.OPTIONAL,  # GATE_VS_GRADES: advisory grade only (hydrostatics is the only gate)
         depends_on_validators=["physics/hydrostatics"],
         # v1.2: hull.bmt → hull.bm_m
         # Note: stability.kg_m is optional - validator falls back to weight.lightship_vcg_m

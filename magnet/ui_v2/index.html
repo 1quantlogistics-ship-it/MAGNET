@@ -205,6 +205,23 @@
             align-items: center;
             gap: 8px;
         }
+
+        .top-select {
+            height: 34px;
+            padding: 0 10px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-default);
+            border-radius: 10px;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .top-select:hover {
+            border-color: var(--border-hover);
+            color: var(--text-primary);
+        }
         
         .top-btn {
             padding: 6px 12px;
@@ -703,6 +720,39 @@
         .chat-input-wrap:focus-within {
             border-color: var(--accent-blue);
             box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.12);
+        }
+
+        /* Sketch upload tools (camera button) */
+        .chat-tools {
+            display: flex;
+            gap: 8px;
+            padding-top: 8px;
+        }
+
+        .chat-tool-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-default);
+            border-radius: 10px;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 12px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .chat-tool-btn:hover {
+            border-color: var(--border-hover);
+            color: var(--text-primary);
+        }
+
+        .chat-tool-btn svg {
+            width: 16px;
+            height: 16px;
+            flex: 0 0 16px;
         }
         
         .chat-prompt {
@@ -1372,6 +1422,51 @@
             margin-left: 4px;
         }
         
+        /* Group header cards */
+        .data-card.group-header {
+            grid-column: 1 / -1;
+            background: transparent;
+            border: none;
+            padding: 12px 0 4px 0;
+            margin-top: 8px;
+        }
+        
+        .data-card.group-header:first-child {
+            margin-top: 0;
+        }
+        
+        .data-card.group-header .data-card-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border-subtle);
+            padding-bottom: 6px;
+        }
+        
+        .data-card.group-header .data-card-value {
+            display: none;
+        }
+        
+        .data-card.group-header:hover {
+            border-color: transparent;
+        }
+        
+        /* Badge type: info */
+        .data-badge.info {
+            background: rgba(100, 210, 255, 0.1);
+            border-color: rgba(100, 210, 255, 0.2);
+            color: var(--accent-cyan);
+        }
+        
+        /* Badge type: neutral */
+        .data-badge.neutral {
+            background: rgba(161, 161, 166, 0.1);
+            border-color: rgba(161, 161, 166, 0.2);
+            color: var(--text-secondary);
+        }
+        
         /* ═══════════════════════════════════════════════════════════════
            MILESTONE TOAST
            ═══════════════════════════════════════════════════════════════ */
@@ -1535,15 +1630,23 @@
         .chat-panel.fullscreen ~ .workspace,
         .chat-panel.fullscreen ~ .inspector { display: none; }
     </style>
+    <!-- §SKELETON:UIWiring - Spiral adapter CSS -->
+    <link rel="stylesheet" href="css/spiral-adapter.css?v=20260108-staticfix1">
     <!-- Three.js for 3D hull rendering (r128 - stable with legacy global exports) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 
+    <!-- MAGNET Panel System (must load before backend-adapter) -->
+    <script src="js/panel-config.js?v=20260108-staticfix1"></script>
+    <script src="js/panel-renderer.js?v=20260108-staticfix1"></script>
+    
     <!-- MAGNET Backend Adapter -->
-    <script src="js/backend-adapter.js?v=20251222-llm2"></script>
+    <script src="js/backend-adapter.js?v=20260108-staticfix1"></script>
+    <!-- MAGNET Spiral Adapter (design-scoped, persistent spiral endpoints) -->
+    <script src="js/spiral-adapter.js?v=20260108-staticfix1"></script>
     <!-- MAGNET Scene Manager (Three.js GLB loader) -->
-    <script src="js/scene-manager.js?v=20251222-llm2"></script>
+    <script src="js/scene-manager.js?v=20260108-staticfix1"></script>
 </head>
 <body>
     <div class="studio">
@@ -1563,6 +1666,16 @@
             </div>
             
             <div class="top-bar-right">
+                <button class="top-btn" id="btnNewBlank" title="Create a new blank design">
+                    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+                    New Blank
+                </button>
+                <select class="top-select" id="lodSelect" title="Render quality (LOD)">
+                    <option value="low">Low</option>
+                    <option value="medium" selected>Medium</option>
+                    <option value="high">High</option>
+                    <option value="ultra">Ultra</option>
+                </select>
                 <button class="theme-toggle" id="themeToggle" title="Toggle theme">
                     <div class="theme-icon moon-icon">
                         <svg viewBox="0 0 24 24">
@@ -1636,7 +1749,13 @@
                     
                     <div class="chat-suggestions" id="chatSuggestions"></div>
                     
-                    <div class="chat-input-area">
+                    <!-- TASK-025: Loading Indicator -->
+                    <div class="loading-indicator" id="loadingIndicator">
+                        <div class="spinner"></div>
+                        <span class="loading-text">Thinking...</span>
+                    </div>
+                    
+                    <div class="chat-input-area chat-input-container">
                         <div class="chat-input-wrap">
                             <span class="chat-prompt">magnet ›</span>
                             <input type="text" class="chat-input" id="chatInput" placeholder="Enter command..." />
@@ -1644,7 +1763,17 @@
                                 <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                             </button>
                         </div>
+                        <!-- §SKELETON:UIWiring - Sketch upload tools -->
+                        <div class="chat-tools">
+                            <input id="sketchInput" type="file" accept="image/*" style="display:none" />
+                            <button class="chat-tool-btn" id="btnSketch" title="Upload sketch">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                                Sketch
+                            </button>
+                        </div>
                     </div>
+                    <!-- §SKELETON:UIWiring - Clarification panel mount -->
+                    <div id="clarificationContainer" class="clarification-overlay"></div>
                 </div>
             </aside>
             
@@ -1833,6 +1962,7 @@
         const dom = {};
         
         function cacheDom() {
+            // §SKELETON:UIWiring - Added btnSketch, sketchInput, clarificationContainer for spiral integration
             [
                 'projectName', 'connectionStatus', 'connectionText', 'syncIndicator',
                 'phaseNav', 'validatorNav', 'chatPanel', 'chatResize', 'chatToggle',
@@ -1844,7 +1974,10 @@
                 'inspector', 'inspectorContent', 'inspectorClose', 'applyBar', 'btnApply', 'btnDiscard',
                 'toastContainer', 'exportModal', 'exportOptions', 'exportClose',
                 'btnZoomIn', 'btnZoomOut', 'btnResetView', 'btnFitView', 'btnExport', 'btnSave', 'btnFullscreen',
-                'themeToggle'
+                'btnNewBlank',
+                'lodSelect',
+                'themeToggle',
+                'btnSketch', 'sketchInput', 'clarificationContainer'
             ].forEach(id => dom[id] = $(id));
         }
         
@@ -2005,6 +2138,21 @@
                 const item = e.target.closest('.validator-item');
                 if (item) emit('validatorClick', { validator: item.dataset.validator });
             });
+
+            // Data panel action buttons (delegated, survives innerHTML updates)
+            dom.dataGrid.addEventListener('click', e => {
+                const btn = e.target.closest('button[data-event]');
+                if (!btn) return;
+                if (btn.disabled) return;
+                const event = btn.dataset.event;
+                let payload = {};
+                try {
+                    payload = btn.dataset.payload ? JSON.parse(btn.dataset.payload) : {};
+                } catch (err) {
+                    payload = {};
+                }
+                emit(event, payload);
+            });
             
             // View tabs
             dom.viewTabs.addEventListener('click', e => {
@@ -2033,6 +2181,19 @@
             // Chat input
             dom.chatSend.addEventListener('click', handleCommand);
             dom.chatInput.addEventListener('keypress', e => { if (e.key === 'Enter') handleCommand(); });
+            
+            // §SKELETON:UIWiring - Sketch upload events
+            if (dom.btnSketch) {
+                dom.btnSketch.addEventListener('click', () => dom.sketchInput.click());
+            }
+            if (dom.sketchInput) {
+                dom.sketchInput.addEventListener('change', async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    emit('sketchUpload', { file, annotations: '' });
+                    e.target.value = ''; // Clear the file input
+                });
+            }
             
             // Suggestions
             dom.chatSuggestions.addEventListener('click', e => {
@@ -2070,6 +2231,14 @@
             
             // Save
             dom.btnSave.addEventListener('click', () => emit('save'));
+
+            // New blank design
+            // Routes through backend-adapter.js command handler (cmd === 'new blank').
+            if (dom.btnNewBlank) {
+                dom.btnNewBlank.addEventListener('click', () => {
+                    emit('command', { command: 'new blank' });
+                });
+            }
             
             // Theme toggle
             dom.themeToggle.addEventListener('click', toggleTheme);
@@ -2337,6 +2506,8 @@
             init,
             on,
             off,
+            // Expose emit for programmatic UI actions (e.g., buttons inside data panels)
+            emit,
             
             // Status
             setStatus(text, type = 'ready') {
@@ -2398,17 +2569,46 @@
                 if (detail) item.querySelector('.validator-detail').textContent = detail;
             },
             
-            // Data panel
+            // Data panel - supports group headers via c.isGroup flag
             setDataPanel(title, cards, badge = { text: 'All passing', type: 'success' }) {
                 dom.dataTitle.textContent = title;
                 dom.dataBadgeText.textContent = badge.text;
                 dom.dataBadge.className = 'data-badge' + (badge.type !== 'success' ? ` ${badge.type}` : '');
-                dom.dataGrid.innerHTML = cards.map(c => `
-                    <div class="data-card">
-                        <div class="data-card-label">${c.label}</div>
-                        <div class="data-card-value">${c.value}<span class="data-card-unit">${c.unit || ''}</span></div>
-                    </div>
-                `).join('');
+                dom.dataGrid.innerHTML = cards.map(c => {
+                    // Handle group headers
+                    if (c.isGroup) {
+                        return `
+                            <div class="data-card group-header">
+                                <div class="data-card-label">${c.label}</div>
+                            </div>
+                        `;
+                    }
+                    // Action cards (buttons)
+                    if (c.isAction && c.action && c.action.event) {
+                        const payloadStr = escapeHtml(JSON.stringify(c.action.payload || {}));
+                        const disabledAttr = c.action.disabled ? 'disabled' : '';
+                        return `
+                            <div class="data-card">
+                                <div class="data-card-label">${c.label}</div>
+                                <div class="data-card-value" style="font-size: 14px; font-family: inherit; color: var(--text-secondary);">
+                                    ${c.value || ''}
+                                </div>
+                                <button class="apply-btn primary" style="width:100%; margin-top:10px;"
+                                    data-event="${escapeHtml(String(c.action.event))}"
+                                    data-payload="${payloadStr}"
+                                    ${disabledAttr}
+                                >${escapeHtml(String(c.action.label || 'Apply'))}</button>
+                            </div>
+                        `;
+                    }
+                    // Normal data cards
+                    return `
+                        <div class="data-card">
+                            <div class="data-card-label">${c.label}</div>
+                            <div class="data-card-value">${c.value}<span class="data-card-unit">${c.unit || ''}</span></div>
+                        </div>
+                    `;
+                }).join('');
             },
             
             // Inspector
@@ -2518,12 +2718,27 @@
         console.log('[MAGNET] UI provenance: magnet/ui_v2 | commit: c773b8a | Module 65.1');
 
         // Initialize Three.js scene manager for 3D hull rendering
-        if (typeof MAGNETSceneManager !== 'undefined') {
+        // Prefer window.MAGNETSceneManager (explicit export), fall back to global binding.
+        try {
+            const SceneClass =
+                window.MAGNETSceneManager ||
+                (typeof MAGNETSceneManager !== 'undefined' ? MAGNETSceneManager : null);
             const canvas = MagnetStudio.getCanvasMount();
-            if (canvas) {
-                window.magnetThreeScene = new MAGNETSceneManager(canvas);
+            if (SceneClass && canvas) {
+                window.magnetThreeScene = new SceneClass(canvas);
                 console.log('[MAGNET] Scene manager initialized');
+            } else {
+                console.warn('[MAGNET] Scene manager not available (3D disabled):', {
+                    hasSceneClass: !!SceneClass,
+                    hasCanvas: !!canvas
+                });
             }
+        } catch (e) {
+            console.error('[MAGNET] Failed to initialize scene manager (3D disabled):', e);
+            try {
+                MagnetStudio?.terminal?.error?.('3D viewer failed to initialize (Three.js/GLTFLoader).');
+                MagnetStudio?.terminal?.info?.('If hull does not render, check network access to Three.js CDNs or refresh.');
+            } catch (_) {}
         }
 
         // =======================================================================
@@ -2535,6 +2750,68 @@
         const authToken = urlParams.get('token') || null;
         const debug = urlParams.get('debug') === 'true';
         const forceDemoMode = urlParams.get('demo') === 'true';
+        // Control Plane v1.1: Support explicit backend host for cross-port dev
+        const backendHost = urlParams.get('host') || null;
+
+        // Render quality (LOD) selection - stored in localStorage, applied by backend-adapter.js when fetching GLB.
+        // Per MAGNET_Rendering_Quality_And_Performance.md §2: ULTRA will thermal throttle MacBook Air after ~30s orbit
+        try {
+            const savedLod = (localStorage.getItem('magnet-lod') || 'medium').toLowerCase();
+            if (dom.lodSelect) {
+                dom.lodSelect.value = savedLod;
+                dom.lodSelect.addEventListener('change', () => {
+                    const lod = (dom.lodSelect.value || 'medium').toLowerCase();
+                    localStorage.setItem('magnet-lod', lod);
+                    
+                    // Thermal warning for ULTRA on low-power devices
+                    if (lod === 'ultra') {
+                        const isLowPower = _detectLowPowerDevice();
+                        if (isLowPower) {
+                            MagnetStudio.terminal.warning('⚠️ ULTRA quality may cause thermal throttling on this device. Consider HIGH for extended use.');
+                            MagnetStudio.showToast('ULTRA quality: expect heat on laptops', 'warning');
+                        }
+                    }
+                    
+                    // Reload geometry to reflect new tessellation LOD
+                    emit('command', { command: 'reload' });
+                });
+            }
+        } catch (e) {
+            console.warn('[MAGNET] Failed to init LOD selector:', e);
+        }
+        
+        // Detect low-power devices (MacBook Air, integrated GPU, mobile)
+        function _detectLowPowerDevice() {
+            try {
+                // Check for mobile/tablet
+                if (/Mobi|Android|iPad|iPhone/i.test(navigator.userAgent)) return true;
+                
+                // Check WebGL renderer string for integrated GPU indicators
+                const canvas = document.createElement('canvas');
+                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                if (gl) {
+                    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                    if (debugInfo) {
+                        const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL).toLowerCase();
+                        // Integrated GPU indicators
+                        if (renderer.includes('intel') || 
+                            renderer.includes('apple m') ||  // Apple Silicon (good but still laptop)
+                            renderer.includes('integrated') ||
+                            renderer.includes('mesa') ||
+                            renderer.includes('swiftshader')) {
+                            return true;
+                        }
+                    }
+                }
+                
+                // Check hardware concurrency (low core count = likely laptop)
+                if (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) return true;
+                
+                return false;
+            } catch (e) {
+                return false; // Assume capable if detection fails
+            }
+        }
 
         // Module 65.2 Invariant 1: Same-origin implies connected mode
         // Demo mode requires explicit opt-in when served from backend
@@ -2542,8 +2819,8 @@
             console.log('[MAGNET] Demo mode explicitly requested via ?demo=true');
             runDemo();
         } else {
-            // Try to auto-connect to same-origin backend
-            tryAutoConnect(designId, authToken, debug);
+            // Try to auto-connect to same-origin backend (or explicit host)
+            tryAutoConnect(designId, authToken, debug, backendHost);
         }
     });
 
@@ -2551,12 +2828,15 @@
     // Module 65.2: Auto-connect logic
     // =======================================================================
 
-    async function tryAutoConnect(designId, authToken, debug) {
+    async function tryAutoConnect(designId, authToken, debug, backendHost = null) {
         const T = MagnetStudio.terminal;
 
+        // Control Plane v1.1: Support explicit backend host
+        const baseUrl = backendHost ? `http://${backendHost}` : '';
+
         try {
-            // Probe same-origin for backend
-            const metaResp = await fetch('/api/v1/meta');
+            // Probe same-origin (or explicit host) for backend
+            const metaResp = await fetch(`${baseUrl}/api/v1/meta`);
             if (!metaResp.ok) throw new Error('No backend at same origin');
 
             const meta = await metaResp.json();
@@ -2567,28 +2847,35 @@
             if (designId) {
                 // Connect to specified design
                 console.log('[MAGNET] Using URL design ID:', designId);
-                connectToDesign(designId, authToken, debug);
+                connectToDesign(designId, authToken, debug, backendHost);
             } else {
                 // Show design picker
                 console.log('[MAGNET] No design ID in URL, showing picker');
-                await showDesignPicker(authToken, debug);
+                await showDesignPicker(authToken, debug, backendHost);
             }
         } catch (e) {
-            console.warn('[MAGNET] No backend detected:', e.message);
-            T.warning('No backend detected at same origin.');
-            T.info('Start backend: python -m magnet.bootstrap.entrypoints api');
-            T.info('Or add ?demo=true for sandbox mode');
-            runDemo();
+            console.error('[MAGNET] No backend detected:', e.message);
+            T.error('Backend not reachable. Check:');
+            T.error('1. Is backend running? python -m magnet.bootstrap.entrypoints api --port 8000');
+            T.error('2. Are you accessing via http://127.0.0.1:8000/ui/v2/ (NOT file://)?');
+            T.error('3. CORS or network issue?');
+            T.info('If you want demo mode, explicitly add ?demo=true to URL');
+            MagnetStudio.setStatus('Disconnected', 'error');
+            // Do NOT silently fall back to demo mode - that wastes tokens and causes confusion
         }
     }
 
-    function connectToDesign(designId, authToken, debug) {
+    function connectToDesign(designId, authToken, debug, backendHost = null) {
         console.log('[MAGNET] Connecting to design:', designId);
 
-        // Module 65.2: Same-origin default
+        // Module 65.2: Same-origin default (or explicit host)
         const config = { debug };
         if (authToken) {
             config.authToken = authToken;
+        }
+        // Control Plane v1.1: Use explicit host if provided
+        if (backendHost) {
+            config.host = backendHost;
         }
 
         // Persist design param in URL without reload
@@ -2601,14 +2888,16 @@
         }
 
         // Check if backend adapter is loaded
-        if (typeof MAGNETBackendAdapter === 'undefined') {
+        // Use window.* because top-level `class` declarations can be non-window globals in some modes,
+        // and because a cached HTML response for a JS URL can prevent evaluation entirely.
+        if (typeof window.MAGNETBackendAdapter === 'undefined') {
             console.error('[MAGNET] Backend adapter not loaded!');
-            MagnetStudio.terminal.error('Backend adapter not loaded');
-            runDemo();
+            MagnetStudio.terminal.error('Backend adapter not loaded - check js/backend-adapter.js');
+            MagnetStudio.setStatus('Error', 'error');
             return;
         }
 
-        const backend = new MAGNETBackendAdapter(config);
+        const backend = new window.MAGNETBackendAdapter(config);
         backend.connect(designId);
 
         // Expose for debugging
@@ -2621,13 +2910,16 @@
         });
     }
 
-    async function showDesignPicker(authToken, debug) {
+    async function showDesignPicker(authToken, debug, backendHost = null) {
         const T = MagnetStudio.terminal;
         T.info('Fetching available designs...');
 
+        // Control Plane v1.1: Support explicit backend host
+        const baseUrl = backendHost ? `http://${backendHost}` : '';
+
         try {
             // Cache-bust to ensure fresh response
-            const resp = await fetch('/api/v1/designs?_t=' + Date.now());
+            const resp = await fetch(`${baseUrl}/api/v1/designs?_t=` + Date.now());
             console.log('[MAGNET] Designs fetch response status:', resp.status);
             const data = await resp.json();
             console.log('[MAGNET] Designs data:', JSON.stringify(data));
@@ -2638,7 +2930,7 @@
                 console.log('[MAGNET] NO DESIGNS FOUND - creating new');
                 console.error('!!! BUG: designs.length is 0 but API should return 1 !!!');
                 T.info('No designs found. Creating new design...');
-                const newResp = await fetch('/api/v1/designs', {
+                const newResp = await fetch(`${baseUrl}/api/v1/designs`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name: 'New Design' })
@@ -2646,7 +2938,7 @@
                 const newDesign = await newResp.json();
                 if (newDesign.design_id) {
                     T.success(`Created design: ${newDesign.design_id}`);
-                    connectToDesign(newDesign.design_id, authToken, debug);
+                    connectToDesign(newDesign.design_id, authToken, debug, backendHost);
                 } else {
                     T.error('Failed to create design');
                     runDemo();
@@ -2663,7 +2955,7 @@
                 // Auto-select most recent
                 const latest = designs[0];
                 T.info(`Auto-selecting: ${latest.design_id}`);
-                connectToDesign(latest.design_id, authToken, debug);
+                connectToDesign(latest.design_id, authToken, debug, backendHost);
             }
         } catch (e) {
             T.error('Failed to fetch designs: ' + e.message);

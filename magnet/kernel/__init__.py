@@ -56,7 +56,19 @@ from .synthesis_fallback import (
     FallbackMode,
     create_fallback_proposal,
 )
-from .priors.hull_families import HullFamily, get_family_prior
+
+# TASK-002: Import geometry-based synthesis (PREFERRED)
+from .synthesis import GeometrySynthesisRequest
+
+# TASK-002: Import geometry-based analysis (PREFERRED)
+from .analysis import (
+    calculate_froude_geometry,
+    classify_regime_geometry,
+    recommend_regime_defaults,
+)
+
+# DEPRECATED: HullFamily imports (will be removed in Phase 2)
+# Lazy import to allow removal - access via magnet.kernel.priors.hull_families if needed
 
 
 __all__ = [
@@ -84,7 +96,8 @@ __all__ = [
     "register_kernel_validators",
     # Synthesis (v1.1)
     "HullSynthesizer",
-    "SynthesisRequest",
+    "SynthesisRequest",  # DEPRECATED - use GeometrySynthesisRequest
+    "GeometrySynthesisRequest",  # PREFERRED (TASK-002)
     "SynthesisProposal",
     "SynthesisResult",
     "ConvergenceCriteria",
@@ -94,6 +107,8 @@ __all__ = [
     "FallbackProposal",
     "FallbackMode",
     "create_fallback_proposal",
-    "HullFamily",
-    "get_family_prior",
+    # Analysis (TASK-002)
+    "calculate_froude_geometry",
+    "classify_regime_geometry",
+    "recommend_regime_defaults",
 ]

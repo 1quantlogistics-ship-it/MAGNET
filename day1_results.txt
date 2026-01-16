@@ -1,0 +1,136 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.3, pytest-9.0.1, pluggy-1.6.0 -- /Library/Frameworks/Python.framework/Versions/3.13/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/bengibson/MAGNETV1
+configfile: pyproject.toml
+plugins: hydra-core-1.3.2, anyio-4.11.0, asyncio-1.3.0, cov-7.0.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 1 item
+
+tests/knowledge/test_agent_naval_architecture_knowledge.py::test_agent_knowledge_summary 
+============================================================
+AGENT KNOWLEDGE ASSESSMENT SUMMARY
+============================================================
+KNOW_001: ❌ FAIL - Make it faster
+KNOW_002: ❌ FAIL - Add spray rails
+KNOW_003: ❌ FAIL - I want a catamaran
+============================================================
+PASS RATE: 0/3 (0%)
+============================================================
+❌ AGENT NEEDS MAJOR IMPROVEMENTS (RAG or fine-tuning)
+PASSED/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/_pytest/unraisableexception.py:67: PytestUnraisableExceptionWarning: Exception ignored in: <function AsyncHttpxClientWrapper.__del__ at 0x103ef67a0>
+
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/anthropic/_base_client.py", line 1463, in __del__
+    if self.is_closed:
+       ^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/httpx/_client.py", line 228, in is_closed
+    return self._state == ClientState.CLOSED
+           ^^^^^^^^^^^
+AttributeError: 'AsyncHttpxClientWrapper' object has no attribute '_state'
+
+Enable tracemalloc to get traceback where the object was allocated.
+See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+  warnings.warn(pytest.PytestUnraisableExceptionWarning(msg))
+
+
+=============================== warnings summary ===============================
+tests/knowledge/test_agent_naval_architecture_knowledge.py::test_agent_knowledge_summary
+  /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/_pytest/unraisableexception.py:67: PytestUnraisableExceptionWarning: Exception ignored in: <function AsyncHttpxClientWrapper.__del__ at 0x103ef67a0>
+  
+  Traceback (most recent call last):
+    File "/Users/bengibson/MAGNETV1/magnet/llm/providers/anthropic.py", line 88, in _get_client
+      self._client = anthropic.AsyncAnthropic(
+                     ~~~~~~~~~~~~~~~~~~~~~~~~^
+          api_key=self._api_key,
+          ^^^^^^^^^^^^^^^^^^^^^^
+          timeout=self.timeout_seconds,
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      )
+      ^
+    File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/anthropic/_client.py", line 349, in __init__
+      super().__init__(
+      ~~~~~~~~~~~~~~~~^
+          version=__version__,
+          ^^^^^^^^^^^^^^^^^^^^
+      ...<6 lines>...
+          _strict_response_validation=_strict_response_validation,
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      )
+      ^
+    File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/anthropic/_base_client.py", line 1517, in __init__
+      self._client = http_client or AsyncHttpxClientWrapper(
+                                    ~~~~~~~~~~~~~~~~~~~~~~~^
+          base_url=base_url,
+          ^^^^^^^^^^^^^^^^^^
+          # cast to a valid type because mypy doesn't understand our type narrowing
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+          timeout=cast(Timeout, timeout),
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      )
+      ^
+    File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/anthropic/_base_client.py", line 1415, in __init__
+      default_transport = AsyncHTTPTransport(**transport_kwargs)
+    File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/httpx/_transports/default.py", line 297, in __init__
+      ssl_context = create_ssl_context(verify=verify, cert=cert, trust_env=trust_env)
+    File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/httpx/_config.py", line 40, in create_ssl_context
+      ctx = ssl.create_default_context(cafile=certifi.where())
+    File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/ssl.py", line 717, in create_default_context
+      context.load_verify_locations(cafile, capath, cadata)
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  PermissionError: [Errno 1] Operation not permitted
+  
+  The above exception was the direct cause of the following exception:
+  
+  Traceback (most recent call last):
+    File "/Users/bengibson/MAGNETV1/magnet/llm/providers/base.py", line 211, in complete
+      response = await asyncio.wait_for(
+                 ^^^^^^^^^^^^^^^^^^^^^^^
+      ...<2 lines>...
+      )
+      ^
+    File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/tasks.py", line 507, in wait_for
+      return await fut
+             ^^^^^^^^^
+    File "/Users/bengibson/MAGNETV1/magnet/llm/providers/anthropic.py", line 119, in _raw_complete
+      client = self._get_client()
+    File "/Users/bengibson/MAGNETV1/magnet/llm/providers/anthropic.py", line 97, in _get_client
+      raise ProviderUnavailableError(
+      ...<2 lines>...
+      ) from e
+  magnet.llm.exceptions.ProviderUnavailableError: Failed to initialize Anthropic client: [Errno 1] Operation not permitted
+  
+  During handling of the above exception, another exception occurred:
+  
+  Traceback (most recent call last):
+    File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/anthropic/_base_client.py", line 1463, in __del__
+      if self.is_closed:
+         ^^^^^^^^^^^^^^
+    File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/httpx/_client.py", line 228, in is_closed
+      return self._state == ClientState.CLOSED
+             ^^^^^^^^^^^
+  AttributeError: 'AsyncHttpxClientWrapper' object has no attribute '_state'
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnraisableExceptionWarning(msg))
+
+tests/knowledge/test_agent_naval_architecture_knowledge.py::test_agent_knowledge_summary
+tests/knowledge/test_agent_naval_architecture_knowledge.py::test_agent_knowledge_summary
+  /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/_pytest/unraisableexception.py:67: PytestUnraisableExceptionWarning: Exception ignored in: <function AsyncHttpxClientWrapper.__del__ at 0x103ef67a0>
+  
+  Traceback (most recent call last):
+    File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/anthropic/_base_client.py", line 1463, in __del__
+      if self.is_closed:
+         ^^^^^^^^^^^^^^
+    File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/httpx/_client.py", line 228, in is_closed
+      return self._state == ClientState.CLOSED
+             ^^^^^^^^^^^
+  AttributeError: 'AsyncHttpxClientWrapper' object has no attribute '_state'
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnraisableExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 1 passed, 3 warnings in 9.60s =========================

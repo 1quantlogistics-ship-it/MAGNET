@@ -113,7 +113,9 @@ class MeshContractValidator:
 
         # Gate 2: Normals required, present, and matching
         if policy.require_normal:
-            if mesh.normals and len(mesh.normals) != len(mesh.vertices):
+            if not mesh.normals or len(mesh.normals) == 0:
+                errors.append(f"{mesh_name}: NORMAL required but missing")
+            elif len(mesh.normals) != len(mesh.vertices):
                 errors.append(
                     f"{mesh_name}: NORMAL count {len(mesh.normals)} != "
                     f"POSITION count {len(mesh.vertices)}"

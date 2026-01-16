@@ -127,9 +127,10 @@ class ValidatorRegistry:
 
         # Physics validators (REQUIRED for hull phase)
         try:
-            from magnet.physics.validators import HydrostaticsValidator, ResistanceValidator
+            from magnet.physics.validators import HydrostaticsValidator, ResistanceValidator, EquilibriumDraftValidator
             cls.register_class("physics/hydrostatics", HydrostaticsValidator)
             cls.register_class("physics/resistance", ResistanceValidator)
+            cls.register_class("physics/equilibrium_draft", EquilibriumDraftValidator)
             cls.mark_required("physics/hydrostatics")  # Required for any hull analysis
         except ImportError as e:
             logger.warning(f"Physics validators not available: {e}")

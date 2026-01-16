@@ -4,6 +4,13 @@ MAGNET Synthesis Fallback
 Fallback hull generation when synthesis fails.
 ALWAYS produces a usable hull (with low confidence).
 
+v1.1: DEPRECATED HullFamily usage (TASK-003)
+
+DEPRECATION WARNING:
+This module uses HullFamily-based priors which are scheduled for removal.
+The correct approach is to use geometry_defaults.get_geometry_derived_defaults().
+See: magnet.kernel.priors.geometry_defaults
+
 v1.0: Initial implementation
 """
 

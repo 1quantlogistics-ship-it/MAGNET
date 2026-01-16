@@ -327,7 +327,9 @@ PARAMETER_DISPLAY_NAMES = {
     "weight.displacement_tonnes": "Displacement",
     "weight.lightship_tonnes": "Lightship Weight",
     "weight.deadweight_tonnes": "Deadweight",
-    "resistance.total_kn": "Total Resistance",
+    # Resistance
+    "resistance.total_resistance_kn": "Total Resistance",
+    "resistance.total_kn": "Total Resistance",  # legacy alias
     "propulsion.power_kw": "Required Power",
     "mission.speed_knots": "Design Speed",
     "mission.range_nm": "Range",

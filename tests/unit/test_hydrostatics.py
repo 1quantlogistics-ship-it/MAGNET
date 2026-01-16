@@ -253,7 +253,7 @@ class TestHydrostaticsCalculator:
         assert abs(results.kb_m - expected_kb) < 0.01
 
     def test_kb_calculation_deep_v(self, calculator):
-        """Test KB calculation for deep-V hull."""
+        """Test KB calculation ignores hull_type string (TASK-004)."""
         results = calculator.calculate(
             lwl=15.0,
             beam=4.5,
@@ -263,8 +263,9 @@ class TestHydrostaticsCalculator:
             hull_type="deep_v",
         )
 
-        # KB = T × (0.78 - 0.285 × Cb) = 1.5 × (0.78 - 0.285 × 0.45)
-        expected_kb = 1.5 * (0.78 - 0.285 * 0.45)
+        # Deprecated parametric module no longer branches on hull_type.
+        # Base KB = T × (5/6 - Cb/3) with optional deadrise uplift (deadrise=0 here).
+        expected_kb = 1.5 * (5.0/6.0 - 0.45/3.0)
         assert abs(results.kb_m - expected_kb) < 0.01
 
     def test_bm_calculation(self, calculator):

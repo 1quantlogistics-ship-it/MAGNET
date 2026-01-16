@@ -128,6 +128,7 @@ export {
 // PRS Store (V1.4 - BRAVO)
 export {
   prsStore,
+  usePRSStore,
   getPRSState,
   getPhaseStatus,
   getActivePhase,

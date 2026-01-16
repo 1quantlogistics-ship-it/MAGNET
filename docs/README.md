@@ -1,101 +1,112 @@
-# MAGNET Documentation
+# MAGNET Documentation Index
 
-<!-- AGENT_CONTEXT
-Purpose: Index of all MAGNET documentation
-Authoritative: Yes
-Depends_On: None
-Used_By: All agents, developers, contributors
-Last_Verified: 2026-01-14
--->
-
-## Overview
-
-MAGNET is a naval architecture design system that uses LLMs to translate natural language into validated 3D hull geometry.
-
-**The North Star Equation:**
-```
-Human Intent → LLM → Geometry Primitives → Validating Kernel → Validated Design
-```
+Welcome to the MAGNET documentation hub. Navigate by **folder** (numbered categories) or by **topic** (cross-cutting indexes).
 
 ---
 
-## Documentation Structure
+## Quick Links: Topic Indexes
 
-### Architecture (`architecture/`)
-
-Core architectural documents that define the system's philosophy and constraints.
-
-| Document | Purpose |
-|----------|---------|
-| [GEOMETRY_CONVENTIONS.md](architecture/GEOMETRY_CONVENTIONS.md) | Coordinate system and geometry standards |
-| [NORTH_STAR.md](architecture/NORTH_STAR.md) | Mission and core equation |
-| [CONSTITUTION.md](architecture/CONSTITUTION.md) | Laws and constraints |
-| [PHASE_MACHINE.md](architecture/PHASE_MACHINE.md) | Phase dependencies |
-
-### Implementation (`implementation/`)
-
-Implementation guides and roadmaps.
-
-| Document | Purpose |
-|----------|---------|
-| [GOLDEN_PATH.md](implementation/GOLDEN_PATH.md) | Implementation guide |
-| [ROADMAP.md](implementation/ROADMAP.md) | Development phases |
-
-### Technical (`technical/`)
-
-Technical documentation for specific subsystems.
-
-| Document | Purpose |
-|----------|---------|
-| [HYDROSTATICS.md](technical/HYDROSTATICS.md) | Physics computation docs |
-| [RESISTANCE.md](technical/RESISTANCE.md) | Resistance methods |
-| [STABILITY.md](technical/STABILITY.md) | Stability calculations |
-
-### Agents (`agents/`)
-
-Documentation for LLM agent integration.
-
-| Document | Purpose |
-|----------|---------|
-| [PROMPT_ARCHITECTURE.md](agents/PROMPT_ARCHITECTURE.md) | LLM context design |
-| [STATE_LENS.md](agents/STATE_LENS.md) | What agents see |
-| [GEOMETRY_SCHEMA.md](agents/GEOMETRY_SCHEMA.md) | Primitive reference |
+| Index | Description |
+|-------|-------------|
+| [**Physics**](./_index/PHYSICS_INDEX.md) | All physics-related docs |
+| [**Golden Path**](./_index/GOLDEN_PATH_INDEX.md) | All migration docs |
+| [**Agents**](./_index/AGENTS_INDEX.md) | All agent/LLM docs |
+| [**UI**](./_index/UI_INDEX.md) | All UI docs |
+| [**Status**](./_index/STATUS_INDEX.md) | Docs by status (active/stale/archived) |
 
 ---
 
-## Quick Links
+## [0. Architecture](./0-architecture/)
 
-- **Getting Started:** See `README.md` in project root
-- **Implementation Guide:** [GOLDEN_PATH.md](implementation/GOLDEN_PATH.md)
-- **Coordinate System:** [GEOMETRY_CONVENTIONS.md](architecture/GEOMETRY_CONVENTIONS.md)
+Foundational principles, coordinate systems, and component ownership.
 
----
-
-## For Agents
-
-All documentation files include an `<!-- AGENT_CONTEXT -->` header with:
-- `Purpose`: One-sentence description
-- `Authoritative`: Whether this is the source of truth
-- `Depends_On`: Required reading before this document
-- `Used_By`: Which modules/agents reference this
-- `Last_Verified`: Date of last verification
+| Subfolder | Contents |
+|-----------|----------|
+| [**core/**](./0-architecture/core/) | CONSTITUTION, NORTH_STAR, PHASE_MACHINE |
+| [**geometry/**](./0-architecture/geometry/) | GEOMETRY_CONVENTIONS (coordinate systems) |
+| [**system/**](./0-architecture/system/) | ARCHITECTURE_CORE, SYSTEM_ARCHITECTURE, CLI |
 
 ---
 
-## Enumeration Warning
+## [1. Theory](./1-theory/)
 
-<!-- ENUMERATION_WARNING
-This documentation must not contain:
-- Vessel type → parameter mappings
-- Hull family conditionals
-- Style presets or catalogs
--->
+Physics, geometry, and naval architecture principles.
 
-The MAGNET system is **generative**, not **enumerative**. Documentation should describe:
-- Geometry primitives and their composition
-- Physics validation (not type-based selection)
-- Continuous parameters (not categorical presets)
+| Subfolder | Contents |
+|-----------|----------|
+| [**physics/**](./1-theory/physics/) | UNIFIED_PHYSICS_THEORY, North_Star, Gaps_And_Solutions |
+| [**geometry/**](./1-theory/geometry/) | hull_generation_deep_dive, geometry-expansion-design, LensPack |
 
 ---
 
-> When geometry is no longer sufficient, enumeration will try to return disguised as convenience.
+## [2. Protocols](./2-protocols/)
+
+Communication patterns and system firewalls.
+
+- [**INTENT_ACTION_PROTOCOL.md**](./2-protocols/INTENT_ACTION_PROTOCOL.md) – LLM→Kernel firewall
+- [**MODULE_65.1_COMPOUND_INTENT.md**](./2-protocols/MODULE_65.1_COMPOUND_INTENT.md) – Compound intent resolution
+- [**MODULE_67X_BROAD_CHAT_COMMANDS.md**](./2-protocols/MODULE_67X_BROAD_CHAT_COMMANDS.md) – Chat commands
+
+---
+
+## [3. Implementation](./3-implementation/)
+
+Active plans, technical specs, and integration roadmaps.
+
+| Subfolder | Contents |
+|-----------|----------|
+| [**golden-path/**](./3-implementation/golden-path/) | IMPLEMENTATION_GUIDE, TECHNICAL_SPEC |
+| [**integration/**](./3-implementation/integration/) | INTEGRATION_PLAN, V2, Merge_Plan |
+| [**physics/**](./3-implementation/physics/) | PHYSICS_RIGOR_PLAN |
+| [**general/**](./3-implementation/general/) | Implementation_Guide, Spec, Unified_Plan |
+
+---
+
+## [4. Specifications](./4-specs/)
+
+Feature-specific requirements and design plans.
+
+| Subfolder | Contents |
+|-----------|----------|
+| [**agents/**](./4-specs/agents/) | Agent_Enhancement, Robustness_Tests, Prompt_Architecture |
+| [**language/**](./4-specs/language/) | Design_Language_Spec_v1.0 |
+| [**rendering/**](./4-specs/rendering/) | Rendering_Quality_And_Performance |
+| [**failure-modes/**](./4-specs/failure-modes/) | Failure_Modes, Hard_Questions |
+
+---
+
+## [5. Audits](./5-audits/)
+
+Analysis, verification, and codebase health checks.
+
+| Subfolder | Contents |
+|-----------|----------|
+| [**golden-path/**](./5-audits/golden-path/) | Golden_Path_AUDIT_1 |
+| [**system/**](./5-audits/system/) | System_State_Analysis, Orphaned_Components, Critical_Corrections |
+| [**ui/**](./5-audits/ui/) | UIv2_Integration_Audit |
+| [**modules/**](./5-audits/modules/) | AUDIT_WHY_ROUTER |
+| [**prompts/**](./5-audits/prompts/) | Audit_Prompts |
+
+---
+
+## [6. Guides](./6-guides/)
+
+Operational runbooks and technical notes.
+
+- [**MAGNET_Local_Startup_Runbook.md**](./6-guides/MAGNET_Local_Startup_Runbook.md) – How to run locally
+- [**SCHEMA_DIFF_NOTES.md**](./6-guides/SCHEMA_DIFF_NOTES.md) – Schema changes
+
+---
+
+## [Archive](./archive/)
+
+Superseded documents kept for historical reference.
+
+---
+
+## Navigation Tips
+
+- **By domain:** Use numbered folders (0-6) to find docs by category
+- **By topic:** Use `_index/` files to see all related docs across folders
+- **By status:** Use `_index/STATUS_INDEX.md` to find active vs stale docs
+- **Reading order:** Start at 0-architecture, work through numbered folders

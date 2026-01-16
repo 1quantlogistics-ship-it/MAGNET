@@ -16,10 +16,18 @@ import uuid
 
 from .schemas import (
     Proposal, ProposalStatus, ValidationRequest, ValidationResult,
-    AgentDecision, DecisionType
+    AgentDecision, DecisionType, ValidationFinding
 )
 from .escalation import EscalationLevel, EscalationRequest
 from .cycle_logger import CycleLogger
+
+# Import GeometryProposal for type checking
+try:
+    from magnet.glue.protocol.schemas import GeometryProposal
+    HAS_GEOMETRY_PROPOSAL = True
+except ImportError:
+    HAS_GEOMETRY_PROPOSAL = False
+    GeometryProposal = None
 
 if TYPE_CHECKING:
     from magnet.core.state_manager import StateManager
@@ -252,14 +260,36 @@ class CycleExecutor:
         proposal: Proposal,
         tentative: bool = True,
     ) -> None:
-        """Apply proposal changes to state."""
+        """
+        Apply proposal changes to state.
+        
+        Phase 2 Enhancement: For GeometryProposal, we don't apply changes here.
+        The program_executor handles state changes atomically during validation.
+        """
+        # For GeometryProposal, state changes are handled by program_executor
+        if HAS_GEOMETRY_PROPOSAL and isinstance(proposal, GeometryProposal):
+            # Store the program text for later execution
+            source = "protocol/cycle_executor"
+            self.state.set("design_program", proposal.program_text, source)
+            return
+        
         # Hole #7 Fix: Use .set() with proper source for provenance
         source = "protocol/cycle_executor"
         for change in proposal.changes:
             self.state.set(change.path, change.new_value, source)
 
     def _run_validation(self, proposal: Proposal) -> ValidationResult:
-        """Run validation pipeline."""
+        """
+        Run validation pipeline.
+        
+        Phase 2 Enhancement: Handles GeometryProposal via program_executor.
+        This enables the NEW geometry primitives path for the design spiral.
+        """
+        # Check if this is a GeometryProposal (NEW PATH)
+        if HAS_GEOMETRY_PROPOSAL and isinstance(proposal, GeometryProposal):
+            return self._run_geometry_validation(proposal)
+        
+        # Existing parameter proposal validation (OLD PATH)
         if not self._validator_executor:
             # No validator registered - return pass
             return ValidationResult(
@@ -278,6 +308,122 @@ class CycleExecutor:
         result.duration_ms = (time.time() - start) * 1000
 
         return result
+
+    def _run_geometry_validation(self, proposal: "GeometryProposal") -> ValidationResult:
+        """
+        Run validation for GeometryProposal via program_executor.
+        
+        This is the NEW PATH that bypasses synthesis.py and HullFamily.
+        Uses program_executor for atomic compile → validate.
+        
+        Reference: MAGNET_Merge_Implementation_Plan.md Phase 2
+        """
+        start = time.time()
+        findings: List[ValidationFinding] = []
+        
+        try:
+            from magnet.kernel.program_executor import execute_program
+            
+            # Execute with dry_run=True to validate without committing
+            exec_result = execute_program(
+                proposal.program_text,
+                state_manager=self.state,
+                dry_run=True,  # Don't commit yet — CycleExecutor controls commit
+            )
+            
+            # Convert ExecutionResult to ValidationResult
+            return self._convert_exec_result_to_validation(
+                exec_result,
+                proposal.proposal_id,
+                start,
+            )
+            
+        except Exception as e:
+            self.logger.exception(f"Geometry validation failed: {e}")
+            findings.append(ValidationFinding(
+                validator_name="program_executor",
+                severity="error",
+                message=f"Execution failed: {str(e)}",
+            ))
+            
+            return ValidationResult(
+                proposal_id=proposal.proposal_id,
+                passed=False,
+                findings=findings,
+                error_count=1,
+                validators_run=["program_executor"],
+                duration_ms=(time.time() - start) * 1000,
+            )
+
+    def _convert_exec_result_to_validation(
+        self,
+        exec_result,
+        proposal_id: str,
+        start_time: float,
+    ) -> ValidationResult:
+        """
+        Convert ExecutionResult to ValidationResult for CycleExecutor.
+        
+        This bridges the NEW geometry path to the existing CycleExecutor
+        validation interface.
+        """
+        findings: List[ValidationFinding] = []
+        
+        # Convert errors to findings
+        for error in exec_result.errors:
+            findings.append(ValidationFinding(
+                validator_name="program_executor",
+                severity="error",
+                message=error,
+            ))
+        
+        # Convert warnings to findings
+        for warning in exec_result.warnings:
+            findings.append(ValidationFinding(
+                validator_name="program_executor",
+                severity="warning",
+                message=warning,
+            ))
+        
+        # Convert constraint violations to findings
+        constraints = exec_result.validation.get("constraints", [])
+        for constraint in constraints:
+            if not constraint.get("passes", True):
+                findings.append(ValidationFinding(
+                    validator_name="constraint",
+                    severity="error",
+                    path=constraint.get("path"),
+                    message=f"Constraint violated: {constraint.get('path')} {constraint.get('operator')} {constraint.get('required')}",
+                    actual_value=constraint.get("actual"),
+                    expected_value=constraint.get("required"),
+                ))
+        
+        # Convert hydrostatics validation to findings
+        hydro = exec_result.validation.get("hydrostatics", {})
+        gm = hydro.get("gm_m")
+        if gm is not None and gm < 0.5:
+            findings.append(ValidationFinding(
+                validator_name="hydrostatics",
+                severity="warning",
+                path="stability.gm_m",
+                message=f"GM is {gm:.2f}m, below recommended 0.5m",
+                actual_value=gm,
+                expected_value=0.5,
+                suggestion="Consider increasing beam or lowering VCG",
+            ))
+        
+        error_count = len([f for f in findings if f.severity == "error"])
+        warning_count = len([f for f in findings if f.severity == "warning"])
+        
+        return ValidationResult(
+            proposal_id=proposal_id,
+            passed=exec_result.success and error_count == 0,
+            findings=findings,
+            error_count=error_count,
+            warning_count=warning_count,
+            validators_run=["program_executor", "hydrostatics", "constraints"],
+            duration_ms=(time.time() - start_time) * 1000,
+        )
 
     def _commit_changes(self, cycle_state: CycleState) -> None:
         """Commit tentative changes."""

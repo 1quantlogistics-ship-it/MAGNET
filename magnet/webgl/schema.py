@@ -564,6 +564,9 @@ class SceneData:
 
     # Mesh data
     hull: Optional[MeshData] = None
+    # v1.2: Multi-body hull support — multiple disconnected hull meshes.
+    # Backward compatible: `hull` remains the primary mesh for legacy clients.
+    hulls: Optional[List[MeshData]] = None
     deck: Optional[MeshData] = None
     transom: Optional[MeshData] = None
     structure: Optional[StructureSceneData] = None
@@ -583,6 +586,7 @@ class SceneData:
             "version_id": self.version_id,
             "geometry_mode": self.geometry_mode.value,
             "hull": self.hull.to_dict() if self.hull else None,
+            "hulls": [h.to_dict() for h in self.hulls] if self.hulls else None,
             "deck": self.deck.to_dict() if self.deck else None,
             "transom": self.transom.to_dict() if self.transom else None,
             "structure": self.structure.to_dict() if self.structure else None,
@@ -600,6 +604,7 @@ class SceneData:
             version_id=data.get("version_id", ""),
             geometry_mode=GeometryMode(data.get("geometry_mode", "authoritative")),
             hull=MeshData.from_dict(data["hull"]) if data.get("hull") else None,
+            hulls=[MeshData.from_dict(m) for m in data.get("hulls", [])] if data.get("hulls") else None,
             deck=MeshData.from_dict(data["deck"]) if data.get("deck") else None,
             transom=MeshData.from_dict(data["transom"]) if data.get("transom") else None,
             structure=StructureSceneData.from_dict(data["structure"]) if data.get("structure") else None,
@@ -617,8 +622,8 @@ def generate_typescript_types() -> str:
     """
     Generate TypeScript interfaces from Python schema.
 
-    Run this after schema changes:
-        python -c "from magnet.webgl.schema import generate_typescript_types; print(generate_typescript_types())" > frontend/types/schema.ts
+    Run this after schema changes (UI v2 only):
+        python -c "from magnet.webgl.schema import generate_typescript_types; print(generate_typescript_types())" > magnet/ui_v2/js/types/schema.ts
     """
     timestamp = datetime.utcnow().isoformat()
 

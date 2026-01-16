@@ -376,6 +376,14 @@ class GeometryExporter:
             source_branch=self._source_branch,
             commit_hash=self._commit_hash,
         )
+        # Phase 3: embed diagnostic primitives into export metadata for traceability
+        try:
+            if isinstance(scene.metadata, dict):
+                prim = scene.metadata.get("primitives")
+                if prim is not None:
+                    metadata.custom.setdefault("primitives", prim)
+        except Exception:
+            pass
 
         try:
             if format in (ExportFormat.GLTF, ExportFormat.GLB):

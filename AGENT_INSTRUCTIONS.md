@@ -101,7 +101,7 @@ TASK-000 → TASK-000b → TASK-000c → TASK-000d
 **🚩 GATE 0 Verification:**
 ```bash
 # All must pass before proceeding
-test -f docs/architecture/GEOMETRY_CONVENTIONS.md && echo "✓ CONVENTIONS"
+test -f docs/0-architecture/GEOMETRY_CONVENTIONS.md && echo "✓ CONVENTIONS"
 grep -r "1e-" magnet/webgl/ magnet/hull_gen/ | wc -l | xargs test 0 -eq && echo "✓ TOLERANCES"
 test -f docs/README.md && echo "✓ DOCS"
 ```

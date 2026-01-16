@@ -256,12 +256,15 @@ class TestResistanceValidator:
         result = validator.validate(state_manager, {})
 
         # Check outputs are written
-        assert "resistance.total_kn" in state_manager._values
-        assert "resistance.frictional_kn" in state_manager._values
-        assert "resistance.residuary_kn" in state_manager._values
+        assert "resistance.total_resistance_kn" in state_manager._values
+        assert "resistance.frictional_resistance_kn" in state_manager._values
+        assert "resistance.residuary_resistance_kn" in state_manager._values
         assert "resistance.effective_power_kw" in state_manager._values
         assert "resistance.froude_number" in state_manager._values
         assert "resistance.reynolds_number" in state_manager._values
+        assert "resistance.regime" in state_manager._values
+        assert "resistance.method_valid" in state_manager._values
+        assert "resistance.validity_note" in state_manager._values
 
     def test_high_froude_warning(self):
         """Test WARNING for high Froude number."""
@@ -278,11 +281,15 @@ class TestResistanceValidator:
         validator = ResistanceValidator()
         result = validator.validate(state_manager, {})
 
-        # Check if Fn > 0.5, should have warning
+        # Check if Fn >= 0.4 (semi-displacement/planing regime), Holtrop validity flag should be False
         fn = state_manager._values.get("resistance.froude_number", 0)
-        if fn > 0.5:
+        method_valid = state_manager._values.get("resistance.method_valid", True)
+        if fn >= 0.4:
+            # With continuous blending, validity depends on weighted method envelopes.
+            # At minimum we must surface that this is outside Holtrop's core validity range.
+            assert state_manager._values.get("resistance.method") == "blended"
             assert result.state == ValidatorState.WARNING
-            assert any("froude" in f.message.lower() for f in result.findings)
+            assert any("holtrop" in f.message.lower() or "savitsky" in f.message.lower() for f in result.findings)
 
     def test_depends_on_hydrostatics(self):
         """Test explicit dependency on hydrostatics validator."""
@@ -349,7 +356,7 @@ class TestValidatorIntegration:
         assert resist_result.passed
 
         # Verify outputs
-        assert state_manager._values["resistance.total_kn"] > 0
+        assert state_manager._values["resistance.total_resistance_kn"] > 0
         assert state_manager._values["resistance.effective_power_kw"] > 0
 
     def test_resistance_without_hydrostatics_fails(self):

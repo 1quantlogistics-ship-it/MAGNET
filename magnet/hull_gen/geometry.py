@@ -44,7 +44,7 @@ class Point3D:
     """Longitudinal position (m from AP, positive forward)."""
 
     y: float = 0.0
-    """Transverse position (m from centerline, positive port). See docs/architecture/GEOMETRY_CONVENTIONS.md."""
+    """Transverse position (m from centerline, positive port). See docs/0-architecture/GEOMETRY_CONVENTIONS.md."""
 
     z: float = 0.0
     """Vertical position (m from baseline, positive up)."""
@@ -437,6 +437,22 @@ class HullGeometry:
     vcb: float = 0.0
     """Vertical center of buoyancy (m from baseline)."""
 
+    # === QUALITY / METADATA ===
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    """Arbitrary metadata; quality warnings stored under metadata['quality_warnings']."""
+
+    # === Universal Primitives (Phase 3: pass-through) ===
+    # NOTE: These primitives are compiled/preserved for rendering & downstream modeling,
+    # but may not yet have full physics semantics (see docs plan Phase 3).
+    openings: List[Dict[str, Any]] = field(default_factory=list)
+    """Compiled geometry.opening resources (diagnostic/pass-through until fully modeled)."""
+
+    flow_paths: List[Dict[str, Any]] = field(default_factory=list)
+    """Compiled geometry.flow_path resources (diagnostic/pass-through until fully modeled)."""
+
+    attachments: List[Dict[str, Any]] = field(default_factory=list)
+    """Compiled geometry.attachment resources (diagnostic/pass-through until fully modeled)."""
+
     def get_section_at_x(self, x: float) -> Optional[HullSection]:
         """
         Get section at longitudinal position by interpolation.
@@ -488,4 +504,5 @@ class HullGeometry:
             "waterplane_area": round(self.waterplane_area, 4),
             "lcb": round(self.lcb, 4),
             "vcb": round(self.vcb, 4),
+            "metadata": self.metadata,
         }

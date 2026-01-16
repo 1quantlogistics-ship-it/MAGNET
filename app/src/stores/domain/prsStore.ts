@@ -12,6 +12,7 @@
  * - Domain hash integration
  */
 
+import { useStore } from 'zustand';
 import { SCHEMA_VERSION } from '../../types/schema-version';
 import { createStore } from '../contracts/StoreFactory';
 import type { PhaseName, PhaseStatus } from '../../api/phase';
@@ -426,6 +427,21 @@ export function subscribeToPRS(
   return prsStore.subscribe((fullState) => {
     listener(fullState.getReadOnly());
   });
+}
+
+// ============================================================================
+// React Hook
+// ============================================================================
+
+/**
+ * React hook for reactive PRS state access
+ *
+ * @example
+ * const designId = usePRSStore((s) => s.designId);
+ * const activePhase = usePRSStore((s) => s.activePhase);
+ */
+export function usePRSStore<T>(selector: (state: PRSStoreState) => T): T {
+  return useStore(prsStore, (fullState) => selector(fullState.getReadOnly()));
 }
 
 // ============================================================================

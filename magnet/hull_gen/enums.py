@@ -21,13 +21,19 @@ class HullType(Enum):
 
 
 class ChineType(Enum):
-    """Chine configuration."""
-    NONE = "none"
-    SINGLE = "single"
-    DOUBLE = "double"
-    TRIPLE = "triple"
-    SOFT = "soft"
-    HARD = "hard"
+    """
+    Chine configuration types.
+    
+    v1.1: Added REVERSE and VARIABLE for Phase 2 chine variations.
+    """
+    NONE = "none"           # No chine (pure round bilge)
+    SOFT = "soft"           # Rounded/soft chine
+    HARD = "hard"           # Single hard chine (alias for SINGLE)
+    SINGLE = "single"       # Single hard chine
+    DOUBLE = "double"       # Two hard chines per side
+    TRIPLE = "triple"       # Three hard chines per side
+    REVERSE = "reverse"     # Outward-angled chine (sponson-style)
+    VARIABLE = "variable"   # Transitions soft→hard along length
 
 
 class StemProfile(Enum):
@@ -37,6 +43,22 @@ class StemProfile(Enum):
     WAVE_PIERCING = "wave_piercing"
     BULBOUS = "bulbous"
     AXEBOW = "axebow"
+    CLIPPER = "clipper"
+
+
+class BowStyle(Enum):
+    """
+    Bow form style.
+    
+    Phase 3: Added for bow form variations.
+    """
+    TRADITIONAL = "traditional"      # Smooth lofted sections (default)
+    WEDGE = "wedge"                  # Two planar panels meeting at stem
+    AXE = "axe"                      # Vertical stem, sharp entry
+    FACETED = "faceted"              # Multiple planar panels
+    WAVE_PIERCING = "wave_piercing"  # Fine entry, tumblehome bow
+    SPOON = "spoon"                  # Curved spoon bow (traditional)
+    CLIPPER = "clipper"              # Raked curved stem
 
 
 class SternProfile(Enum):

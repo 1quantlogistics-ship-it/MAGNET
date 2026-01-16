@@ -19,6 +19,16 @@ from magnet.agents.clarification import (
 from magnet.agents.api_endpoints import create_agents_router
 from magnet.agents.llm_client import LLMClient
 from magnet.agents.factory import AgentFactory
+from magnet.agents.geometry_proposer import (
+    GeometryProposer,
+    ProposerResult,
+    DesignProgram,
+    GeometryOperation,
+    Constraint,
+    create_geometry_proposer,
+    propose_geometry,
+    GEOMETRY_PROPOSER_SYSTEM_PROMPT,
+)
 
 __all__ = [
     'AckType',
@@ -28,4 +38,13 @@ __all__ = [
     'create_agents_router',
     'LLMClient',
     'AgentFactory',
+    # Geometry Proposer (Phase 6)
+    'GeometryProposer',
+    'ProposerResult',
+    'DesignProgram',
+    'GeometryOperation',
+    'Constraint',
+    'create_geometry_proposer',
+    'propose_geometry',
+    'GEOMETRY_PROPOSER_SYSTEM_PROMPT',
 ]

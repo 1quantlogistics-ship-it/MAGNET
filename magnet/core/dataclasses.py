@@ -44,6 +44,9 @@ class MissionConfig:
     range_nm: Optional[float] = None
     endurance_hours: Optional[float] = None
 
+    # Stability requirement
+    gm_required_m: Optional[float] = None  # Required transverse GM (m)
+
     # Capacity
     crew_berthed: Optional[int] = None
     crew_day: Optional[int] = None
@@ -107,9 +110,20 @@ class HullState:
     cvp: Optional[float] = None  # Vertical prismatic coefficient
 
     # Hull angles
-    deadrise_deg: Optional[float] = None  # Deadrise at transom
+    deadrise_deg: Optional[float] = None  # Deadrise at midship (deg)
+    deadrise_transom_deg: Optional[float] = None  # Deadrise at transom (deg)
     deadrise_midship_deg: Optional[float] = None
     entrance_angle_deg: Optional[float] = None  # Half angle of entrance
+
+    # Hull form inputs (engineering controls)
+    lcb_fraction: Optional[float] = None  # LCB as fraction of LWL from FP (0=bow/FP, 1=stern/AP)
+    transom_beam_ratio: Optional[float] = None  # Transom width / max beam
+    bow_entrance_deg: Optional[float] = None  # Waterline entry half-angle (deg)
+    freeboard_m: Optional[float] = None  # Minimum freeboard at side (m)
+    draft_fwd_m: Optional[float] = None  # Draft at FP (m)
+    draft_aft_m: Optional[float] = None  # Draft at AP (m)
+    bow_flare_deg: Optional[float] = None  # Bow flare angle above waterline (deg)
+    stem_rake_deg: Optional[float] = None  # Stem rake from vertical (deg)
 
     # Derived values
     displacement_m3: Optional[float] = None  # Volume displacement (m³)
@@ -130,9 +144,68 @@ class HullState:
     tpc: Optional[float] = None  # Tonnes per cm immersion
     mct: Optional[float] = None  # Moment to change trim 1cm
 
+    # Geometry-derived hydrostatics (P2)
+    hydrostatics_method: Optional[str] = None  # "geometry_integration" | "parametric"
+    cb_geometry: Optional[float] = None
+    cp_geometry: Optional[float] = None
+    cm_geometry: Optional[float] = None
+    cwp_geometry: Optional[float] = None
+    it_m4: Optional[float] = None  # Transverse waterplane inertia
+    il_m4: Optional[float] = None  # Longitudinal waterplane inertia
+    sectional_areas: List[float] = field(default_factory=list)
+    bonjean_stations: List[float] = field(default_factory=list)
+
     # Multi-hull specific
     hull_spacing_m: Optional[float] = None  # For catamarans
     demi_hull_beam_m: Optional[float] = None
+
+    # ==========================================================================
+    # Phase 2: Chine Variations
+    # ==========================================================================
+    chine_type: Optional[str] = None         # "soft" | "hard" | "double" | "triple" | "reverse" | "variable"
+    chine_count: Optional[int] = None        # Number of chine lines per side
+    chine_style: Optional[str] = None        # "standard" | "reverse" | "variable"
+    chine_transition_start: Optional[float] = None  # Station where chine starts (0-1)
+    chine_transition_end: Optional[float] = None    # Station where chine ends (0-1)
+    reverse_chine_height_ratio: Optional[float] = None  # Height ratio for reverse chine
+    reverse_chine_extension_m: Optional[float] = None   # Extension in meters
+    chine_flat_width_m: Optional[float] = None          # Width of flat at chine
+
+    # ==========================================================================
+    # Phase 3: Bow Forms
+    # ==========================================================================
+    bow_style: Optional[str] = None          # "traditional" | "wedge" | "axe" | "faceted" | "wave_piercing"
+    bow_facet_count: Optional[int] = None    # Number of facets for faceted bow
+    bow_planarity: Optional[float] = None    # 0-1 planarity factor
+    bow_half_angle_deg: Optional[float] = None  # Bow entry half-angle
+    bow_region_length: Optional[float] = None   # Bow region as fraction of LWL
+    bow_freeboard_ratio: Optional[float] = None # Bow freeboard ratio
+    stem_profile: Optional[str] = None       # "vertical" | "raked" | "wave_piercing" | "axe" | "clipper"
+    stem_radius_m: Optional[float] = None    # Stem radius
+
+    # ==========================================================================
+    # Phase 4: Spray Rails + Knuckle Lines
+    # ==========================================================================
+    spray_rail_count: Optional[int] = None   # Number of spray rails per side
+    spray_rail_spacing: Optional[float] = None  # Vertical spacing ratio
+    has_spray_rails: Optional[bool] = None   # Enable spray rails
+    has_knuckle_lines: Optional[bool] = None # Enable knuckle lines
+
+    # ==========================================================================
+    # Phase 5: Transom Variations
+    # ==========================================================================
+    transom_style: Optional[str] = None      # "vertical" | "raked" | "stepped" | "tunneled" | "sugar_scoop"
+    transom_rake_deg: Optional[float] = None # Transom rake angle
+
+    # ==========================================================================
+    # Phase 6: Tumblehome, Panels, Deck
+    # ==========================================================================
+    tumblehome_enabled: Optional[bool] = None      # Enable tumblehome
+    tumblehome_angle_deg: Optional[float] = None   # Tumblehome angle
+    tumblehome_start_ratio: Optional[float] = None # Height ratio where tumblehome starts
+    panel_style: Optional[str] = None              # "smooth" | "faceted" | "developable"
+    deck_enabled: Optional[bool] = None            # Enable deck surface
+    deck_camber_m: Optional[float] = None          # Deck camber height
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -441,13 +514,24 @@ class StabilityState:
     """
     # Metacentric height
     gm_transverse_m: Optional[float] = None
+    gm_m: Optional[float] = None  # Canonical GM (corrected if FSC applied)
+    gm_solid_m: Optional[float] = None  # GM without free surface correction
     gm_longitudinal_m: Optional[float] = None
     gm_corrected_m: Optional[float] = None  # After free surface correction
+    km_m: Optional[float] = None  # KM = KB + BM
+    fsc_m: Optional[float] = None  # Free surface correction (meters)
+    has_fsc: Optional[bool] = None
+    passes_gm_criterion: Optional[bool] = None
 
     # GZ curve characteristics
     gz_max_m: Optional[float] = None
+    gz_30_m: Optional[float] = None
+    angle_gz_max_deg: Optional[float] = None  # Canonical (schema/builtin)
     angle_of_max_gz_deg: Optional[float] = None
+    angle_vanishing_deg: Optional[float] = None  # Canonical (schema/builtin)
     angle_of_vanishing_stability_deg: Optional[float] = None
+    range_deg: Optional[float] = None  # Range of positive stability
+    passes_gz_criteria: Optional[bool] = None
 
     # Areas under GZ curve
     area_0_30_m_rad: Optional[float] = None
@@ -476,6 +560,16 @@ class StabilityState:
     damage_cases: List[Dict[str, Any]] = field(default_factory=list)
     damage_gm_min_m: Optional[float] = None
     damage_range_deg: Optional[float] = None
+    damage_cases_evaluated: Optional[int] = None
+    damage_all_pass: Optional[bool] = None
+    damage_worst_case: Optional[str] = None
+    damage_results: Optional[Dict[str, Any]] = None
+
+    # Weather criterion
+    weather_area_a_m_rad: Optional[float] = None
+    weather_area_b_m_rad: Optional[float] = None
+    weather_ratio: Optional[float] = None
+    weather_passes: Optional[bool] = None
 
     # Compliance
     imo_intact_passed: bool = False
@@ -885,6 +979,16 @@ class KernelState:
     computation_time_s: float = 0.0
     memory_usage_mb: float = 0.0
 
+    # ==================== Human Decision Point (Unified Physics Theory) ====================
+    # When True, downstream automation is paused until explicit approval.
+    awaiting_human_decision: bool = False
+    # Structured request payload describing why the system halted and what options exist.
+    human_decision_request: Dict[str, Any] = field(default_factory=dict)
+    # Human approval token (audit trail) when user approves continuation or requests revision.
+    human_decision_token: Dict[str, Any] = field(default_factory=dict)
+    # ISO8601 timestamp when the decision was resolved (if any).
+    human_decision_resolved_at: Optional[str] = None
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
@@ -1210,6 +1314,10 @@ class ResistanceState:
     # Total resistance
     total_resistance_kn: Optional[float] = None
 
+    # Power (from resistance model at the evaluated speed)
+    effective_power_kw: Optional[float] = None
+    effective_power_hp: Optional[float] = None
+
     # Components
     frictional_resistance_kn: Optional[float] = None
     residuary_resistance_kn: Optional[float] = None
@@ -1234,6 +1342,28 @@ class ResistanceState:
     # Reynolds/Froude numbers
     reynolds_number: Optional[float] = None
     froude_number: Optional[float] = None
+
+    # Regime / method validity (P1 backend consistency)
+    regime: Optional[str] = None  # "displacement" | "semi_displacement" | "planing"
+    method_valid: Optional[bool] = None
+    validity_note: Optional[str] = None
+
+    # Planing / multihull details (P2)
+    running_trim_deg: Optional[float] = None
+    wetted_length_m: Optional[float] = None
+    wetted_surface_m2: Optional[float] = None
+    froude_beam: Optional[float] = None
+    lift_coefficient: Optional[float] = None
+    drag_coefficient: Optional[float] = None
+    friction_coefficient: Optional[float] = None
+    pressure_resistance_kn: Optional[float] = None
+    interference_factor: Optional[float] = None
+    interference_note: Optional[str] = None
+
+    # Continuous blending / traceability (Phase 2.5 scaffolding)
+    method_components: Optional[Dict[str, Any]] = None
+    uncertainty_fraction: Optional[float] = None
+    uncertainty_kn: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

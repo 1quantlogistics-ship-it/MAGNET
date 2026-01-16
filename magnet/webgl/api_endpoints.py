@@ -198,6 +198,7 @@ async def get_hull_geometry(
         lod_level = LODLevel(lod) if lod in [l.value for l in LODLevel] else LODLevel.MEDIUM
 
         mesh, mode = service.get_hull_geometry(
+            design_id=design_id,
             lod=lod_level,
             allow_visual_only=allow_visual_only,
         )
@@ -263,6 +264,7 @@ async def get_scene(
         lod_level = LODLevel(lod) if lod in [l.value for l in LODLevel] else LODLevel.MEDIUM
 
         scene = service.get_scene(
+            design_id=design_id,
             lod=lod_level,
             include_structure=include_structure,
             include_hydrostatics=include_hydrostatics,
@@ -314,6 +316,7 @@ async def get_binary_geometry(
         lod_level = LODLevel(lod) if lod in [l.value for l in LODLevel] else LODLevel.MEDIUM
 
         mesh, mode = service.get_hull_geometry(
+            design_id=design_id,
             lod=lod_level,
             allow_visual_only=True,
         )
@@ -360,13 +363,11 @@ async def create_section_cut(
         raise HTTPException(status_code=400, detail="Request body required")
 
     try:
-        from .geometry_service import GeometryService
-        from .interfaces import StateGeometryAdapter
         from .section_cuts import SectionPlane
+        from .section_cuts import SectionCutGenerator
 
         sm = get_state_manager(design_id)
-
-        service = GeometryService(state_manager=sm)
+        generator = SectionCutGenerator(state_manager=sm)
 
         # Map plane string to enum
         plane_map = {
@@ -383,21 +384,27 @@ async def create_section_cut(
                 valid_values=list(plane_map.keys()),
             )
 
-        lod_level = LODLevel(request.lod) if request.lod in [l.value for l in LODLevel] else LODLevel.MEDIUM
+        # `SectionCutGenerator` expects normalized position (0..1).
+        # For now, interpret request.position as normalized to match the existing docs.
+        # (Transverse station plots use the dedicated endpoint below.)
+        pos = float(request.position)
+        pos = max(0.0, min(1.0, pos))
 
-        result = service.get_section_cut(
-            plane=plane,
-            position=request.position,
-            lod=lod_level,
-        )
+        result = generator.cut(plane=plane, position=pos)
+        curve = result.curves[0] if result.curves else None
+        pts = []
+        closed = False
+        if curve and getattr(curve, "points", None):
+            pts = [[float(p[0]), float(p[1]), float(p[2])] for p in curve.points]
+            closed = bool(getattr(curve, "closed", False))
 
         return {
             "success": True,
             "plane": request.plane,
-            "position": request.position,
-            "points": result.points,
-            "closed": result.closed,
-            "area": result.area,
+            "position": pos,
+            "points": pts,
+            "closed": closed,
+            "area": None,
         }
 
     except (GeometryParameterError, SectionCutError) as e:
@@ -423,33 +430,38 @@ async def get_transverse_sections(
     Get multiple transverse sections evenly distributed along hull length.
     """
     try:
-        from .geometry_service import GeometryService
         from .interfaces import StateGeometryAdapter
         from .section_cuts import SectionPlane
+        from .section_cuts import SectionCutGenerator
 
         sm = get_state_manager(design_id)
-
-        service = GeometryService(state_manager=sm)
-
-        lod_level = LODLevel(lod) if lod in [l.value for l in LODLevel] else LODLevel.MEDIUM
+        adapter = StateGeometryAdapter(sm)
+        generator = SectionCutGenerator(state_manager=sm)
 
         # Get hull length from adapter
-        loa = adapter.loa
+        loa = float(adapter.loa or 0.0)
+        if loa <= 0:
+            # Fallback: use configured default if hull params absent
+            loa = 25.0
 
         sections = []
         for i in range(count):
             x = loa * (i + 1) / (count + 1)
             try:
-                result = service.get_section_cut(
-                    plane=SectionPlane.TRANSVERSE,
-                    position=x,
-                    lod=lod_level,
-                )
+                # Generator expects normalized position 0..1
+                pos = x / loa if loa > 0 else 0.0
+                result = generator.cut(plane=SectionPlane.TRANSVERSE, position=pos)
+                curve = result.curves[0] if result.curves else None
+                if not curve or not getattr(curve, "points", None):
+                    continue
+
+                # For station plots, return 2D [y,z] since x is constant.
+                yz_points = [[float(p[1]), float(p[2])] for p in curve.points]
                 sections.append({
                     "position": x,
-                    "points": result.points,
-                    "closed": result.closed,
-                    "area": result.area,
+                    "points": yz_points,
+                    "closed": bool(getattr(curve, "closed", False)),
+                    "area": None,
                 })
             except Exception as e:
                 logger.warning(f"Section at x={x} failed: {e}")
@@ -478,6 +490,7 @@ async def export_geometry(
     format: str = Path(..., description="Export format: gltf, glb, stl, obj"),
     lod: str = Query("medium", description="Level of detail"),
     include_structure: bool = Query(False, description="Include structure"),
+    allow_visual_only: bool = Query(False, description="Allow visual-only fallback"),
 ):
     """
     Export geometry to specified format.
@@ -521,9 +534,10 @@ async def export_geometry(
 
         # Get scene with optional structure
         scene = service.get_scene(
+            design_id=design_id,
             lod=lod_level,
             include_structure=include_structure,
-            allow_visual_only=True,
+            allow_visual_only=allow_visual_only,
         )
 
         # Export
@@ -577,6 +591,18 @@ async def export_geometry(
             status_code=400,
             detail=geometry_error_response(e),
         )
+    except GeometryUnavailableError as e:
+        # No geometry available - return 404 not 500
+        # This is expected for blank designs before hull generation
+        logger.info(f"No geometry for export: {e}")
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "no_geometry",
+                "message": "No geometry available for this design. Generate hull geometry first.",
+                "design_id": design_id,
+            },
+        )
     except Exception as e:
         logger.error(f"Export error: {e}")
         raise HTTPException(
@@ -627,9 +653,10 @@ async def export_with_options(
         lod_level = LODLevel(request.lod) if request.lod in [l.value for l in LODLevel] else LODLevel.MEDIUM
 
         scene = service.get_scene(
+            design_id=design_id,
             lod=lod_level,
             include_structure=request.include_structure,
-            allow_visual_only=True,
+            allow_visual_only=getattr(request, "allow_visual_only", False),
         )
 
         exporter = GeometryExporter(design_id=design_id)
@@ -693,6 +720,38 @@ async def get_geometry_info(
         except Exception:
             has_grm = False
 
+        # Get mesh bbox if available
+        bbox_info = None
+        mesh_stats = None
+        try:
+            service = GeometryService(state_manager=sm)
+            scene = service.get_scene(design_id=design_id, lod=LODLevel.MEDIUM)
+            if scene and scene.meshes:
+                hull_mesh = scene.meshes[0]  # Primary hull mesh
+                if hull_mesh.bounds:
+                    b = hull_mesh.bounds
+                    # Convert from tuple format to readable dict
+                    bbox_info = {
+                        "min_m": {"x": b.min[0], "y": b.min[1], "z": b.min[2]},
+                        "max_m": {"x": b.max[0], "y": b.max[1], "z": b.max[2]},
+                        "extents_m": {
+                            "length": b.max[0] - b.min[0],  # X axis = length
+                            "beam": b.max[1] - b.min[1],    # Y axis = beam
+                            "depth": b.max[2] - b.min[2],   # Z axis = depth
+                        },
+                        "extents_ft": {
+                            "length": (b.max[0] - b.min[0]) * 3.28084,
+                            "beam": (b.max[1] - b.min[1]) * 3.28084,
+                            "depth": (b.max[2] - b.min[2]) * 3.28084,
+                        },
+                    }
+                mesh_stats = {
+                    "vertex_count": hull_mesh.vertex_count,
+                    "face_count": hull_mesh.face_count,
+                }
+        except Exception as e:
+            logger.debug(f"Could not get mesh bbox: {e}")
+
         return {
             "design_id": design_id,
             "has_grm_geometry": has_grm,
@@ -704,6 +763,8 @@ async def get_geometry_info(
                 "draft": adapter.draft,
                 "depth": adapter.depth,
             },
+            "mesh_bbox": bbox_info,
+            "mesh_stats": mesh_stats,
             "supported_lods": [l.value for l in LODLevel],
             "supported_exports": ["gltf", "glb", "stl", "stl_ascii", "obj"],
             "schema_version": "1.1.0",
