@@ -17,6 +17,7 @@ import logging
 from .enums import PhaseStatus, GateCondition, SessionStatus
 from .schema import PhaseResult, GateResult, SessionState
 from .registry import PhaseRegistry, PhaseDefinition
+from ..validators.taxonomy import ValidatorState
 
 if TYPE_CHECKING:
     from ..core.state_manager import StateManager
@@ -144,6 +145,29 @@ class Conductor:
                 errors=[f"Unknown phase: {phase_name}"],
             )
 
+        # ---------------------------------------------------------------------
+        # MAGNET Unified Physics Theory: Human Decision Point (Mandatory Halt)
+        # If the system is awaiting human decision, block downstream automation
+        # phases (but do NOT mark the design invalid).
+        # ---------------------------------------------------------------------
+        try:
+            if self.state.get("kernel.awaiting_human_decision", False):
+                # Allow re-running up to and including stability so the user can revise inputs and re-evaluate.
+                allowed = {"mission", "hull", "structure", "propulsion", "weight", "stability"}
+                if phase_name not in allowed:
+                    return PhaseResult(
+                        phase_name=phase_name,
+                        status=PhaseStatus.BLOCKED,
+                        errors=[],
+                        warnings=[
+                            "Awaiting human decision: severe grade detected. "
+                            "Downstream automation is paused until approval or revision."
+                        ],
+                    )
+        except Exception:
+            # If state access fails for any reason, do not block phase execution.
+            pass
+
         # Check dependencies
         for dep in phase.depends_on:
             if self._session and dep not in self._session.completed_phases:
@@ -153,25 +177,46 @@ class Conductor:
                     errors=[f"Dependency not completed: {dep}"],
                 )
 
-        # v1.2: Hull synthesis hook - MUST run BEFORE input contract check
-        # (synthesis generates the hull dimensions that contracts require)
-        # v1.3: Capture synthesis audit for debugging
+        # v1.2: Hull generation hook - MUST run BEFORE input contract check
+        # (generates hull dimensions that contracts require)
+        # v1.3: Capture audit for debugging
+        # v2.0: Integrated design language path (Option B)
         synthesis_audit = None
         if phase_name == "hull" and not self._hull_exists():
-            synthesis_result = self._run_hull_synthesis()
-            if synthesis_result:
-                # Build audit trail for debugging
-                synthesis_audit = self._build_synthesis_audit(synthesis_result)
+            # v2.0: Check for design program (new path) first
+            design_program = self.state.get("design_program")
+            
+            if design_program:
+                # NEW PATH: Use design language (bypasses HullFamily)
+                generation_result = self._run_program_generation(design_program)
+                if generation_result:
+                    synthesis_audit = self._build_program_audit(generation_result)
+                    
+                    if not generation_result.success:
+                        return PhaseResult(
+                            phase_name=phase_name,
+                            status=PhaseStatus.FAILED,
+                            errors=[f"Hull generation failed: {generation_result.errors}"],
+                            synthesis_audit=synthesis_audit,
+                        )
+                    # Record explain trace for new path
+                    self._record_program_explain(generation_result)
+            else:
+                # OLD PATH: Use HullFamily synthesis (legacy)
+                synthesis_result = self._run_hull_synthesis()
+                if synthesis_result:
+                    # Build audit trail for debugging
+                    synthesis_audit = self._build_synthesis_audit(synthesis_result)
 
-                if not synthesis_result.is_usable:
-                    return PhaseResult(
-                        phase_name=phase_name,
-                        status=PhaseStatus.FAILED,
-                        errors=[f"Hull synthesis failed: {synthesis_result.termination_message}"],
-                        synthesis_audit=synthesis_audit,
-                    )
-            # If synthesis succeeded, continue to input contract check
-            # (synthesis should have populated hull.lwl, hull.beam, etc.)
+                    if not synthesis_result.is_usable:
+                        return PhaseResult(
+                            phase_name=phase_name,
+                            status=PhaseStatus.FAILED,
+                            errors=[f"Hull synthesis failed: {synthesis_result.termination_message}"],
+                            synthesis_audit=synthesis_audit,
+                        )
+            # If generation/synthesis succeeded, continue to input contract check
+            # (should have populated hull.lwl, hull.beam, etc.)
 
         # Hole #5 Fix: Check INPUT contracts BEFORE execution
         from ..validators.contracts import check_phase_inputs
@@ -218,6 +263,52 @@ class Conductor:
                 result.errors.append(f"Gate failed: {gate_result.blocking_failures}")
 
         logger.debug(f"Phase {phase_name} completed with status {result.status.value}")
+
+        # ---------------------------------------------------------------------
+        # Human Decision Point trigger (after stability evaluation)
+        # Trigger conditions (theory-aligned):
+        # - Severe stability: GM < 0
+        # - Severe freeboard: freeboard < 0 (deck awash)
+        # ---------------------------------------------------------------------
+        try:
+            if phase_name == "stability" and result.status == PhaseStatus.COMPLETED:
+                gm = self.state.get("stability.gm_transverse_m")
+                if gm is None:
+                    gm = self.state.get("stability.gm_m")
+                freeboard = self.state.get("hull.freeboard")
+
+                severe_reasons = []
+                if gm is not None and float(gm) < 0.0:
+                    severe_reasons.append(f"GM < 0 (GM={float(gm):.3f}m)")
+                if freeboard is not None and float(freeboard) < 0.0:
+                    severe_reasons.append(f"freeboard < 0 (freeboard={float(freeboard):.3f}m)")
+
+                if severe_reasons:
+                    source = "kernel/conductor"
+                    request_payload = {
+                        "reason": "SEVERE_GRADE",
+                        "severe_reasons": severe_reasons,
+                        "options": ["CONTINUE_DESPITE_WARNING", "REVISE"],
+                        "snapshot": {
+                            "stability.gm_transverse_m": gm,
+                            "stability.gm_m": self.state.get("stability.gm_m"),
+                            "hull.freeboard": freeboard,
+                            "hull.displacement_mt": self.state.get("hull.displacement_mt"),
+                        },
+                        "requested_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                    self.state.set("kernel.awaiting_human_decision", True, source)
+                    self.state.set("kernel.human_decision_request", request_payload, source)
+
+                    # Surface to caller as a warning (not an error) so upstream APIs can
+                    # return success + needs_clarification instead of failing.
+                    result.warnings.append(
+                        "Human Decision Point: severe grade detected. "
+                        "Downstream automation paused until approval or revision."
+                    )
+        except Exception:
+            pass
+
         return result
 
     def run_all_phases(
@@ -309,7 +400,12 @@ class Conductor:
         )
 
         try:
-            for validator_id in phase.validators:
+            # Legacy execution path: run phase.validators against validators explicitly
+            # registered on the Conductor instance (self._validators).
+            #
+            # Note: API uses PipelineExecutor wiring; this legacy path primarily supports
+            # unit tests and non-API execution contexts.
+            for validator_id in (phase.validators or []):
                 validator = self._validators.get(validator_id)
 
                 if validator is None:
@@ -325,8 +421,13 @@ class Conductor:
                         result.validators_passed += 1
                     else:
                         result.validators_failed += 1
-                        if val_result.error_message:
-                            result.errors.append(val_result.error_message)
+                        msg = val_result.error_message or f"{validator_id} failed"
+                        # IMPORTANT: use `is True` so plain `Mock()` validators
+                        # don't accidentally behave like gate conditions.
+                        if getattr(validator, "is_gate_condition", False) is True:
+                            result.errors.append(str(msg))
+                        else:
+                            result.warnings.append(f"{validator_id}: {msg}")
 
                 except Exception as e:
                     result.validators_failed += 1
@@ -334,7 +435,7 @@ class Conductor:
                     logger.error(f"Validator {validator_id} error: {e}")
 
             # Determine result status
-            if result.validators_failed > 0:
+            if result.errors:
                 result.status = PhaseStatus.FAILED
             else:
                 result.status = PhaseStatus.COMPLETED
@@ -365,22 +466,62 @@ class Conductor:
 
         try:
             # Run validators through PipelineExecutor
-            execution_state = self._pipeline_executor.execute_phase(phase.name)
+            #
+            # GATE_VS_GRADES: we do NOT stop on "validation failures" because most
+            # validators are advisory grades. Only REQUIRED gate validators (hydrostatics)
+            # should be allowed to block the phase.
+            execution_state = self._pipeline_executor.execute_phase(phase.name, stop_on_failure=False)
 
             # Aggregate results
             result.validators_run = len(execution_state.completed) + len(execution_state.failed)
             result.validators_passed = len(execution_state.completed)
             result.validators_failed = len(execution_state.failed)
 
-            # Collect errors from failed validators
-            for vid in execution_state.failed:
-                if vid in execution_state.results:
-                    val_result = execution_state.results[vid]
-                    if val_result.error_message:
-                        result.errors.append(f"{vid}: {val_result.error_message}")
+            # Classify failures: REQUIRED gate failures block; advisory failures become warnings.
+            blocking_failures: List[str] = []
+            advisory_failures: List[str] = []
 
-            # Determine status
-            if execution_state.failed:
+            # Prefer the executor's topology if available (keeps definitions aligned)
+            topology = getattr(self._pipeline_executor, "_topology", None)
+            gate_validators: List[str] = []
+            try:
+                if topology:
+                    if hasattr(topology, "get_required_gate_validators_for_phase"):
+                        gate_validators = list(topology.get_required_gate_validators_for_phase(phase.name))
+                    elif hasattr(topology, "get_gate_validators_for_phase"):
+                        # Back-compat: older topology implementations may return required-only here.
+                        gate_validators = list(topology.get_gate_validators_for_phase(phase.name))
+            except Exception:
+                gate_validators = []
+
+            for vid in execution_state.failed:
+                val_result = execution_state.results.get(vid)
+                msg = None
+                if val_result and getattr(val_result, "error_message", None):
+                    msg = str(val_result.error_message)
+                else:
+                    msg = "Validator failed"
+
+                # Execution errors (code failure) are always blocking
+                if val_result and getattr(val_result, "state", None) == ValidatorState.ERROR:
+                    blocking_failures.append(f"{vid}: {msg}")
+                    continue
+
+                # REQUIRED gate validators are blocking (by topology definition)
+                if vid in gate_validators:
+                    blocking_failures.append(f"{vid}: {msg}")
+                else:
+                    advisory_failures.append(f"{vid}: {msg}")
+
+            # Surface advisory failures as warnings (not phase errors)
+            result.warnings.extend(advisory_failures)
+
+            # Determine status (only blocking failures fail the phase)
+            if execution_state.errors:
+                result.errors.extend(list(execution_state.errors))
+                result.status = PhaseStatus.FAILED
+            elif blocking_failures:
+                result.errors.extend(blocking_failures)
                 result.status = PhaseStatus.FAILED
             else:
                 result.status = PhaseStatus.COMPLETED
@@ -482,42 +623,232 @@ class Conductor:
         }
 
     # =========================================================================
-    # HULL SYNTHESIS (v1.2)
+    # HULL GENERATION v2.0: Integrated Design Language Path
+    # =========================================================================
+
+    def _run_program_generation(self, design_program: str) -> Optional['ExecutionResult']:
+        """
+        Run hull generation via design language (NEW PATH).
+        
+        This path bypasses HullFamily enumeration entirely.
+        Agents express geometry as primitives, kernel compiles to HullGeometry.
+        
+        Args:
+            design_program: Design language program text
+            
+        Returns:
+            ExecutionResult or None if generation cannot be run
+        """
+        from magnet.kernel.program_executor import execute_program, ExecutionResult
+        
+        logger.info("[conductor] Using design language path (HullFamily bypassed)")
+        
+        try:
+            result = execute_program(
+                program_text=design_program,
+                state_manager=self.state,
+                dry_run=False,  # Commit to state
+                validate=True,
+            )
+            
+            if result.success:
+                logger.info(
+                    f"[conductor] Design program executed: "
+                    f"{len(result.actions)} actions, "
+                    f"geometry={'yes' if result.geometry else 'no'}"
+                )
+            else:
+                logger.warning(f"[conductor] Design program failed: {result.errors}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"[conductor] Design program execution failed: {e}")
+            return None
+
+    def _build_program_audit(self, result: 'ExecutionResult') -> Dict[str, Any]:
+        """
+        Build audit dict from ExecutionResult.
+        
+        Analogous to _build_synthesis_audit but for design language path.
+        """
+        return {
+            "path": "design_language",
+            "success": result.success,
+            "actions_count": len(result.actions),
+            "constraints_count": len(result.constraints) if hasattr(result, 'constraints') else 0,
+            "geometry_generated": result.geometry is not None,
+            "validation": result.validation,
+            "errors": result.errors,
+            "warnings": result.warnings if hasattr(result, 'warnings') else [],
+        }
+
+    def _record_program_explain(self, result: 'ExecutionResult') -> None:
+        """
+        Record explain trace for design language execution.
+        
+        Integrates with existing explain infrastructure so downstream
+        phases can trace provenance.
+        """
+        try:
+            from magnet.control_plane.explain import ExplainRecord
+            
+            for action in result.actions:
+                # Record each action as an explain entry
+                record = ExplainRecord(
+                    path=action.path,
+                    value=action.value,
+                    source="design_language",
+                    reason=action.reason if hasattr(action, 'reason') else "design program action",
+                    confidence=1.0,
+                )
+                
+                # Store via state manager if available
+                if hasattr(self.state, 'record_explain'):
+                    self.state.record_explain(record)
+                    
+        except ImportError:
+            logger.debug("[conductor] Explain infrastructure not available")
+        except Exception as e:
+            logger.warning(f"[conductor] Failed to record explain: {e}")
+
+    # =========================================================================
+    # HULL SYNTHESIS (v1.2) - Legacy Path
     # =========================================================================
 
     def _hull_exists(self) -> bool:
         """
-        Check if hull dimensions already exist in state.
+        Check if hull dimensions already exist in state WITH REAL PROVENANCE.
 
-        Returns True if LWL, beam, and draft are all set.
+        Returns True only if LWL, beam, and draft are all set AND have
+        non-placeholder provenance (user, synthesized, or kernel).
+        
+        Constraint-Aware Completion v1.0: Placeholder baselines no longer
+        prevent synthesis from running. This ensures that ship-scale
+        defaults (8m beam, 2m draft) get replaced with proportional values.
+        
         Used to decide whether to run hull synthesis.
         """
+        # Check values exist
         lwl = self.state.get("hull.lwl")
         beam = self.state.get("hull.beam")
         draft = self.state.get("hull.draft")
+        
+        if not all(v is not None and v > 0 for v in [lwl, beam, draft]):
+            return False
+        
+        # Constraint-Aware Completion v1.0: Check for placeholder values
+        # KNOWN BASELINES from design creation (api.py):
+        BASELINE_BEAM = 8.0
+        BASELINE_DRAFT = 2.0
+        BASELINE_DEPTH = 4.0
+        
+        # Method 1: Check provenance tracking (if available)
+        if hasattr(self.state, 'is_real_dimension'):
+            beam_real = self.state.is_real_dimension("hull.beam")
+            draft_real = self.state.is_real_dimension("hull.draft")
+            
+            if not (beam_real and draft_real):
+                logger.info(
+                    f"[conductor] Hull dimensions exist but are placeholders "
+                    f"(beam_real={beam_real}, draft_real={draft_real}). "
+                    f"Synthesis required for constraint-aware completion."
+                )
+                return False
+        
+        # Method 2: Fallback heuristic for when provenance isn't persisted
+        # If beam/draft exactly match design-init baselines AND loa differs
+        # from baseline (30.0), treat as placeholder
+        loa = self.state.get("hull.loa") or lwl
+        BASELINE_LOA = 30.0
+        
+        beam_is_baseline = abs(beam - BASELINE_BEAM) < 0.01
+        draft_is_baseline = abs(draft - BASELINE_DRAFT) < 0.01
+        loa_changed = abs(loa - BASELINE_LOA) > 0.01
+        
+        if loa_changed and (beam_is_baseline or draft_is_baseline):
+            logger.info(
+                f"[conductor] Hull dimensions match baseline defaults "
+                f"(beam={beam}≈{BASELINE_BEAM}, draft={draft}≈{BASELINE_DRAFT}) "
+                f"but LOA changed ({loa}≠{BASELINE_LOA}). "
+                f"Synthesis required for proportional dimensions."
+            )
+            return False
+        
+        return True
 
-        return all(v is not None and v > 0 for v in [lwl, beam, draft])
+    def _build_geometry_synthesis_request(self) -> Optional['GeometrySynthesisRequest']:
+        """
+        TASK-002: Build a GeometrySynthesisRequest from current state.
+        
+        This is the PREFERRED synthesis path - uses physics-derived defaults
+        instead of HullFamily enumeration.
+        
+        Returns None if required parameters are missing.
+        """
+        from .synthesis import GeometrySynthesisRequest
+
+        # Required: max speed
+        max_speed_kts = self.state.get("mission.max_speed_kts")
+        if not max_speed_kts or max_speed_kts <= 0:
+            logger.warning("Cannot build geometry synthesis request: max_speed_kts missing")
+            return None
+
+        # Optional parameters
+        loa_m = self.state.get("mission.loa") or self.state.get("hull.loa")
+        beam_m = self.state.get("hull.beam")
+        draft_m = self.state.get("hull.draft")
+        crew_count = self.state.get("mission.crew_berthed") or self.state.get("mission.crew_count")
+        passengers = self.state.get("mission.passengers") or 0
+        cargo_mt = self.state.get("mission.cargo_capacity_mt") or 0
+        range_nm = self.state.get("mission.range_nm")
+        gm_min_m = self.state.get("mission.gm_required_m")
+
+        # Mission → synthesis bridging
+        try:
+            total_persons = int(crew_count or 0) + int(passengers or 0)
+        except Exception:
+            total_persons = 0
+
+        try:
+            payload_kg = float(cargo_mt or 0) * 1000.0
+        except Exception:
+            payload_kg = 0.0
+
+        logger.info(f"[conductor] Using geometry-based synthesis (HullFamily bypassed)")
+
+        return GeometrySynthesisRequest(
+            max_speed_kts=float(max_speed_kts),
+            loa_m=float(loa_m) if loa_m else None,
+            beam_m=float(beam_m) if beam_m else None,
+            draft_m=float(draft_m) if draft_m else None,
+            crew_count=total_persons if total_persons > 0 else None,
+            payload_kg=payload_kg if payload_kg > 0 else None,
+            range_nm=float(range_nm) if range_nm else None,
+            gm_min_m=float(gm_min_m) if gm_min_m else None,
+        )
 
     def _build_synthesis_request(self) -> Optional['SynthesisRequest']:
         """
-        Build a SynthesisRequest from current state.
+        DEPRECATED: Build a SynthesisRequest from current state.
+        
+        This method uses HullFamily enumeration which is scheduled for removal.
+        Use _build_geometry_synthesis_request() instead.
 
         Reads mission parameters to construct synthesis request.
         Returns None if required parameters are missing.
         """
+        import warnings
+        warnings.warn(
+            "_build_synthesis_request uses HullFamily enumeration. "
+            "Use _build_geometry_synthesis_request() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        
         from .synthesis import SynthesisRequest
         from .priors.hull_families import HullFamily
-
-        # Get hull type from hull.hull_type or vessel_type
-        hull_type_str = (
-            self.state.get("hull.hull_type") or
-            self.state.get("mission.vessel_type") or
-            "workboat"
-        )
-        try:
-            hull_family = HullFamily(hull_type_str.lower())
-        except (ValueError, AttributeError):
-            hull_family = HullFamily.WORKBOAT  # Default
+        from .analysis import recommend_family
 
         # Required: max speed
         max_speed_kts = self.state.get("mission.max_speed_kts")
@@ -528,14 +859,58 @@ class Conductor:
         # Optional parameters
         loa_m = self.state.get("mission.loa") or self.state.get("hull.loa")
         crew_count = self.state.get("mission.crew_berthed") or self.state.get("mission.crew_count")
+        passengers = self.state.get("mission.passengers") or 0
+        cargo_mt = self.state.get("mission.cargo_capacity_mt") or 0
         range_nm = self.state.get("mission.range_nm")
         gm_min_m = self.state.get("mission.gm_required_m")
+
+        # Mission → synthesis bridging:
+        # - Treat passengers as crew-equivalent for weight/displacement heuristics.
+        # - Map cargo capacity (metric tonnes) to payload_kg for displacement heuristics.
+        try:
+            total_persons = int(crew_count or 0) + int(passengers or 0)
+        except Exception:
+            total_persons = 0
+
+        try:
+            payload_kg = float(cargo_mt or 0) * 1000.0
+        except Exception:
+            payload_kg = 0.0
+
+        # Get hull type from hull.hull_type or vessel_type
+        hull_type_str = (
+            self.state.get("hull.hull_type") or
+            self.state.get("mission.vessel_type") or
+            None
+        )
+
+        # Try explicit HullFamily match first
+        hull_family = None
+        family_rationale = None
+        if hull_type_str:
+            try:
+                hull_family = HullFamily(hull_type_str.lower())
+                family_rationale = f"User specified {hull_type_str}"
+            except (ValueError, AttributeError):
+                pass
+
+        # Fall back to Froude-based auto-selection
+        if hull_family is None:
+            lwl_estimate = float(loa_m) * 0.95 if loa_m else 30.0
+            hull_family, family_rationale = recommend_family(
+                speed_kts=float(max_speed_kts),
+                lwl_estimate=lwl_estimate,
+                vessel_type=hull_type_str,
+            )
+
+        logger.info(f"Synthesis family: {hull_family.value} — {family_rationale}")
 
         return SynthesisRequest(
             hull_family=hull_family,
             max_speed_kts=max_speed_kts,
             loa_m=loa_m,
-            crew_count=crew_count,
+            crew_count=total_persons,
+            payload_kg=payload_kg,
             range_nm=range_nm,
             gm_min_m=gm_min_m,
         )
@@ -573,16 +948,13 @@ class Conductor:
         """
         Run hull synthesis to generate initial hull dimensions.
 
+        TASK-002: Now uses geometry-based synthesis as the PREFERRED path.
+        Falls back to legacy HullFamily synthesis only if geometry synthesis fails.
+        
         Creates a HullSynthesizer and runs synthesis loop.
         Returns SynthesisResult or None if synthesis cannot be run.
         """
         from .synthesis import HullSynthesizer, SynthesisResult
-
-        # Build synthesis request
-        request = self._build_synthesis_request()
-        if request is None:
-            logger.warning("Hull synthesis skipped: cannot build request")
-            return None
 
         # Create synthesizer
         synthesizer = HullSynthesizer(
@@ -590,8 +962,33 @@ class Conductor:
             state_manager=self.state,
         )
 
-        # Run synthesis
-        logger.info(f"Running hull synthesis for {request.hull_family.value} at {request.max_speed_kts} kts")
+        # TASK-002: Try geometry-based synthesis first (PREFERRED)
+        geo_request = self._build_geometry_synthesis_request()
+        if geo_request is not None:
+            logger.info(f"Running geometry-based hull synthesis at {geo_request.max_speed_kts} kts")
+            try:
+                result = synthesizer.synthesize_from_geometry(geo_request)
+
+                if result.is_usable:
+                    logger.info(
+                        f"Geometry synthesis completed: "
+                        f"iterations={result.iterations}, "
+                        f"LWL={result.proposal.lwl_m:.2f}m"
+                    )
+                    return result
+                else:
+                    logger.warning(f"Geometry synthesis produced unusable result, trying legacy path")
+            except Exception as e:
+                logger.warning(f"Geometry synthesis failed ({e}), trying legacy path")
+
+        # DEPRECATED: Fall back to legacy HullFamily synthesis
+        request = self._build_synthesis_request()
+        if request is None:
+            logger.warning("Hull synthesis skipped: cannot build request")
+            return None
+
+        # Run legacy synthesis
+        logger.info(f"Running legacy hull synthesis for {request.hull_family.value} at {request.max_speed_kts} kts")
         try:
             result = synthesizer.synthesize(request)
 
