@@ -1031,6 +1031,16 @@ class OptimizationState:
     """
     Optimization objectives and results.
     """
+    # Persisted artifacts (written by optimization validators/executors)
+    # These fields exist so `StateManager.set("optimization.*", ...)` is never a no-op.
+    problem: Optional[Dict[str, Any]] = None
+    result: Optional[Dict[str, Any]] = None
+    pareto_front: Optional[Dict[str, Any]] = None
+    selected_solution: Optional[Dict[str, Any]] = None
+    status: Optional[str] = None
+    metrics: Optional[Dict[str, Any]] = None
+    evaluations: int = 0
+
     # Objectives
     objectives: List[str] = field(default_factory=list)
     objective_weights: Dict[str, float] = field(default_factory=dict)

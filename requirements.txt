@@ -17,6 +17,12 @@ networkx>=3.0
 numpy>=1.24.0
 scipy>=1.10.0
 
+# Geometry utilities (Phase 1: optional but supported)
+trimesh>=4.0.0
+
+# Optimization (Phase 2)
+pymoo>=0.6.0
+
 # Document Generation
 python-docx>=0.8.11
 Pillow>=9.0.0

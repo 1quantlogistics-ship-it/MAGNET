@@ -22,10 +22,14 @@ Notes:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
+import os
+import logging
 
 import numpy as np
 from scipy.stats import norm
+
+logger = logging.getLogger(__name__)
 
 try:
     from sklearn.gaussian_process import GaussianProcessRegressor
@@ -46,6 +50,9 @@ class SurrogateModel:
     Default backend: Gaussian Process Regression (Matern kernel).
     """
 
+    # Backend selection: "sklearn" (default) or "botorch" (optional)
+    backend: str = field(default_factory=lambda: str(os.getenv("MAGNET_SURROGATE_BACKEND", "sklearn") or "sklearn"))
+
     # Training data
     X_train: np.ndarray = field(default_factory=lambda: np.empty((0, 0)))
     y_train: np.ndarray = field(default_factory=lambda: np.empty((0,)))
@@ -53,6 +60,7 @@ class SurrogateModel:
     # Model backend
     kernel: object = field(default_factory=lambda: Matern(nu=2.5) if Matern is not None else object())
     gp: Optional["GaussianProcessRegressor"] = None
+    _botorch_model: Optional[Any] = None
 
     # Metadata (optional)
     parameter_names: List[str] = field(default_factory=list)
@@ -60,9 +68,6 @@ class SurrogateModel:
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> None:
         """Train surrogate on evaluation data."""
-        if GaussianProcessRegressor is None or _SKLEARN_IMPORT_ERROR is not None:
-            raise RuntimeError(f"sklearn is required for SurrogateModel GP backend: {_SKLEARN_IMPORT_ERROR}")
-
         X = np.asarray(X, dtype=float)
         y = np.asarray(y, dtype=float).reshape(-1)
         if X.ndim != 2:
@@ -74,22 +79,61 @@ class SurrogateModel:
 
         self.X_train = X
         self.y_train = y
-        self.gp = GaussianProcessRegressor(
-            kernel=self.kernel,
-            n_restarts_optimizer=3,
-            normalize_y=True,
-        )
+
+        b = str(self.backend or "sklearn").lower()
+        if b == "botorch":
+            try:
+                import torch  # type: ignore
+                from botorch.models import SingleTaskGP  # type: ignore
+                from gpytorch.mlls import ExactMarginalLogLikelihood  # type: ignore
+                from botorch.fit import fit_gpytorch_mll  # type: ignore
+
+                train_X = torch.tensor(X, dtype=torch.double)
+                train_Y = torch.tensor(y.reshape(-1, 1), dtype=torch.double)
+                model = SingleTaskGP(train_X, train_Y)
+                mll = ExactMarginalLogLikelihood(model.likelihood, model)
+                fit_gpytorch_mll(mll)
+                self._botorch_model = model
+                self.gp = None
+                return
+            except Exception as e:
+                # Graceful degradation: fall back to sklearn backend if available.
+                logger.info(f"BoTorch backend unavailable; falling back to sklearn ({e})")
+                self.backend = "sklearn"
+
+        # Default: sklearn GP
+        if GaussianProcessRegressor is None or _SKLEARN_IMPORT_ERROR is not None:
+            raise RuntimeError(f"sklearn is required for SurrogateModel GP backend: {_SKLEARN_IMPORT_ERROR}")
+
+        self._botorch_model = None
+        self.gp = GaussianProcessRegressor(kernel=self.kernel, n_restarts_optimizer=3, normalize_y=True)
         self.gp.fit(X, y)
 
     def predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
         Predict mean and uncertainty (std).
         """
-        if self.gp is None:
-            raise ValueError("Model not trained. Call fit() first.")
         X = np.asarray(X, dtype=float)
         if X.ndim == 1:
             X = X.reshape(1, -1)
+
+        if str(self.backend or "sklearn").lower() == "botorch" and self._botorch_model is not None:
+            try:
+                import torch  # type: ignore
+
+                with torch.no_grad():
+                    Xt = torch.tensor(X, dtype=torch.double)
+                    posterior = self._botorch_model.posterior(Xt)
+                    mean = posterior.mean.reshape(-1).cpu().numpy()
+                    var = posterior.variance.reshape(-1).clamp_min(0.0).cpu().numpy()
+                    std = np.sqrt(var)
+                return np.asarray(mean, dtype=float), np.asarray(std, dtype=float)
+            except Exception:
+                # If botorch prediction fails, fall back to sklearn if present.
+                self.backend = "sklearn"
+
+        if self.gp is None:
+            raise ValueError("Model not trained. Call fit() first.")
         mean, std = self.gp.predict(X, return_std=True)
         return np.asarray(mean, dtype=float), np.asarray(std, dtype=float)
 

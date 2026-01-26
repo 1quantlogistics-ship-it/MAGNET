@@ -21,12 +21,78 @@ from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
-from sklearn.decomposition import PCA
 
 from magnet.bootstrap.hull_library import HullLibrary, LibraryHull
 
 
 ValidatorFn = Callable[[Dict[str, float]], bool]
+
+
+class _NumpyPCA:
+    """
+    Minimal PCA implementation using numpy SVD.
+
+    Purpose:
+    - Avoid hard dependency on scikit-learn (import-time failure risk)
+    - Provide deterministic encode/decode for blending
+    """
+
+    def __init__(self, *, variance_to_keep: float = 0.95) -> None:
+        self._variance_to_keep = float(variance_to_keep)
+        self.mean_: Optional[np.ndarray] = None
+        self.components_: Optional[np.ndarray] = None  # shape: (k, n_features)
+        self.n_components_: Optional[int] = None
+
+    def fit(self, X: np.ndarray) -> "_NumpyPCA":
+        X = np.asarray(X, dtype=float)
+        if X.ndim != 2:
+            raise ValueError("X must be 2D")
+        if X.shape[0] < 2:
+            # Degenerate: treat as identity.
+            self.mean_ = np.mean(X, axis=0) if X.size else np.zeros((X.shape[1],), dtype=float)
+            self.components_ = np.eye(X.shape[1], dtype=float)
+            self.n_components_ = int(X.shape[1])
+            return self
+
+        mu = np.mean(X, axis=0)
+        Xc = X - mu
+        # SVD of centered data matrix.
+        # Xc = U S Vt ; principal axes are rows of Vt
+        _, S, Vt = np.linalg.svd(Xc, full_matrices=False)
+
+        # Explained variance proportional to S^2
+        var = (S**2) / max(1, X.shape[0] - 1)
+        total = float(np.sum(var)) if var.size else 0.0
+        if not np.isfinite(total) or total <= 0.0:
+            k = int(X.shape[1])
+        else:
+            ratio = var / total
+            cum = np.cumsum(ratio)
+            keep = self._variance_to_keep
+            if not np.isfinite(keep) or keep <= 0:
+                k = 1
+            elif keep >= 1:
+                k = int(X.shape[1])
+            else:
+                k = int(np.searchsorted(cum, keep) + 1)
+                k = max(1, min(int(X.shape[1]), k))
+
+        self.mean_ = mu
+        self.components_ = Vt[:k, :]
+        self.n_components_ = int(k)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        if self.mean_ is None or self.components_ is None:
+            raise RuntimeError("PCA not fit")
+        X = np.asarray(X, dtype=float)
+        return (X - self.mean_) @ self.components_.T
+
+    def inverse_transform(self, Z: np.ndarray) -> np.ndarray:
+        if self.mean_ is None or self.components_ is None:
+            raise RuntimeError("PCA not fit")
+        Z = np.asarray(Z, dtype=float)
+        return (Z @ self.components_) + self.mean_
 
 
 @dataclass(frozen=True)
@@ -58,7 +124,7 @@ class ManifoldBlender:
             self._pca = None
             self._latent_dim = len(self._param_names)
         else:
-            self._pca = PCA(n_components=float(variance_to_keep), svd_solver="full", random_state=0)
+            self._pca = _NumpyPCA(variance_to_keep=float(variance_to_keep))
             self._pca.fit(X)
             self._latent_dim = int(getattr(self._pca, "n_components_", X.shape[1]) or X.shape[1])
 

@@ -466,35 +466,18 @@ class GeometryService:
             if scene.simulation_integrity == SimulationIntegrity.AUTHORITATIVE:
                 phys_disp = self._sm.get("hull.displacement_m3")
                 if phys_disp is not None and float(phys_disp) > 0:
+                    from .mesh_utils import compute_mesh_volume
+
                     meshes = []
                     if hull_meshes:
                         meshes.extend(list(hull_meshes))
                     if hull_mesh is not None and not meshes:
                         meshes.append(hull_mesh)
 
-                    def _mesh_volume_m3(m) -> float:
-                        v = getattr(m, "vertices", []) or []
-                        ind = getattr(m, "indices", []) or []
-                        if not v or not ind:
-                            return 0.0
-                        total = 0.0
-                        for ii in range(0, len(ind), 3):
-                            try:
-                                i0, i1, i2 = int(ind[ii]), int(ind[ii + 1]), int(ind[ii + 2])
-                                p0 = (float(v[i0 * 3]), float(v[i0 * 3 + 1]), float(v[i0 * 3 + 2]))
-                                p1 = (float(v[i1 * 3]), float(v[i1 * 3 + 1]), float(v[i1 * 3 + 2]))
-                                p2 = (float(v[i2 * 3]), float(v[i2 * 3 + 1]), float(v[i2 * 3 + 2]))
-                                cross = (
-                                    p1[1] * p2[2] - p1[2] * p2[1],
-                                    p1[2] * p2[0] - p1[0] * p2[2],
-                                    p1[0] * p2[1] - p1[1] * p2[0],
-                                )
-                                total += (p0[0] * cross[0] + p0[1] * cross[1] + p0[2] * cross[2]) / 6.0
-                            except Exception:
-                                continue
-                        return abs(float(total))
-
-                    mesh_vol = sum(_mesh_volume_m3(m) for m in meshes)
+                    mesh_vol = sum(
+                        compute_mesh_volume(getattr(m, "vertices", None), getattr(m, "indices", None))
+                        for m in meshes
+                    )
                     if mesh_vol > 0:
                         rel = abs(mesh_vol - float(phys_disp)) / float(phys_disp)
                         scene.metadata["mesh_volume_m3"] = float(mesh_vol)
