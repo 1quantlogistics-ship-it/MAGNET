@@ -1,5 +1,15 @@
 # MAGNET/CORTEX Unified Physics Theory
 
+<!-- AGENT_CONTEXT
+Purpose: Unified physics computation theory - hydrostatics, stability, resistance
+Authoritative: Yes
+Keywords: physics, hydrostatics, stability, resistance, validation, theory
+Depends_On: NORTH_STAR.md, GEOMETRY_CONVENTIONS.md
+Used_By: physics module, kernel, validators
+Status: current
+Last_Verified: 2026-01-15
+-->
+
 **Version:** 2.3
 **Status:** Technical Specification (Scientifically Defensible)
 **Authority:** Naval Architecture Kernel

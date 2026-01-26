@@ -3,12 +3,11 @@ hull_gen/bow_generator.py - Bow form generator module.
 
 BRAVO OWNS THIS FILE.
 
-Phase 3: Generates bow region geometry for various styles:
-- Traditional (smooth lofted)
-- Wedge (two planar panels)
-- Axe (vertical stem, sharp entry)
-- Faceted (multiple planar panels)
-- Wave-piercing (fine entry, tumblehome)
+Phase 3: Generates bow region geometry.
+
+IMPORTANT: There are no "style" enums or style switches in the synthesis path.
+All behavior is controlled via continuous parameters (e.g. planarity, facet_count,
+entry angle, rake, curvature).
 
 All bow forms are parametric and produce EdgeType metadata for proper
 hard edge rendering in the mesh pipeline.
@@ -20,7 +19,6 @@ from typing import List, Optional, Tuple
 
 from magnet.hull_gen.geometry import Point3D, SectionPoint, EdgeType, HullSection
 from magnet.hull_gen.parameters import BowConfig, HullDefinition
-from magnet.hull_gen.enums import BowStyle, StemProfile
 
 
 @dataclass
@@ -54,14 +52,14 @@ class BowGeometry:
 
 class BowGenerator:
     """
-    Generates bow region geometry based on style configuration.
+    Generates bow region geometry based on continuous configuration.
     
     The bow region extends from the forward perpendicular (FP) aft
     to the bow_region_length fraction of LWL.
     
     Usage:
         generator = BowGenerator()
-        bow_config = BowConfig(style=BowStyle.WEDGE)
+        bow_config = BowConfig(facet_count=1, planarity=1.0)
         bow_geometry = generator.generate(definition, bow_config)
     """
     
@@ -89,17 +87,16 @@ class BowGenerator:
         self._definition = definition
         self._config = config
         
-        # Dispatch to style-specific generator
-        if config.style == BowStyle.WEDGE:
-            return self._generate_wedge_bow(num_sections)
-        elif config.style == BowStyle.AXE:
-            return self._generate_axe_bow(num_sections)
-        elif config.style == BowStyle.FACETED:
+        # Enum-free dispatch: continuous knobs only.
+        # - facet_count>=1 and planarity>0.5 => planar facets (wedge/faceted)
+        # - otherwise => lofted/smooth bow
+        facet_count = int(getattr(config, "facet_count", 0) or 0)
+        planarity = float(getattr(config, "planarity", 0.0) or 0.0)
+        if facet_count >= 1 and planarity > 0.5:
+            if facet_count == 1:
+                return self._generate_wedge_bow(num_sections)
             return self._generate_faceted_bow(num_sections)
-        elif config.style == BowStyle.WAVE_PIERCING:
-            return self._generate_wave_piercing_bow(num_sections)
-        else:
-            return self._generate_traditional_bow(num_sections)
+        return self._generate_traditional_bow(num_sections)
     
     # =========================================================================
     # WEDGE BOW

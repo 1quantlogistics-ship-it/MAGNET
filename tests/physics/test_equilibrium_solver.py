@@ -39,7 +39,9 @@ def test_solve_equilibrium_draft_recovers_known_draft():
     beam = 5.0
     depth = 3.0
     resources = _box_sections_resources(loa=loa, beam=beam, depth=depth)
-    geo = compile_to_geometry({"design_id": "TEST", "hull": {"loa": loa}, "resources": resources})
+    geo = compile_to_geometry(
+        {"design_id": "TEST", "hull": {"loa": loa}, "geometry_intent": {"surface_definition": "smooth"}, "resources": resources}
+    )
 
     known_draft = 1.0
     hs = compute_hydrostatics_from_geometry(geo, draft=known_draft)
@@ -55,12 +57,58 @@ def test_solve_equilibrium_draft_recovers_known_draft():
     assert abs(sol.draft_m - known_draft) < 1e-3
 
 
+def test_solve_equilibrium_draft_handles_bad_derivative_by_bisection():
+    """
+    Regression (E0.4): if Aw(T) produces an unusable derivative surrogate,
+    the solver must still converge via bracketing/bisection.
+    """
+    loa = 20.0
+    beam = 5.0
+    depth = 3.0
+    resources = _box_sections_resources(loa=loa, beam=beam, depth=depth)
+    geo = compile_to_geometry(
+        {"design_id": "TEST", "hull": {"loa": loa}, "geometry_intent": {"surface_definition": "smooth"}, "resources": resources}
+    )
+
+    known_draft = 1.0
+    hs = compute_hydrostatics_from_geometry(geo, draft=known_draft)
+    target_mt = hs.displacement_kg / 1000.0
+
+    # Monkeypatch the residual evaluator to return a near-zero derivative to
+    # force bisection fallback. This stays in-module and avoids making a
+    # pathological geometry just to trigger the code path.
+    import magnet.physics.equilibrium as eq
+
+    orig = eq._eval_residual
+
+    def _wrapped(geometry, draft_m, target_displacement_mt, seawater_density):
+        r, disp, d = orig(geometry, draft_m, target_displacement_mt, seawater_density)
+        return r, disp, 0.0  # unusable derivative
+
+    eq._eval_residual = _wrapped
+    try:
+        sol = solve_equilibrium_draft(
+            geometry=geo,
+            target_displacement_mt=target_mt,
+            draft_guess_m=0.2,
+            depth_m=depth,
+            max_iter=40,
+        )
+        assert sol.converged is True
+        assert abs(sol.draft_m - known_draft) < 2e-3
+    finally:
+        eq._eval_residual = orig
+
+
 def test_equilibrium_validator_auto_apply_recomputes_hydrostatics():
     loa = 20.0
     beam = 5.0
     depth = 3.0
     resources = _box_sections_resources(loa=loa, beam=beam, depth=depth)
-    geo = compile_to_geometry({"design_id": "TEST", "hull": {"loa": loa}, "resources": resources})
+    # Ensure surface intent is explicit for compilation.
+    geo = compile_to_geometry(
+        {"design_id": "TEST", "hull": {"loa": loa}, "geometry_intent": {"surface_definition": "smooth"}, "resources": resources}
+    )
 
     known_draft = 1.0
     hs = compute_hydrostatics_from_geometry(geo, draft=known_draft)
@@ -70,6 +118,7 @@ def test_equilibrium_validator_auto_apply_recomputes_hydrostatics():
         {
             "design_id": "TEST",
             "resources": resources,
+            "geometry_intent.surface_definition": "smooth",
             "hull.loa": loa,
             "hull.lwl": loa,
             "hull.beam": beam,

@@ -24,7 +24,7 @@ const PANEL_CONFIG = {
     // =========================================================================
     hull: {
         title: "Hull Form",
-        source: "hull",
+        sourcePrefix: "hull.",
         // §SKELETON:PhaseRefresh — Badge now shows body_count (geometry-derived), not hull_type (enumeration)
         badge: {
             field: "body_count",
@@ -69,7 +69,7 @@ const PANEL_CONFIG = {
     // =========================================================================
     hydrostatics: {
         title: "Hydrostatics",
-        source: "hull",  // Hydrostatics stored under hull.*
+        sourcePrefix: "hull.",  // Hydrostatics stored under hull.*
         badge: {
             field: "hydrostatics_method",
             format: function(v) {
@@ -210,7 +210,7 @@ const PANEL_CONFIG = {
     // =========================================================================
     resistance: {
         title: "Resistance & Power",
-        source: "resistance",
+        sourcePrefix: "resistance.",
         badge: {
             field: "method_valid",
             format: function(v, data) {
@@ -270,7 +270,7 @@ const PANEL_CONFIG = {
     // =========================================================================
     stability: {
         title: "Stability",
-        source: "stability",
+        sourcePrefix: "stability.",
         badge: {
             field: "imo_intact_passed",
             format: function(v) {
@@ -316,7 +316,7 @@ const PANEL_CONFIG = {
     // =========================================================================
     mission: {
         title: "Mission Requirements",
-        source: "mission",
+        sourcePrefix: "mission.",
         badge: null,
         fields: [
             { group: "Vessel", isGroup: true },
@@ -341,7 +341,7 @@ const PANEL_CONFIG = {
     // =========================================================================
     structure: {
         title: "Structure",
-        source: "structure",
+        sourcePrefix: "structure.",
         badge: null,
         fields: [
             { key: "_placeholder", label: "Structure analysis", format: function() { return "Not yet implemented"; } }
@@ -353,7 +353,7 @@ const PANEL_CONFIG = {
     // =========================================================================
     arrangement: {
         title: "Arrangement",
-        source: "arrangement",
+        sourcePrefix: "arrangement.",
         badge: null,
         fields: [
             { key: "_placeholder", label: "Arrangement data", format: function() { return "Not yet implemented"; } }

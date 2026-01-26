@@ -12,15 +12,19 @@ Addresses: FM1 (Visual/Engineering hull divergence)
 
 from __future__ import annotations
 from typing import TYPE_CHECKING, Optional, Tuple, Dict, Any, List
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 import logging
 import time
+
+from magnet.core.dataclasses import SceneReceipt
+from magnet.core.turn_contracts import sha256_hex
 
 from .schema import (
     MeshData,
     SceneData,
     SchemaMetadata,
     GeometryMode,
+    SimulationIntegrity,
     LODLevel,
     MaterialDef,
     StructureSceneData,
@@ -240,16 +244,101 @@ class GeometryService:
         # For multi-body designs, we must tessellate PER BODY to avoid stitching.
         hull_meshes = None
         geometry_mode = GeometryMode.AUTHORITATIVE
+        simulation_integrity = SimulationIntegrity.APPROXIMATE
         hull_mesh = None
+        integrity_reason = None
         try:
             hull_geom = self._grm_provider.get_hull_geometry(design_id, lod=lod)
             geometry_mode = GeometryMode.AUTHORITATIVE
+            simulation_integrity = SimulationIntegrity.AUTHORITATIVE
+
+            # -----------------------------------------------------------------
+            # Truthfulness: detect stale physics vs current geometry edits.
+            # - If physics has never been validated, do not claim AUTHORITATIVE.
+            # - If physics was validated for a different design_version, the system is DECOUPLED.
+            # -----------------------------------------------------------------
+            try:
+                dv = self._sm.get("design_version")
+                pv = self._sm.get("kernel.physics_last_validated_version")
+                if pv is None:
+                    simulation_integrity = SimulationIntegrity.APPROXIMATE
+                    integrity_reason = "missing_physics"
+                elif dv is not None and int(pv) != int(dv):
+                    simulation_integrity = SimulationIntegrity.DECOUPLED
+                    integrity_reason = "stale_physics"
+            except Exception:
+                pass
+
+            # Panelized integrity ladder hardening:
+            # Panelized surfaces MUST have same-version hydrostatics, otherwise we fail closed to DECOUPLED.
+            try:
+                surface_definition = (getattr(hull_geom, "metadata", {}) or {}).get("surface_definition")
+                if surface_definition == "panelized":
+                    dv = self._sm.get("design_version")
+                    hv = self._sm.get("kernel.hydrostatics_last_validated_version")
+                    if hv is None or dv is None or int(hv) != int(dv):
+                        simulation_integrity = SimulationIntegrity.DECOUPLED
+                        integrity_reason = "missing_hydrostatics_for_panelized"
+            except Exception:
+                pass
 
             # Partition by body_id if present; otherwise keep single hull mesh.
             from .geometry_pipeline import HullGeometryPipeline, TessellationConfig
             tess_config = TessellationConfig.from_lod(lod)
             pipeline = HullGeometryPipeline(hull_geom=hull_geom, config=tess_config)
-            by_body = pipeline.tessellate_by_body()
+            # Truthfulness: panelized surfaces MUST use faceted tessellation.
+            surface_definition = None
+            try:
+                surface_definition = (getattr(hull_geom, "metadata", {}) or {}).get("surface_definition")
+            except Exception:
+                surface_definition = None
+
+            if surface_definition == "panelized":
+                # Phase 2: hard-gate planarity (panelized surfaces must be developable-ish)
+                try:
+                    from magnet.kernel.validators.planarity import PlanarityGateError, _compute_quad_warp_factor
+                    from magnet.core.constants import EPSILON_GEOMETRY
+                    sections_all = list(getattr(hull_geom, "sections", []) or [])
+                    # Sort by station/x so adjacency is deterministic.
+                    sections_all.sort(key=lambda ss: float(getattr(ss, "station", 0.0) or 0.0))
+                    WARP_THRESHOLD = 0.02
+                    for i in range(len(sections_all) - 1):
+                        a = sections_all[i]
+                        b = sections_all[i + 1]
+                        pa = list(getattr(a, "points", []) or [])
+                        pb = list(getattr(b, "points", []) or [])
+                        n = min(len(pa), len(pb))
+                        if n < 2:
+                            continue
+                        for j in range(n - 1):
+                            p0 = pa[j].position
+                            p1 = pa[j + 1].position
+                            p2 = pb[j].position
+                            p3 = pb[j + 1].position
+                            warp = float(_compute_quad_warp_factor(p0, p1, p2, p3))
+                            if warp > WARP_THRESHOLD + float(EPSILON_GEOMETRY):
+                                raise PlanarityGateError(
+                                    f"Non-planar panel detected (warp={warp:.4f} > {WARP_THRESHOLD:.2f}); "
+                                    f"panelized surface cannot be rendered authoritatively.",
+                                    max_warp=float(warp),
+                                )
+                except Exception:
+                    # If the check cannot be performed for any reason, fail closed.
+                    raise
+
+                sections = list(getattr(hull_geom, "sections", []) or [])
+                by: Dict[str, List[Any]] = {}
+                for s in sections:
+                    bid = str(getattr(s, "body_id", "main") or "main")
+                    by.setdefault(bid, []).append(s)
+                by_body = {}
+                for bid in sorted(by.keys()):
+                    s_list = sorted(by[bid], key=lambda ss: float(getattr(ss, "station", 0.0) or 0.0))
+                    mesh = pipeline.tessellate_with_options(s_list, faceted=True, panel_edges_hard=True)
+                    mesh.mesh_id = mesh.mesh_id or f"hull_{bid}"
+                    by_body[bid] = mesh
+            else:
+                by_body = pipeline.tessellate_by_body()
 
             # If only one body, preserve legacy shape.
             if len(by_body) <= 1:
@@ -272,6 +361,7 @@ class GeometryService:
                 allow_visual_only=True,
             )
             geometry_mode = GeometryMode.VISUAL_ONLY
+            simulation_integrity = SimulationIntegrity.APPROXIMATE
 
         # Get version info
         version_id = self._grm_provider.get_geometry_version(design_id) or ""
@@ -282,14 +372,206 @@ class GeometryService:
             design_id=design_id,
             version_id=version_id,
             geometry_mode=geometry_mode,
+            simulation_integrity=simulation_integrity,
             hull=hull_mesh,
             hulls=hull_meshes,
             materials=self._get_default_materials(),
             metadata={
                 "lod": lod.value,
                 "generated_at": time.time(),
+                # Mirror the explicit truth signal in metadata for older clients/tools.
+                "simulation_integrity": simulation_integrity.value,
+                "physics_last_validated_version": self._sm.get("kernel.physics_last_validated_version"),
+                "hydrostatics_last_validated_version": self._sm.get("kernel.hydrostatics_last_validated_version"),
             },
         )
+
+        if scene.simulation_integrity != SimulationIntegrity.AUTHORITATIVE and integrity_reason:
+            scene.metadata["simulation_integrity_reason"] = integrity_reason
+        # ---------------------------------------------------------------------
+        # Turn Contract Vault: AUTHORITATIVE gating
+        #
+        # AUTHORITATIVE is allowed iff a same-version TurnContract exists and is clean.
+        # This prevents "shoebox evidence" (distributed stamps) from being mistaken as proof.
+        # ---------------------------------------------------------------------
+        try:
+            dv = self._sm.get("design_version")
+            contracts = self._sm.get("turn_contracts", []) or []
+            cid = self._sm.get("current_turn_contract_id")
+
+            contract = None
+            if isinstance(contracts, list) and dv is not None:
+                # Prefer id match, then latest contract with matching design_version.
+                for c in contracts:
+                    if getattr(c, "contract_id", None) == cid and int(getattr(c, "design_version", -1)) == int(dv):
+                        contract = c
+                        break
+                if contract is None:
+                    for c in reversed(contracts):
+                        if int(getattr(c, "design_version", -1)) == int(dv):
+                            contract = c
+                            break
+
+            if contract is not None:
+                scene.metadata["contract_summary"] = {
+                    "contract_id": getattr(contract, "contract_id", None),
+                    "design_version": int(getattr(contract, "design_version", 0) or 0),
+                    "integrity_state": getattr(contract, "integrity_state", None),
+                    "primary_reason": getattr(contract, "primary_reason", None),
+                }
+            else:
+                scene.metadata["contract_summary"] = None
+
+            # If no same-version contract exists, we cannot claim AUTHORITATIVE.
+            # Do not overwrite existing DECOUPLED/APPROXIMATE reasons; this rule only blocks overclaiming.
+            if dv is not None and contract is None and scene.simulation_integrity == SimulationIntegrity.AUTHORITATIVE:
+                surface_definition = None
+                try:
+                    surface_definition = (getattr(hull_geom, "metadata", {}) or {}).get("surface_definition")
+                except Exception:
+                    surface_definition = None
+
+                scene.simulation_integrity = (
+                    SimulationIntegrity.DECOUPLED
+                    if surface_definition == "panelized"
+                    else SimulationIntegrity.APPROXIMATE
+                )
+                scene.metadata["simulation_integrity"] = scene.simulation_integrity.value
+                scene.metadata["simulation_integrity_reason"] = "missing_contract"
+
+            # If contract exists but is non-authoritative, prefer its classification (conservative).
+            if contract is not None:
+                cs = str(getattr(contract, "integrity_state", "") or "")
+                cr = getattr(contract, "primary_reason", None)
+                if cs in ("APPROXIMATE", "DECOUPLED"):
+                    scene.simulation_integrity = SimulationIntegrity(cs)
+                    scene.metadata["simulation_integrity"] = scene.simulation_integrity.value
+                    if cr:
+                        scene.metadata["simulation_integrity_reason"] = str(cr)
+        except Exception:
+            pass
+
+        _integrity_before_scene_checks = scene.simulation_integrity.value
+
+        # ---------------------------------------------------------------------
+        # Truthfulness: volume parity check (silent-killer defense)
+        # If physics is marked fresh (AUTHORITATIVE) but the watertight mesh volume
+        # disagrees materially with physics displacement, flip to DECOUPLED.
+        #
+        # This catches:
+        # - low-warp saddle/twist leakage (area-strip integration vs polyhedral volume)
+        # - asymmetric multi-body mirroring/hallucination in rendering paths
+        # ---------------------------------------------------------------------
+        try:
+            if scene.simulation_integrity == SimulationIntegrity.AUTHORITATIVE:
+                phys_disp = self._sm.get("hull.displacement_m3")
+                if phys_disp is not None and float(phys_disp) > 0:
+                    meshes = []
+                    if hull_meshes:
+                        meshes.extend(list(hull_meshes))
+                    if hull_mesh is not None and not meshes:
+                        meshes.append(hull_mesh)
+
+                    def _mesh_volume_m3(m) -> float:
+                        v = getattr(m, "vertices", []) or []
+                        ind = getattr(m, "indices", []) or []
+                        if not v or not ind:
+                            return 0.0
+                        total = 0.0
+                        for ii in range(0, len(ind), 3):
+                            try:
+                                i0, i1, i2 = int(ind[ii]), int(ind[ii + 1]), int(ind[ii + 2])
+                                p0 = (float(v[i0 * 3]), float(v[i0 * 3 + 1]), float(v[i0 * 3 + 2]))
+                                p1 = (float(v[i1 * 3]), float(v[i1 * 3 + 1]), float(v[i1 * 3 + 2]))
+                                p2 = (float(v[i2 * 3]), float(v[i2 * 3 + 1]), float(v[i2 * 3 + 2]))
+                                cross = (
+                                    p1[1] * p2[2] - p1[2] * p2[1],
+                                    p1[2] * p2[0] - p1[0] * p2[2],
+                                    p1[0] * p2[1] - p1[1] * p2[0],
+                                )
+                                total += (p0[0] * cross[0] + p0[1] * cross[1] + p0[2] * cross[2]) / 6.0
+                            except Exception:
+                                continue
+                        return abs(float(total))
+
+                    mesh_vol = sum(_mesh_volume_m3(m) for m in meshes)
+                    if mesh_vol > 0:
+                        rel = abs(mesh_vol - float(phys_disp)) / float(phys_disp)
+                        scene.metadata["mesh_volume_m3"] = float(mesh_vol)
+                        scene.metadata["physics_displacement_m3"] = float(phys_disp)
+                        scene.metadata["volume_parity_rel_error"] = float(rel)
+                        if rel > 0.005:
+                            scene.simulation_integrity = SimulationIntegrity.DECOUPLED
+                            scene.metadata["simulation_integrity"] = scene.simulation_integrity.value
+                            scene.metadata["simulation_integrity_reason"] = "volume_parity_violation"
+        except Exception:
+            pass
+
+        # Phase 2: physics-domain validity downgrades (Engineering Truth)
+        # If physics outputs explicitly mark out-of-envelope, never claim AUTHORITATIVE.
+        try:
+            if scene.simulation_integrity == SimulationIntegrity.AUTHORITATIVE:
+                method_valid = self._sm.get("resistance.method_valid")
+                if method_valid is False:
+                    scene.simulation_integrity = SimulationIntegrity.APPROXIMATE
+                    scene.metadata["simulation_integrity"] = scene.simulation_integrity.value
+                    scene.metadata["simulation_integrity_reason"] = "physics_domain_violation"
+                    scene.metadata["resistance_validity_note"] = self._sm.get("resistance.validity_note")
+        except Exception:
+            pass
+
+        # ---------------------------------------------------------------------
+        # SceneReceipt (v0): scene-time checks (mesh/parity/etc) are recorded here
+        # and must not be confused with phase-time TurnContracts.
+        # ---------------------------------------------------------------------
+        try:
+            dv = int(self._sm.get("design_version", 0) or 0)
+            geo_ver = ""
+            try:
+                geo_ver = str(self._grm_provider.get_geometry_version(design_id) or "")
+            except Exception:
+                geo_ver = ""
+
+            checks: Dict[str, Any] = {}
+            for k in ("mesh_volume_m3", "physics_displacement_m3", "volume_parity_rel_error"):
+                if k in scene.metadata:
+                    checks[k] = scene.metadata.get(k)
+
+            mesh_hash = ""
+            try:
+                # v0: order-sensitive identifier only; NOT semantic equivalence.
+                primary_mesh = hull_meshes[0] if hull_meshes else hull_mesh
+                if primary_mesh is not None:
+                    mesh_hash = sha256_hex(
+                        {
+                            "vertices": list(getattr(primary_mesh, "vertices", []) or []),
+                            "indices": list(getattr(primary_mesh, "indices", []) or []),
+                        }
+                    )
+            except Exception:
+                mesh_hash = ""
+
+            integrity_effect: Dict[str, Any] = {}
+            if scene.simulation_integrity.value != _integrity_before_scene_checks:
+                integrity_effect = {
+                    "before": _integrity_before_scene_checks,
+                    "after": scene.simulation_integrity.value,
+                    "reason": scene.metadata.get("simulation_integrity_reason"),
+                }
+
+            sr = SceneReceipt(
+                scene_receipt_id=str(int(time.time() * 1000)),
+                design_id=str(design_id),
+                design_version=dv,
+                geometry_version_id=geo_ver,
+                mesh_hash=mesh_hash,
+                checks=checks,
+                integrity_effect=integrity_effect,
+                timestamp_s=float(time.time()),
+            )
+            scene.metadata["scene_receipt"] = asdict(sr)
+        except Exception:
+            pass
 
         # Phase 3: Universal primitives (diagnostic markers only)
         # These are preserved for UI/inspection. Semantics are staged:
@@ -402,7 +684,15 @@ class GeometryService:
             config=tess_config,
         )
 
-        mesh = pipeline.tessellate()
+        surface_definition = None
+        try:
+            surface_definition = (getattr(hull_geom, "metadata", {}) or {}).get("surface_definition")
+        except Exception:
+            surface_definition = None
+        if surface_definition == "panelized":
+            mesh = pipeline.tessellate_with_options(hull_geom.sections, faceted=True, panel_edges_hard=True)
+        else:
+            mesh = pipeline.tessellate()
         mesh.mesh_id = f"{hull_geom.design_id}_hull_{lod.value}"
 
         # Validate resource limits

@@ -12,7 +12,7 @@ def test_spiral_returns_needs_clarification_for_invalid_section_points(monkeypat
     from magnet.agents import geometry_proposer as gp
 
     class FakeProposer:
-        async def propose(self, intent, current_state=None, validation_history=None):
+        async def propose(self, intent, current_state=None, constraints=None, validation_history=None, shape_document=None, **kwargs):
             # Match the string checks in spiral_endpoints.
             return gp.ProposerResult(
                 success=False,

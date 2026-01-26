@@ -18,8 +18,10 @@ import re
 from typing import Dict, Any, List
 
 
-# Skip if environment variable is set (to avoid API costs in CI)
-SKIP_LIVE_LLM = os.environ.get("SKIP_LIVE_LLM_TESTS", "0") == "1"
+# Live LLM tests are opt-in (they incur cost + require network + keys).
+# Run them only when explicitly enabled.
+RUN_LIVE_LLM = os.environ.get("RUN_LIVE_LLM_TESTS", "0") == "1"
+SKIP_LIVE_LLM = (not RUN_LIVE_LLM) or (os.environ.get("SKIP_LIVE_LLM_TESTS", "0") == "1")
 
 
 def check_for_enumeration(program_text: str) -> List[str]:

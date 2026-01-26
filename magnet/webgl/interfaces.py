@@ -230,6 +230,9 @@ class HullGeometryData:
     flow_paths: Optional[List[Dict[str, Any]]] = None
     attachments: Optional[List[Dict[str, Any]]] = None
 
+    # Optional metadata (truth intent, body centerlines, etc.)
+    metadata: Optional[Dict[str, Any]] = None
+
 
 # =============================================================================
 # STATE GEOMETRY ADAPTER
@@ -579,7 +582,7 @@ class HullGeneratorAdapter:
         lod = lod or LODLevel.MEDIUM
 
         # Build cache key from design_id + hull-affecting parameters
-        # This ensures cache invalidation when hull_type, spacing, or coefficients change
+        # This ensures cache invalidation when spacing or coefficients change
         inputs = StateGeometryAdapter(self._sm)
         cache_key = self._build_cache_key(design_id, inputs, lod)
 
@@ -611,9 +614,6 @@ class HullGeneratorAdapter:
                 # ULTRA: still reasonable for demos; avoid extreme 100k+ face meshes by default.
                 gen_cfg = GeneratorConfig(num_sections=81, points_per_section=81)
 
-            # Build HullDefinition object (the correct interface)
-            hull_type = self._get_hull_type(inputs)
-
             # Draft/trim support (Module Hull Form Completion)
             draft_mid = float(inputs.draft)
             draft_fwd = float(inputs.draft_fwd_m)
@@ -623,7 +623,6 @@ class HullGeneratorAdapter:
             definition = HullDefinition(
                 hull_id=design_id,
                 hull_name=f"Design {design_id}",
-                hull_type=hull_type,
                 dimensions=MainDimensions(
                     loa=inputs.loa,
                     lwl=inputs.lwl,
@@ -788,35 +787,14 @@ class HullGeneratorAdapter:
         key_string = "|".join(key_parts)
         return hashlib.md5(key_string.encode()).hexdigest()[:16]
 
-    def _get_hull_type(self, inputs: StateGeometryAdapter) -> 'HullType':
-        """Get hull type from state, defaulting to HARD_CHINE."""
-        from magnet.hull_gen.enums import HullType
+    def _get_hull_type(self, inputs: StateGeometryAdapter) -> str:
+        """
+        Return any hull-type string stored in state.
 
-        hull_type_str = (inputs.hull_type or "").lower()
-
-        # Map string to enum
-        type_map = {
-            # Canonical hull_gen types
-            "hard_chine": HullType.HARD_CHINE,
-            "round_bilge": HullType.ROUND_BILGE,
-            "deep_v": HullType.DEEP_V_PLANING,
-            "deep_v_planing": HullType.DEEP_V_PLANING,
-            "semi_displacement": HullType.SEMI_DISPLACEMENT,
-            "catamaran": HullType.CATAMARAN,
-            "trimaran": HullType.TRIMARAN,
-            "swath": HullType.SWATH,
-            # Module 67.x chat/schema vocabulary aliases → generator enums
-            "monohull": HullType.HARD_CHINE,
-            "planing": HullType.DEEP_V_PLANING,
-            "semi_planing": HullType.DEEP_V_PLANING,
-            "displacement": HullType.ROUND_BILGE,
-        }
-
-        # Warn on unknown hull type (don't silently fall back)
-        if hull_type_str and hull_type_str not in type_map:
-            logger.warning(f"Unknown hull_type '{hull_type_str}', defaulting to HARD_CHINE")
-
-        return type_map.get(hull_type_str, HullType.HARD_CHINE)
+        Phase 3 (enum deletion): this value is NOT used to drive synthesis; it is
+        advisory-only UI metadata.
+        """
+        return str(inputs.hull_type or "")
 
     def _build_hull_features(self, inputs: StateGeometryAdapter) -> 'HullFeatures':
         """
@@ -829,34 +807,33 @@ class HullGeneratorAdapter:
         - Phase 5: Transom variations
         - Phase 6: Tumblehome, faceted panels, deck
         """
-        from magnet.hull_gen.parameters import HullFeatures, SprayRailConfig
-        from magnet.hull_gen.enums import ChineType, BowStyle
+        from magnet.hull_gen.parameters import HullFeatures, SprayRailConfig, BowConfig
 
-        # Map chine_type string to enum
-        chine_type_map = {
-            "none": ChineType.NONE,
-            "soft": ChineType.SOFT,
-            "hard": ChineType.HARD,
-            "single": ChineType.HARD,
-            "double": ChineType.DOUBLE,
-            "triple": ChineType.TRIPLE,
-            "reverse": ChineType.REVERSE,
-            "variable": ChineType.VARIABLE,
-        }
-        chine_type_str = inputs.chine_type.lower() if inputs.chine_type else "soft"
-        chine_type = chine_type_map.get(chine_type_str, ChineType.SOFT)
+        # NOTE: Phase 3 hard rule: no form enums in the synthesis path.
+        # `inputs.chine_type` is treated as advisory UI metadata only; we map it
+        # into enum-free, continuous controls for `HullFeatures`.
+        chine_type_str = (inputs.chine_type or "").strip().lower() or "soft"
+        chine_style = "standard"
+        chine_count = int(getattr(inputs, "chine_count", 0) or 0)
 
-        # Map bow_style string to enum
-        bow_style_map = {
-            "traditional": BowStyle.TRADITIONAL,
-            "wedge": BowStyle.WEDGE,
-            "axe": BowStyle.AXE,
-            "wave_piercing": BowStyle.WAVE_PIERCING,
-            "wave-piercing": BowStyle.WAVE_PIERCING,
-            "faceted": BowStyle.FACETED,
-        }
-        bow_style_str = inputs.bow_style.lower() if inputs.bow_style else "traditional"
-        bow_style = bow_style_map.get(bow_style_str, BowStyle.TRADITIONAL)
+        if chine_type_str in ("none", "soft"):
+            chine_count = 0
+        elif chine_type_str in ("hard", "single"):
+            chine_count = max(chine_count, 1)
+        elif chine_type_str == "double":
+            chine_count = 2
+        elif chine_type_str == "triple":
+            chine_count = 3
+        elif chine_type_str == "reverse":
+            chine_style = "reverse"
+            chine_count = max(chine_count, 1)
+        elif chine_type_str == "variable":
+            chine_style = "variable"
+            chine_count = max(chine_count, 1)
+
+        bow_style_str = (inputs.bow_style or "").strip().lower() or "traditional"
+        if bow_style_str == "wave-piercing":
+            bow_style_str = "wave_piercing"
 
         # Build spray rail configs if enabled
         spray_rails = []
@@ -871,6 +848,15 @@ class HullGeneratorAdapter:
                 ))
 
         # Build HullFeatures with all Phase 2-6 parameters
+        bow_config = BowConfig(
+            style=bow_style_str,
+            facet_count=int(getattr(inputs, "bow_facet_count", 2) or 2),
+            half_angle_deg=float(getattr(inputs, "bow_entrance_deg", 25.0) or 25.0),
+            stem_rake_deg=float(getattr(inputs, "stem_rake_deg", 15.0) or 15.0),
+            region_length=float(getattr(inputs, "bow_region_length", 0.20) or 0.20),
+            flare_deg=float(getattr(inputs, "bow_flare_deg", 0.0) or 0.0),
+        )
+
         features = HullFeatures(
             # Basic features
             transom_width_fraction=inputs.transom_beam_ratio,
@@ -886,11 +872,11 @@ class HullGeneratorAdapter:
             ) or (2 if getattr(inputs, "hull_spacing", 0) and getattr(inputs, "hull_spacing", 0) > 0 else 1),
             
             # Phase 2: Chine variations
-            chine_type=chine_type,
-            chine_count=inputs.chine_count,
+            chine_style=chine_style,
+            chine_count=chine_count,
             
             # Phase 3: Bow forms
-            bow_style=bow_style,
+            bow_config=bow_config,
             bow_facet_count=inputs.bow_facet_count,
             
             # Phase 4: Spray rails
@@ -911,8 +897,8 @@ class HullGeneratorAdapter:
         )
 
         logger.debug(
-            f"Built HullFeatures: chine={chine_type.name}, bow={bow_style.name}, "
-            f"tumblehome={inputs.tumblehome_enabled}, spray_rails={len(spray_rails)}"
+            f"Built HullFeatures: chine={chine_type_str}:{chine_count}:{chine_style}, "
+            f"bow={bow_style_str}, tumblehome={inputs.tumblehome_enabled}, spray_rails={len(spray_rails)}"
         )
 
         return features
@@ -1027,7 +1013,7 @@ class DesignLanguageAdapter:
     → HullGeometryData for the WebGL pipeline.
 
     IMPORTANT:
-    - No HullType / HullFamily / "styles" here.
+    - No form/type/style buckets here.
     - No parametric generator heuristics.
     - Pure compilation of declared primitives + post-validation elsewhere.
     """

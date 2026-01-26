@@ -176,18 +176,19 @@ Respond with JSON array of questions:
 # =============================================================================
 
 def create_vessel_type_clarification() -> str:
-    """Template for clarifying vessel type when ambiguous."""
-    return """Generate options for vessel type clarification.
+    """Template for clarifying vessel intent via capabilities (replaces category labels)."""
+    return """Generate options for vessel capability clarification.
 
-The user has not specified a clear vessel type. Generate options based on common
-naval vessel categories suitable for the MAGNET system.
+The user's mission intent is ambiguous. Instead of vessel categories (ferry, patrol, etc.), 
+provide options based on performance and operating requirements that will drive 
+downstream weight and physics derivation.
 
-Include:
-- Patrol/fast attack craft
-- Workboats/utility vessels
-- Research/survey vessels
-- Passenger/ferry vessels
-- Custom/specialized
+Include options covering:
+- High speed / low payload (planing/interception)
+- Moderate speed / high stability (passenger/ferry)
+- Heavy duty / low speed (workboat/utility)
+- High endurance / deep draft (research/survey)
+- Custom - specify speed, range, and crew
 
 Respond with standard clarification JSON format."""
 

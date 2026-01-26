@@ -125,12 +125,22 @@ class ValidatorRegistry:
         if cls._initialized:
             return
 
+        # Geometry truthfulness validators (Engineering Truth)
+        try:
+            from magnet.kernel.validators.planarity import PlanarityValidator
+            cls.register_class("geometry/planarity", PlanarityValidator)
+            cls.mark_required("geometry/planarity")  # Hard gate for panelized hulls (passes fast for smooth)
+        except ImportError as e:
+            logger.warning(f"Geometry truthfulness validators not available: {e}")
+
         # Physics validators (REQUIRED for hull phase)
         try:
             from magnet.physics.validators import HydrostaticsValidator, ResistanceValidator, EquilibriumDraftValidator
+            from magnet.physics.hydro_weight_convergence import HydroWeightConvergedValidator
             cls.register_class("physics/hydrostatics", HydrostaticsValidator)
             cls.register_class("physics/resistance", ResistanceValidator)
             cls.register_class("physics/equilibrium_draft", EquilibriumDraftValidator)
+            cls.register_class("physics/hydro_weight_converged", HydroWeightConvergedValidator)
             cls.mark_required("physics/hydrostatics")  # Required for any hull analysis
         except ImportError as e:
             logger.warning(f"Physics validators not available: {e}")

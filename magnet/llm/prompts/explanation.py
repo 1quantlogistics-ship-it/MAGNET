@@ -217,9 +217,9 @@ Validation Status:
 {validations_str}
 
 Current State Summary:
-- Vessel Type: {current_state.get('mission.vessel_type', 'unknown')}
-- Length: {current_state.get('hull.length', 'unknown')} m
 - Phase: {current_state.get('current_phase', 'unknown')}
+- Design LOA: {current_state.get('hull.loa', 'unknown')} m
+- Design Speed: {current_state.get('mission.max_speed_kts', 'unknown')} kts
 
 Generate 3-5 prioritized next steps. Focus on:
 1. Addressing any failing validations
@@ -317,7 +317,7 @@ EXPLANATION_TEMPLATES = {
 
 # Parameter name mappings for human-readable output
 PARAMETER_DISPLAY_NAMES = {
-    "hull.length": "Length Overall (LOA)",
+    "hull.loa": "Length Overall (LOA)",
     "hull.beam": "Beam",
     "hull.draft": "Design Draft",
     "hull.depth": "Depth",

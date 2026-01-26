@@ -242,6 +242,23 @@ class HullGeometryPipeline:
                 p1 = points_a[j + 1].position
                 p2 = points_b[j].position
                 p3 = points_b[j + 1].position
+
+                # Multi-body truthfulness: mirror about the *body centerline* (not global y=0).
+                # In GRM/compiled geometry, body offsets are applied to point.y; the keel point is on the body centerline.
+                centerline_y = 0.0
+                try:
+                    # Prefer explicit SSOT mapping from geometry metadata (more robust than inference).
+                    md = getattr(self._hull_geom, "metadata", None) if self._hull_geom is not None else None
+                    m = (md or {}).get("body_centerline_y_by_body") if isinstance(md, dict) else None
+                    bid = str(getattr(section_a, "body_id", "main") or "main")
+                    if isinstance(m, dict) and bid in m:
+                        centerline_y = float(m[bid])
+                    else:
+                        cl_a = float(points_a[0].position.y) if points_a else 0.0
+                        cl_b = float(points_b[0].position.y) if points_b else cl_a
+                        centerline_y = 0.5 * (cl_a + cl_b)
+                except Exception:
+                    centerline_y = 0.0
                 
                 # Compute face normal for this quad
                 face_normal = self._compute_quad_normal(p0, p1, p2, p3)
@@ -275,22 +292,33 @@ class HullGeometryPipeline:
                     builder.mark_hard_edge(v0, v2)
                     builder.mark_hard_edge(v1, v3)
                 
-                # Mirror for starboard side
-                if p0.y > 0.001:  # Not centerline
+                # Mirror for the opposite side of the body about centerline_y.
+                # IMPORTANT: Do not key this off p0 alone — panels can start on the centerline
+                # (keel/deck) while the next vertex is off-centerline. In that case we still
+                # must generate the mirrored face to keep the hull watertight.
+                if (
+                    max(
+                        abs(float(p0.y) - float(centerline_y)),
+                        abs(float(p1.y) - float(centerline_y)),
+                        abs(float(p2.y) - float(centerline_y)),
+                        abs(float(p3.y) - float(centerline_y)),
+                    )
+                    > 0.001
+                ):
                     s_v0 = builder.add_vertex_with_normal(
-                        p0.x, -p0.y, p0.z,
+                        p0.x, (2.0 * centerline_y) - p0.y, p0.z,
                         face_normal[0], -face_normal[1], face_normal[2],
                     )
                     s_v1 = builder.add_vertex_with_normal(
-                        p1.x, -p1.y, p1.z,
+                        p1.x, (2.0 * centerline_y) - p1.y, p1.z,
                         face_normal[0], -face_normal[1], face_normal[2],
                     )
                     s_v2 = builder.add_vertex_with_normal(
-                        p2.x, -p2.y, p2.z,
+                        p2.x, (2.0 * centerline_y) - p2.y, p2.z,
                         face_normal[0], -face_normal[1], face_normal[2],
                     )
                     s_v3 = builder.add_vertex_with_normal(
-                        p3.x, -p3.y, p3.z,
+                        p3.x, (2.0 * centerline_y) - p3.y, p3.z,
                         face_normal[0], -face_normal[1], face_normal[2],
                     )
                     
@@ -303,6 +331,50 @@ class HullGeometryPipeline:
                         builder.mark_hard_edge(s_v2, s_v3)
                         builder.mark_hard_edge(s_v0, s_v2)
                         builder.mark_hard_edge(s_v1, s_v3)
+
+        # 67.7 Hull Form UX: Add end caps (bow/stern) so the faceted hull is closed.
+        # Note: caps are "bathtub" style (watertight bottom+sides, open top) to avoid deck-wing artifacts.
+        try:
+            if len(sections) >= 2:
+                first = sections[0]
+                last = sections[-1]
+
+                def _build_end_section_indices(sec: HullSection) -> tuple[list[int], list[int]]:
+                    port: list[int] = []
+                    star: list[int] = []
+                    shared_center: dict[float, int] = {}
+                    # Mirror about the body's own centerline y=y0 (not ship centerline).
+                    y0 = 0.0
+                    try:
+                        if sec.points and len(sec.points) > 0:
+                            y0 = float(sec.points[0].position.y)
+                    except Exception:
+                        y0 = 0.0
+                    for p in (sec.points or []):
+                        x, y, z = float(p.position.x), float(p.position.y), float(p.position.z)
+                        if abs(y - y0) <= 1e-9:
+                            # Centerline vertex shared by inboard+outboard for this body
+                            key = z
+                            vid = shared_center.get(key)
+                            if vid is None:
+                                vid = builder.add_vertex(x, y0, z)
+                                shared_center[key] = vid
+                            port.append(vid)
+                            star.append(vid)
+                        else:
+                            port.append(builder.add_vertex(x, y, z))
+                            star.append(builder.add_vertex(x, (2.0 * y0) - y, z))
+                    return port, star
+
+                # Stern cap (first section)
+                p0, s0 = _build_end_section_indices(first)
+                _triangulate_end_cap(builder, p0, s0, reverse_winding=False)
+                # Bow cap (last section)
+                p1, s1 = _build_end_section_indices(last)
+                _triangulate_end_cap(builder, p1, s1, reverse_winding=True)
+        except Exception:
+            # Non-fatal: faceted mesh can still render even if capping fails.
+            pass
     
     def _compute_quad_normal(
         self,
@@ -517,6 +589,15 @@ class HullGeometryPipeline:
                     y0 = p0.position.y
                 else:
                     y0 = p0.y
+                # Prefer explicit SSOT mapping from geometry metadata when available.
+                try:
+                    md = getattr(self._hull_geom, "metadata", None) if self._hull_geom is not None else None
+                    m = (md or {}).get("body_centerline_y_by_body") if isinstance(md, dict) else None
+                    bid = str(getattr(section, "body_id", "main") or "main")
+                    if isinstance(m, dict) and bid in m:
+                        y0 = float(m[bid])
+                except Exception:
+                    pass
 
                 po = []
                 pi = []

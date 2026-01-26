@@ -1,5 +1,16 @@
 ## Module 67.x — Broad Chat Commands (Kernel-First, LLM-First)
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [module, 67x, broad, chat, commands]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 ### 1) Summary
 Natural language chat compiles into `ActionPlan` via an **LLM-first translator**; deterministic parsing is used only as a fallback when the LLM is unavailable or fails to translate. All mutations still flow through `ActionPlanValidator → ActionExecutor → StateManager.commit`, with provenance tagging, atomic transactions, baselines for unset values, and path-aware bucket deltas. Undo/restore remains available after every commit.
 

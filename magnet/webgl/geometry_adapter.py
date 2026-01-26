@@ -129,6 +129,7 @@ class GeometryAdapter:
             volume=hull_geometry.volume,
             wetted_surface=hull_geometry.wetted_surface,
             waterplane_area=hull_geometry.waterplane_area,
+            metadata=getattr(hull_geometry, "metadata", None),
         )
     
     @staticmethod

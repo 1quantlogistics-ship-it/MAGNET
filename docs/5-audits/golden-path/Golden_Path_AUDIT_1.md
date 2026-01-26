@@ -1,5 +1,16 @@
 # MAGNET Golden Path Technical Specification
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [golden, path, audit, 1]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 ## Executive Summary
 
 This document is a **codebase audit** of MAGNET’s current “golden path” — the end-to-end flow from **user intent** (UI v2) to **validated, exportable hull geometry** (GLB) — with explicit mapping to the repository’s **intended architecture** as defined in `Pelorus Plugin/Run1 /SPEC.md` and `Pelorus Plugin/Run1 /CONSTRAINTS.md` (authoritative YAML mirror at `.control-plane/docs/constraints.yaml`).

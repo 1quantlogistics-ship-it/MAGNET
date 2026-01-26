@@ -1,5 +1,16 @@
 # MAGNET Geometry Generator Expansion Architecture
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [geometry, expansion, design]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 ## Overview
 
 This document outlines the architecture for expanding MAGNET's hull geometry generator from smooth parametric forms to support complex hull primitives including hard chines, faceted panels, spray rails, angular bows, and other features found on modern high-performance craft.

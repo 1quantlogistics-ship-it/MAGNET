@@ -1,5 +1,15 @@
 # MAGNET V1 Complete Integration Plan v2.0
 
+<!-- AGENT_CONTEXT
+Purpose: V2 integration plan - current authoritative integration guide
+Authoritative: Yes
+Keywords: integration, plan, v2, conductor, validators, phases
+Depends_On: CONSTITUTION.md, PHASE_MACHINE.md
+Used_By: kernel, validators, conductor
+Status: current
+Last_Verified: 2026-01-15
+-->
+
 ## Senior Critique Response
 
 This plan addresses all 7 holes identified in the senior review of the original integration plan.

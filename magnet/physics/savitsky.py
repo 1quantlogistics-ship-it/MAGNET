@@ -202,18 +202,21 @@ class SavitskyCalculator:
 
         if beta_deg < 10.0:
             method_valid = False
+            validity_notes.append(f"deadrise={beta_deg:.1f}° < 10°")
             warnings.append(f"Deadrise {beta_deg:.1f}° < 10°: outside typical Savitsky range")
         elif beta_deg > 30.0:
             method_valid = False
+            validity_notes.append(f"deadrise={beta_deg:.1f}° > 30°")
             warnings.append(f"Deadrise {beta_deg:.1f}° > 30°: outside typical Savitsky range")
 
         if lam < 1.0 or lam > 6.0:
             method_valid = False
+            validity_notes.append(f"lambda={lam:.2f} outside [1,6]")
             warnings.append(f"Wetted length ratio λ={lam:.2f} outside typical range [1, 6]")
 
-        validity_note = (
-            "Savitsky method valid for planing regime" if method_valid else "; ".join(validity_notes) or "Savitsky validity: outside typical range"
-        )
+        validity_note = "Savitsky method valid for planing regime"
+        if not method_valid:
+            validity_note = "; ".join(validity_notes) or "Savitsky validity: outside typical range"
 
         elapsed_ms = int((time.perf_counter() - start) * 1000)
 

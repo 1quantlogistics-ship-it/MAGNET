@@ -68,43 +68,6 @@ def recommend_regime_defaults(speed_kts: float, lwl_m: float) -> Tuple[Dict[str,
     return defaults, rationale
 
 
-def recommend_family(
-    speed_kts: float,
-    lwl_estimate: float = 30.0,
-    vessel_type: Optional[str] = None,
-) -> Tuple["HullFamily", str]:
-    """
-    DEPRECATED: Recommend HullFamily based on Froude number.
-    
-    This is a compatibility shim for legacy code. New code should use
-    recommend_regime_defaults() instead.
-    
-    Returns (HullFamily, rationale_string).
-    """
-    warnings.warn(
-        "recommend_family() is deprecated. Use recommend_regime_defaults() instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    
-    from .priors.hull_families import HullFamily
-    
-    froude = calculate_froude_geometry(speed_kts, lwl_estimate)
-    regime = classify_regime_geometry(froude)
-    
-    # Map regime to HullFamily for backward compatibility
-    family_map = {
-        "displacement": HullFamily.DISPLACEMENT,
-        "semi_displacement": HullFamily.SEMI_DISPLACEMENT,
-        "planing": HullFamily.PLANING,
-    }
-    
-    hull_family = family_map.get(regime, HullFamily.SEMI_DISPLACEMENT)
-    rationale = f"Fn={froude:.2f} → {regime} → {hull_family.value}"
-    
-    return hull_family, rationale
-
-
 class HullAnalyzer:
     """
     Read-only hull analysis (geometry-derived).

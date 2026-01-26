@@ -328,7 +328,9 @@ def get_config_for_tier(tier: str) -> GeometryConfig:
                 default_lod_level=LODLevel.HIGH,
                 job_timeout_seconds=300,
             ),
-            allow_visual_only_default=True,
+            # Engineering Truth: default to NO visual-only fallback in development
+            # so divergence and missing-authority errors surface early.
+            allow_visual_only_default=False,
         )
 
     elif tier == "staging":

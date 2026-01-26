@@ -106,7 +106,7 @@ TYPE_REGISTRY: Dict[str, TypeSchema] = {
         type_name="geometry.section",
         fields=[
             FieldSchema("station", "float", required=True, 
-                       description="Position along hull (0=bow, 1=stern)",
+                       description="Position along hull (0=aft/AP, 1=forward/FP)",
                        min_value=0.0, max_value=1.0),
             FieldSchema("body_id", "str", default="main",
                        description="Which body this section belongs to"),
@@ -165,6 +165,14 @@ TYPE_REGISTRY: Dict[str, TypeSchema] = {
                        description="Freeform surface type"),
             FieldSchema("definition", "str", required=True,
                        description="'lofted' or 'nurbs'"),
+            # Truthfulness pivot: surface intent is explicit and flows to tessellation + physics.
+            # "smooth": lofted/cubic resampling allowed
+            # "panelized": faceted/linear interpolation; planarity becomes gate (Phase 2)
+            FieldSchema(
+                "surface_definition",
+                "str",
+                description="'smooth' or 'panelized' (truthfulness intent)",
+            ),
             FieldSchema("section_ids", "list",
                        description="Section IDs for lofted surfaces"),
             FieldSchema("control_points", "list",
@@ -396,6 +404,7 @@ def _normalize_properties(resource_type: str, properties: Dict[str, Any]) -> Dic
         # Normalize points shape:
         # - Canonical: [[y, z], ...]
         # - Also accept [{"y":..,"z":..}, ...] (common LLM output) and normalize.
+        # - Also accept [x,y,z] triples and normalize to [y,z] (X comes from station; dropping X is deterministic).
         pts = p.get("points")
         if isinstance(pts, list) and pts:
             if isinstance(pts[0], dict) and ("y" in pts[0] and "z" in pts[0]):
@@ -403,12 +412,7 @@ def _normalize_properties(resource_type: str, properties: Dict[str, Any]) -> Dic
                 for item in pts:
                     if not isinstance(item, dict):
                         continue
-                    # Only normalize true 2D points. If an agent emits x/y/z (or other keys),
-                    # keep the original shape so validate_resource can surface an error instead
-                    # of silently dropping X.
-                    if "x" in item:
-                        norm.append(item)
-                        continue
+                    # Accept dicts with {x,y,z} and deterministically drop x -> [y,z].
                     if "y" in item and "z" in item:
                         norm.append([item.get("y"), item.get("z")])
                 p["points"] = norm
@@ -418,15 +422,22 @@ def _normalize_properties(resource_type: str, properties: Dict[str, Any]) -> Dic
             if isinstance(pts2, list) and pts2 and isinstance(pts2[0], (list, tuple)):
                 norm2 = []
                 for pt in pts2:
-                    # Only canonicalize sign for true 2D pairs; do NOT truncate [x,y,z] triples.
                     if isinstance(pt, (list, tuple)) and len(pt) == 2:
                         y, z = pt[0], pt[1]
                         if isinstance(y, (int, float)) and isinstance(z, (int, float)):
                             norm2.append([abs(float(y)), float(z)])
                         else:
                             norm2.append(list(pt))
-                    else:
-                        norm2.append(pt)
+                        continue
+                    if isinstance(pt, (list, tuple)) and len(pt) == 3:
+                        # Deterministically interpret as [x,y,z] and drop x (X comes from station).
+                        x, y, z = pt[0], pt[1], pt[2]
+                        if isinstance(y, (int, float)) and isinstance(z, (int, float)):
+                            norm2.append([abs(float(y)), float(z)])
+                        else:
+                            norm2.append(list(pt))
+                        continue
+                    norm2.append(pt)
                 p["points"] = norm2
 
     # geometry.surface: allow definition_type as synonym for definition
@@ -520,6 +531,10 @@ def validate_resource(resource_type: str, properties: Dict[str, Any]) -> List[st
                 if section_ids is not None:
                     if not isinstance(section_ids, list) or any(not isinstance(s, str) for s in section_ids):
                         errors.append("section_ids must be a list of strings")
+            # Truthfulness: validate surface_definition if provided
+            sd = normalized.get("surface_definition")
+            if sd is not None and sd not in ("smooth", "panelized"):
+                errors.append("surface_definition must be 'smooth' or 'panelized' when provided")
 
         if resource_type == "geometry.discontinuity":
             try:

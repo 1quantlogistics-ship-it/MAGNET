@@ -39,6 +39,7 @@ from .problems import (
 from .optimizer import DesignOptimizer
 from .pareto import ParetoAnalyzer, ParetoMetrics
 from .sensitivity import SensitivityAnalyzer, SensitivityResult, VariableSensitivity
+from .hybrid_optimizer import HybridOptimizer, OptimizationRequest, OptimizationResult as HybridOptimizationResult
 
 from .validator import (
     OptimizationValidator,
@@ -78,4 +79,8 @@ __all__ = [
     "OPTIMIZATION_DEFINITION",
     "get_optimization_definition",
     "register_optimization_validators",
+    # Hybrid optimizer (TM.8/TM.9)
+    "HybridOptimizer",
+    "OptimizationRequest",
+    "HybridOptimizationResult",
 ]

@@ -14,7 +14,6 @@ from typing import List
 
 from magnet.hull_gen.generator import HullGenerator, GeneratorConfig
 from magnet.hull_gen.geometry import EdgeType, SectionPoint, Point3D, HullSection, LongitudinalFeature
-from magnet.hull_gen.enums import HullType, ChineType
 from magnet.hull_gen.parameters import (
     HullDefinition, HullFeatures, MainDimensions, FormCoefficients, DeadriseProfile,
     SprayRailConfig, KnuckleLineConfig,
@@ -40,7 +39,6 @@ def _create_definition(features: HullFeatures = None) -> HullDefinition:
     return HullDefinition(
         hull_id="TEST-PHASE4",
         hull_name="Test Phase 4 Hull",
-        hull_type=HullType.HARD_CHINE,
         dimensions=MainDimensions(
             loa=20.0,
             lwl=19.0,
@@ -58,7 +56,7 @@ def _create_definition(features: HullFeatures = None) -> HullDefinition:
             lcb=0.52,
         ),
         deadrise=DeadriseProfile.warped(18.0, 20.0, 35.0),
-        features=features or HullFeatures(chine_type=ChineType.HARD),
+        features=features or HullFeatures(chine_count=1),
     )
 
 
@@ -387,7 +385,7 @@ class TestHullGeneratorIntegration:
     def test_spray_rails_in_generated_hull(self):
         """HullGenerator should include spray rails."""
         features = HullFeatures(
-            chine_type=ChineType.HARD,
+            chine_count=1,
             spray_rails=[SprayRailConfig(height_ratio=0.25)]
         )
         definition = _create_definition(features)
@@ -405,7 +403,7 @@ class TestHullGeneratorIntegration:
     def test_knuckle_in_generated_hull(self):
         """HullGenerator should include knuckle lines."""
         features = HullFeatures(
-            chine_type=ChineType.HARD,
+            chine_count=1,
             knuckle_lines=[KnuckleLineConfig(height_ratio=0.7)]
         )
         definition = _create_definition(features)
@@ -422,7 +420,7 @@ class TestHullGeneratorIntegration:
     def test_combined_features(self):
         """Hull with spray rails, knuckles, and chines."""
         features = HullFeatures(
-            chine_type=ChineType.HARD,
+            chine_count=1,
             spray_rails=[
                 SprayRailConfig(height_ratio=0.2),
                 SprayRailConfig(height_ratio=0.35),
@@ -448,7 +446,7 @@ class TestHullGeneratorIntegration:
     def test_longitudinal_features_collected(self):
         """HullGenerator should collect longitudinal features."""
         features = HullFeatures(
-            chine_type=ChineType.HARD,
+            chine_count=1,
             spray_rails=[SprayRailConfig()],
             knuckle_lines=[KnuckleLineConfig()],
         )
@@ -472,7 +470,7 @@ class TestHullVolumeWithFeatures:
     def test_hull_volume_with_spray_rails(self):
         """Hull with spray rails should have positive volume."""
         features = HullFeatures(
-            chine_type=ChineType.HARD,
+            chine_count=1,
             spray_rails=[
                 SprayRailConfig(height_ratio=0.2),
                 SprayRailConfig(height_ratio=0.35),
@@ -488,7 +486,7 @@ class TestHullVolumeWithFeatures:
     def test_hull_volume_with_knuckles(self):
         """Hull with knuckle lines should have positive volume."""
         features = HullFeatures(
-            chine_type=ChineType.HARD,
+            chine_count=1,
             knuckle_lines=[KnuckleLineConfig(height_ratio=0.75)]
         )
         definition = _create_definition(features)
@@ -505,7 +503,7 @@ class TestMeshValidity:
     def test_no_nan_in_points_with_spray_rails(self):
         """Generated sections should have no NaN positions with spray rails."""
         features = HullFeatures(
-            chine_type=ChineType.HARD,
+            chine_count=1,
             spray_rails=[SprayRailConfig(), SprayRailConfig(height_ratio=0.4)]
         )
         definition = _create_definition(features)
@@ -522,7 +520,7 @@ class TestMeshValidity:
     def test_no_nan_in_points_with_knuckles(self):
         """Generated sections should have no NaN positions with knuckles."""
         features = HullFeatures(
-            chine_type=ChineType.HARD,
+            chine_count=1,
             knuckle_lines=[KnuckleLineConfig()]
         )
         definition = _create_definition(features)
@@ -542,7 +540,7 @@ class TestBackwardCompatibility:
     
     def test_hull_generation_without_features(self):
         """Hull generation without spray rails or knuckles should work."""
-        features = HullFeatures(chine_type=ChineType.HARD)
+        features = HullFeatures(chine_count=1)
         definition = _create_definition(features)
         
         generator = HullGenerator(GeneratorConfig(num_sections=21))
@@ -553,7 +551,7 @@ class TestBackwardCompatibility:
     
     def test_longitudinal_features_empty_without_config(self):
         """Longitudinal features should be empty if none configured."""
-        features = HullFeatures(chine_type=ChineType.HARD)
+        features = HullFeatures(chine_count=1)
         definition = _create_definition(features)
         
         generator = HullGenerator(GeneratorConfig(num_sections=21))

@@ -313,7 +313,7 @@ class CycleExecutor:
         """
         Run validation for GeometryProposal via program_executor.
         
-        This is the NEW PATH that bypasses synthesis.py and HullFamily.
+        This is the NEW PATH that bypasses legacy family/type synthesis.
         Uses program_executor for atomic compile → validate.
         
         Reference: MAGNET_Merge_Implementation_Plan.md Phase 2

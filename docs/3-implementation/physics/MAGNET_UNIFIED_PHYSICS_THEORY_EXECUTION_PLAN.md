@@ -1,5 +1,16 @@
 # MAGNET Unified Physics Theory (v2.5) — Codebase Audit + Execution Plan
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [magnet, unified, physics, theory, execution, plan]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 **Authority Spec:** `docs/1-theory/physics/MAGNET_UNIFIED_PHYSICS_THEORY.md`  
 **This doc:** Engineering plan to achieve the spec with minimal rework (blocker-first ordering).  
 **Scope:** Backend kernel + physics + compiler + minimal API/UI surfaces needed for the “Human Decision Point”.  

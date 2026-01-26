@@ -213,6 +213,8 @@ def solve_equilibrium_draft(
 
     x = x0
     last_x = x
+    last_r: Optional[float] = None
+    last_abs_r: Optional[float] = None
 
     for it in range(1, int(max_iter) + 1):
         try:
@@ -243,14 +245,40 @@ def solve_equilibrium_draft(
         else:
             low = max(low, x)
 
-        # If derivative unusable, bisect
-        if not math.isfinite(d_disp_dT) or abs(d_disp_dT) < 1e-6:
-            x_new = 0.5 * (low + high)
-        else:
-            x_new = x - (r / d_disp_dT)
-            # If Newton step escapes bracket, bisect
-            if not (low <= x_new <= high):
-                x_new = 0.5 * (low + high)
+        # --- E0.4: safe Newton with damping / trust region ---
+        # Discontinuities in Aw(T) (chine/step crossings) can cause Newton
+        # oscillation. We keep Newton as a *proposal* and accept it only if it
+        # is safe and improves |residual|; otherwise we fall back to bisection.
+        bracket_width = max(1e-12, float(high - low))
+
+        x_bisect = 0.5 * (low + high)
+        x_new = x_bisect
+
+        deriv_ok = math.isfinite(d_disp_dT) and abs(d_disp_dT) >= 1e-6
+        if deriv_ok:
+            step = float(-r / d_disp_dT)
+            # Trust region: limit step to a fraction of current bracket.
+            max_step = 0.35 * bracket_width
+            if abs(step) > max_step:
+                step = math.copysign(max_step, step)
+            x_candidate = float(x + step)
+            if low <= x_candidate <= high:
+                # If candidate makes things worse (or stalls), prefer bisection.
+                accept = True
+                if last_abs_r is not None and abs(float(r)) > float(last_abs_r) * 1.5:
+                    accept = False
+                if accept:
+                    try:
+                        r_cand, _, _ = _eval_residual(geometry, x_candidate, target_mt, seawater_density)
+                        _update_best(x_candidate, r_cand)
+                        if abs(r_cand) <= abs(r):
+                            x_new = x_candidate
+                        else:
+                            x_new = x_bisect
+                    except Exception:
+                        x_new = x_bisect
+            else:
+                x_new = x_bisect
 
         # Clamp to domain
         x_new = max(float(min_draft_m), min(float(max_draft_m), float(x_new)))
@@ -269,6 +297,8 @@ def solve_equilibrium_draft(
                 )
             break
 
+        last_r = float(r)
+        last_abs_r = abs(float(r))
         last_x = x
         x = x_new
 

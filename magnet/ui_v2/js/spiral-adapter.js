@@ -147,8 +147,9 @@ class SpiralAdapter {
     this._loadingPhase = null;
 
     // Demo reliability: allow long-running LLM/compile/physics.
-    // Use a single constant so curl/docs/UI align on ~60s expectations.
-    this._requestTimeoutMs = 60000;
+    // CREATE often requires large JSON artifacts; 60s is routinely too short.
+    // Keep this higher to avoid client abort while the server is still working.
+    this._requestTimeoutMs = 180000;
     
     // Initialize clarification panel
     const clarificationContainer = document.getElementById('clarificationContainer');
@@ -250,7 +251,9 @@ class SpiralAdapter {
           request_id: crypto?.randomUUID?.() ?? String(Date.now()),
           min_confidence: 0.6,
           force_apply: false,
-          run_critical_phases: true,
+          // PRODUCTION: default off. Only hydrostatics is a gate; downstream grades
+          // should be user-triggered to avoid noisy "partial" banners.
+          run_critical_phases: false,
           glb_timeout_ms: 2000,
           glb_retry_limit: 5
         })

@@ -1,5 +1,16 @@
 # MAGNET Full Design Flow (Human Intent → Geometry → Physics → State → Visualization)
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [magnet, full, design, flow]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 This document describes MAGNET’s end-to-end design flow as implemented in the codebase. It is written for skeptical technical reviewers (naval architects, computational geometry engineers, and systems engineers). It is not marketing material. Where models are approximate, the approximation is stated explicitly, along with validity regimes and known failure modes.
 
 The core claim of MAGNET is narrow and testable:

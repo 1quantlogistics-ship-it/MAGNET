@@ -1,5 +1,16 @@
 # MAGNET Physics Gaps and Solutions v1.0
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [magnet, physics, gaps, and, solutions]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 > **Document Purpose:** Identifies physics/validation gaps for novel forms and proposes concrete solutions.  
 > **Status:** Implementation Specification  
 > **Last Updated:** 2026-01-05  

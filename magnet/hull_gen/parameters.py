@@ -10,11 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-from .enums import (
-    HullType, ChineType, StemProfile, SternProfile,
-    TransomType, KeelType, SectionShape, BowStyle
-)
-
 
 @dataclass
 class MainDimensions:
@@ -157,61 +152,6 @@ class FormCoefficients:
 
     lcf: float = 0.5
     """Longitudinal center of flotation (fraction of LWL from AP)."""
-
-    @classmethod
-    def for_hull_type(cls, hull_type: HullType, speed_length_ratio: float = 1.0) -> 'FormCoefficients':
-        """
-        Generate typical coefficients for hull type.
-
-        Args:
-            hull_type: Type of hull
-            speed_length_ratio: V/sqrt(L) (knots/sqrt(ft)) for tuning
-        """
-        if hull_type == HullType.DEEP_V_PLANING:
-            return cls(
-                cb=0.35 + 0.05 * (1 - speed_length_ratio / 3),
-                cp=0.55 + 0.05 * (1 - speed_length_ratio / 3),
-                cm=0.65,
-                cwp=0.70,
-                lcb=0.40,  # Forward for planing
-                lcf=0.42,
-            )
-        elif hull_type == HullType.SEMI_DISPLACEMENT:
-            return cls(
-                cb=0.45,
-                cp=0.62,
-                cm=0.72,
-                cwp=0.75,
-                lcb=0.48,
-                lcf=0.50,
-            )
-        elif hull_type == HullType.ROUND_BILGE:
-            return cls(
-                cb=0.55,
-                cp=0.68,
-                cm=0.80,
-                cwp=0.78,
-                lcb=0.52,
-                lcf=0.53,
-            )
-        elif hull_type == HullType.HARD_CHINE:
-            return cls(
-                cb=0.40,
-                cp=0.58,
-                cm=0.70,
-                cwp=0.72,
-                lcb=0.45,
-                lcf=0.47,
-            )
-        else:
-            return cls(
-                cb=0.45,
-                cp=0.60,
-                cm=0.75,
-                cwp=0.72,
-                lcb=0.50,
-                lcf=0.50,
-            )
 
     def validate(self) -> List[str]:
         """Validate coefficient ranges."""
@@ -597,29 +537,32 @@ class BowConfig:
     Phase 3: Added for angular/faceted bow forms.
     """
     
-    style: BowStyle = BowStyle.TRADITIONAL
-    """Bow form style."""
-    
     # Faceted bow parameters
-    facet_count: int = 2
-    """Panels per side (for FACETED style)."""
+    facet_count: int = 0
+    """Panels per side. 0 => smooth/lofted bow (no planar facets)."""
     
-    planarity: float = 1.0
-    """0=smooth blend, 1=sharp planar edges."""
+    planarity: float = 0.0
+    """0=smooth blend, 1=sharp planar edges (only meaningful when facet_count>=1)."""
     
     # Entry angle
     half_angle_deg: float = 25.0
     """Half-angle of bow entry (narrower = sharper)."""
     
     # Stem configuration
-    stem_profile: StemProfile = StemProfile.RAKED
-    """Stem (bow edge) profile type."""
-    
     stem_rake_deg: float = 15.0
     """Degrees from vertical (positive = aft rake, negative = forward)."""
     
+    stem_curvature: float = 0.0
+    """-1..+1 curvature shaping along the stem (continuous)."""
+    
+    stem_bulb_volume_m3: float = 0.0
+    """0 => no bulb. Continuous bulb volume control."""
+    
+    stem_bulb_position: float = 0.0
+    """Relative vertical position of bulb vs WL (m). Negative => below WL."""
+    
     stem_radius_m: float = 0.0
-    """Rounding radius at stem (0 = sharp)."""
+    """Rounding radius at stem edge (0 = sharp)."""
     
     # Region extent
     region_length: float = 0.20
@@ -633,17 +576,18 @@ class BowConfig:
     """Bow freeboard / midship freeboard."""
     
     def is_angular(self) -> bool:
-        """Check if bow style produces hard edges."""
-        return self.style in (BowStyle.WEDGE, BowStyle.AXE, BowStyle.FACETED)
+        """Check if bow config requests planar facets/hard edges."""
+        return float(self.planarity or 0.0) > 0.5 and int(self.facet_count or 0) >= 1
     
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "style": self.style.value,
             "facet_count": self.facet_count,
             "planarity": round(self.planarity, 2),
             "half_angle_deg": round(self.half_angle_deg, 1),
-            "stem_profile": self.stem_profile.value,
             "stem_rake_deg": round(self.stem_rake_deg, 1),
+            "stem_curvature": round(self.stem_curvature, 3),
+            "stem_bulb_volume_m3": round(self.stem_bulb_volume_m3, 6),
+            "stem_bulb_position": round(self.stem_bulb_position, 3),
             "stem_radius_m": round(self.stem_radius_m, 3),
             "region_length": round(self.region_length, 2),
             "flare_deg": round(self.flare_deg, 1),
@@ -654,17 +598,48 @@ class BowConfig:
     def from_dict(cls, data: Dict[str, Any]) -> 'BowConfig':
         """Create from dictionary."""
         return cls(
-            style=BowStyle(data.get("style", "traditional")),
-            facet_count=data.get("facet_count", 2),
-            planarity=data.get("planarity", 1.0),
+            facet_count=data.get("facet_count", 0),
+            planarity=data.get("planarity", 0.0),
             half_angle_deg=data.get("half_angle_deg", 25.0),
-            stem_profile=StemProfile(data.get("stem_profile", "raked")),
             stem_rake_deg=data.get("stem_rake_deg", 15.0),
+            stem_curvature=data.get("stem_curvature", 0.0),
+            stem_bulb_volume_m3=data.get("stem_bulb_volume_m3", 0.0),
+            stem_bulb_position=data.get("stem_bulb_position", 0.0),
             stem_radius_m=data.get("stem_radius_m", 0.0),
             region_length=data.get("region_length", 0.20),
             flare_deg=data.get("flare_deg", 10.0),
             freeboard_ratio=data.get("freeboard_ratio", 1.2),
         )
+
+
+@dataclass(frozen=True)
+class KeelAttachment:
+    """
+    Keel as an attachment (enum-free).
+
+    NOTE: This is a lightweight param stub. The true geometry lives as a
+    `geometry.body` resource in DesignState and is attached via DSL/operators.
+    """
+
+    body_id: str
+    station_start: float = 0.0
+    station_end: float = 1.0
+    depth_m: float = 0.0
+    width_m: float = 0.0
+
+
+@dataclass(frozen=True)
+class SternConfig:
+    """Stern configuration (all continuous; no profile enums)."""
+
+    transom_width_ratio: float = 0.85
+    transom_height_ratio: float = 0.8
+    transom_immersion_m: float = 0.0  # negative => dry
+    transom_rake_deg: float = 12.0
+    run_angle_deg: float = 15.0
+    tunnel_count: int = 0
+    tunnel_width_m: float = 0.0
+    tunnel_depth_m: float = 0.0
 
 
 # =============================================================================
@@ -1567,7 +1542,6 @@ class HullFeatures:
     """
 
     # === CHINE ===
-    chine_type: ChineType = ChineType.NONE
     chine_width_mm: float = 0.0
     """Spray rail / chine flat width (mm)."""
     
@@ -1579,20 +1553,20 @@ class HullFeatures:
     """Chine style: 'standard', 'reverse', or 'variable'."""
     
     chines: List[ChineConfig] = field(default_factory=list)
-    """Explicit chine configurations (overrides chine_type defaults)."""
+    """Explicit chine configurations (overrides generated defaults)."""
     
     # Variable chine control
-    chine_transition_start: float = 0.3
+    chine_transition_start: float = 0.0
     """Station where soft→hard transition begins (for variable chine)."""
     
-    chine_transition_end: float = 0.6
+    chine_transition_end: float = 0.0
     """Station where transition completes (for variable chine)."""
     
     # Reverse chine (sponson) specific
-    reverse_chine_height_ratio: float = 0.4
+    reverse_chine_height_ratio: float = 0.0
     """Height of reverse chine as fraction of draft."""
     
-    reverse_chine_extension_m: float = 0.1
+    reverse_chine_extension_m: float = 0.0
     """How far reverse chine extends outward (m)."""
     
     # Chine flat
@@ -1600,7 +1574,6 @@ class HullFeatures:
     """Width of horizontal flat at main chine (m)."""
 
     # === BOW ===
-    stem_profile: StemProfile = StemProfile.RAKED
     stem_rake_deg: float = 15.0
     """Stem rake angle from vertical (deg)."""
 
@@ -1611,11 +1584,8 @@ class HullFeatures:
     """Waterline entry half-angle (deg)."""
     
     # === Phase 3: Bow form configuration ===
-    bow_style: BowStyle = BowStyle.TRADITIONAL
-    """Bow form style (traditional, wedge, axe, faceted, wave_piercing)."""
-    
     bow_config: Optional['BowConfig'] = None
-    """Explicit bow configuration (overrides bow_style defaults)."""
+    """Explicit bow configuration (preferred; enum-free)."""
     
     bow_facet_count: int = 2
     """Number of facets per side for FACETED bow style."""
@@ -1644,8 +1614,6 @@ class HullFeatures:
     """Feature flag for knuckle lines."""
 
     # === STERN ===
-    stern_profile: SternProfile = SternProfile.TRANSOM
-    transom_type: TransomType = TransomType.DRY
     transom_rake_deg: float = 12.0
     """Transom rake angle from vertical (deg)."""
 
@@ -1658,6 +1626,9 @@ class HullFeatures:
     
     transom_preset: Optional[str] = None
     """Transom preset name: 'vertical' | 'raked' | 'stepped' | 'tunneled' | 'sugar_scoop'."""
+
+    stern: Optional[SternConfig] = None
+    """Optional stern configuration (preferred; enum-free)."""
 
     # === Phase 6: Tumblehome ===
     tumblehome_enabled: bool = False
@@ -1690,9 +1661,11 @@ class HullFeatures:
     """Full parametric deck configuration."""
 
     # === KEEL ===
-    keel_type: KeelType = KeelType.FLAT
     skeg_height_m: float = 0.0
     """Skeg height if applicable (m)."""
+
+    keel_attachments: List[KeelAttachment] = field(default_factory=list)
+    """Optional keel attachments (preferred; enum-free)."""
 
     # === TUNNELS ===
     has_tunnels: bool = False
@@ -1715,105 +1688,66 @@ class HullFeatures:
         if self.chines:
             return sorted(self.chines, key=lambda c: c.height_ratio)
         
-        # Generate default configs based on chine_type
+        # Generate default configs from continuous controls (enum-free)
         flat_width = self.chine_flat_width_m or (self.chine_width_mm / 1000.0)
-        
-        if self.chine_type in (ChineType.NONE, ChineType.SOFT):
+
+        # Reverse chine enabled (outward-angled): require explicit style + nonzero params.
+        if (
+            str(self.chine_style or "standard") == "reverse"
+            and float(self.reverse_chine_height_ratio or 0.0) > 0.0
+            and float(self.reverse_chine_extension_m or 0.0) > 0.0
+        ):
+            return [
+                ChineConfig(
+                    height_ratio=float(self.reverse_chine_height_ratio),
+                    angle_deg=-30,  # Negative = outward angle
+                    is_hard=True,
+                    flat_width_m=flat_width,
+                )
+            ]
+
+        count = int(self.chine_count or 0)
+        if count <= 0:
             return []
-        elif self.chine_type in (ChineType.HARD, ChineType.SINGLE):
-            return [ChineConfig(
-                height_ratio=0.3, 
-                angle_deg=45, 
-                is_hard=True,
-                flat_width_m=flat_width,
-            )]
-        elif self.chine_type == ChineType.DOUBLE:
+        if count == 1:
+            return [
+                ChineConfig(
+                    height_ratio=0.3,
+                    angle_deg=45,
+                    is_hard=True,
+                    flat_width_m=flat_width,
+                )
+            ]
+        if count == 2:
             return [
                 ChineConfig(height_ratio=0.20, angle_deg=50, is_hard=True),
                 ChineConfig(height_ratio=0.50, angle_deg=35, is_hard=True, flat_width_m=flat_width),
             ]
-        elif self.chine_type == ChineType.TRIPLE:
-            return [
-                ChineConfig(height_ratio=0.15, angle_deg=55, is_hard=True),  # Bottom spray rail
-                ChineConfig(height_ratio=0.35, angle_deg=45, is_hard=True),  # Main chine
-                ChineConfig(height_ratio=0.60, angle_deg=30, is_hard=True, flat_width_m=flat_width),  # Upper chine
-            ]
-        elif self.chine_type == ChineType.REVERSE:
-            return [ChineConfig(
-                height_ratio=self.reverse_chine_height_ratio,
-                angle_deg=-30,  # Negative = outward angle
-                is_hard=True,
-            )]
-        elif self.chine_type == ChineType.VARIABLE:
-            # Variable chine uses single config but edge type varies along length
-            return [ChineConfig(height_ratio=0.3, angle_deg=45, is_hard=True)]
-        else:
-            return [ChineConfig()]
+        # 3+ => triple (cap at three configs)
+        return [
+            ChineConfig(height_ratio=0.15, angle_deg=55, is_hard=True),
+            ChineConfig(height_ratio=0.35, angle_deg=45, is_hard=True),
+            ChineConfig(height_ratio=0.60, angle_deg=30, is_hard=True, flat_width_m=flat_width),
+        ]
 
     def get_bow_config(self) -> 'BowConfig':
         """
         Get bow configuration, generating defaults if not explicit.
         
-        Returns BowConfig based on bow_style or explicit bow_config.
+        Returns BowConfig based on explicit bow_config, or a traditional default.
         """
         if self.bow_config:
             return self.bow_config
         
-        # Generate defaults based on bow_style
-        if self.bow_style == BowStyle.WEDGE:
-            return BowConfig(
-                style=BowStyle.WEDGE,
-                facet_count=1,  # Single panel per side = wedge
-                planarity=1.0,
-                half_angle_deg=22.0,
-                stem_profile=self.stem_profile,
-                stem_rake_deg=self.stem_rake_deg or 12.0,
-                region_length=self.bow_region_length,
-                flare_deg=self.bow_flare_deg,
-            )
-        elif self.bow_style == BowStyle.AXE:
-            return BowConfig(
-                style=BowStyle.AXE,
-                facet_count=1,
-                planarity=1.0,
-                half_angle_deg=15.0,  # Very sharp entry
-                stem_profile=StemProfile.VERTICAL,
-                stem_rake_deg=0.0,
-                region_length=self.bow_region_length,
-                flare_deg=self.bow_flare_deg,
-            )
-        elif self.bow_style == BowStyle.FACETED:
-            return BowConfig(
-                style=BowStyle.FACETED,
-                facet_count=self.bow_facet_count or 3,
-                planarity=1.0,
-                half_angle_deg=self.bow_entrance_deg,
-                stem_profile=self.stem_profile,
-                stem_rake_deg=self.stem_rake_deg,
-                region_length=self.bow_region_length,
-                flare_deg=self.bow_flare_deg,
-            )
-        elif self.bow_style == BowStyle.WAVE_PIERCING:
-            return BowConfig(
-                style=BowStyle.WAVE_PIERCING,
-                facet_count=1,
-                planarity=0.0,  # Smooth wave-piercer
-                half_angle_deg=12.0,  # Very fine entry
-                stem_profile=StemProfile.WAVE_PIERCING,
-                stem_rake_deg=-5.0,  # Forward rake
-                region_length=self.bow_region_length or 0.25,
-                flare_deg=-5.0,  # Tumblehome at bow
-            )
-        else:
-            # TRADITIONAL or default
-            return BowConfig(
-                style=BowStyle.TRADITIONAL,
-                half_angle_deg=self.bow_entrance_deg,
-                stem_profile=self.stem_profile,
-                stem_rake_deg=self.stem_rake_deg,
-                region_length=self.bow_region_length,
-                flare_deg=self.bow_flare_deg,
-            )
+        # Default: traditional bow derived from continuous parameters.
+        return BowConfig(
+            facet_count=0,
+            planarity=0.0,
+            half_angle_deg=self.bow_entrance_deg,
+            stem_rake_deg=self.stem_rake_deg,
+            region_length=self.bow_region_length,
+            flare_deg=self.bow_flare_deg,
+        )
 
     def get_spray_rails(self) -> List['SprayRailConfig']:
         """
@@ -1931,7 +1865,6 @@ class HullFeatures:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "chine_type": self.chine_type.value,
             "chine_width_mm": self.chine_width_mm,
             "chine_count": self.chine_count,
             "chine_style": self.chine_style,
@@ -1941,11 +1874,9 @@ class HullFeatures:
             "reverse_chine_height_ratio": self.reverse_chine_height_ratio,
             "reverse_chine_extension_m": self.reverse_chine_extension_m,
             "chine_flat_width_m": self.chine_flat_width_m,
-            "stem_profile": self.stem_profile.value,
             "stem_rake_deg": self.stem_rake_deg,
             "bow_flare_deg": self.bow_flare_deg,
             "bow_entrance_deg": self.bow_entrance_deg,
-            "bow_style": self.bow_style.value,
             "bow_config": self.bow_config.to_dict() if self.bow_config else None,
             "bow_facet_count": self.bow_facet_count,
             "bow_region_length": self.bow_region_length,
@@ -1955,12 +1886,11 @@ class HullFeatures:
             "has_spray_rails": self.has_spray_rails,
             "knuckle_lines": [k.to_dict() for k in self.knuckle_lines],
             "has_knuckle_lines": self.has_knuckle_lines,
-            "stern_profile": self.stern_profile.value,
-            "transom_type": self.transom_type.value,
             "transom_rake_deg": self.transom_rake_deg,
             "transom_width_fraction": self.transom_width_fraction,
             "transom_config": self.transom_config.to_dict() if self.transom_config else None,
             "transom_preset": self.transom_preset,
+            "stern": self.stern.__dict__ if self.stern else None,
             # Phase 6: Tumblehome
             "tumblehome_enabled": self.tumblehome_enabled,
             "tumblehome_angle_deg": self.tumblehome_angle_deg,
@@ -1973,8 +1903,8 @@ class HullFeatures:
             "deck_enabled": self.deck_enabled,
             "deck_camber_m": self.deck_camber_m,
             "deck_config": self.deck_config.to_dict() if self.deck_config else None,
-            "keel_type": self.keel_type.value,
             "skeg_height_m": self.skeg_height_m,
+            "keel_attachments": [k.__dict__ for k in self.keel_attachments],
             "has_tunnels": self.has_tunnels,
             "tunnel_width_m": self.tunnel_width_m,
             "tunnel_depth_m": self.tunnel_depth_m,
@@ -1999,6 +1929,16 @@ class HullFeatures:
         
         transom_config_data = data.get("transom_config")
         transom_config = TransomConfig.from_dict(transom_config_data) if transom_config_data else None
+
+        stern_data = data.get("stern")
+        stern = SternConfig(**stern_data) if isinstance(stern_data, dict) else None
+
+        keel_attachments_data = data.get("keel_attachments") or []
+        keel_attachments = []
+        if isinstance(keel_attachments_data, list):
+            for k in keel_attachments_data:
+                if isinstance(k, dict) and k.get("body_id"):
+                    keel_attachments.append(KeelAttachment(**k))
         
         # Phase 6 configs
         tumblehome_config_data = data.get("tumblehome_config")
@@ -2011,21 +1951,18 @@ class HullFeatures:
         deck_config = DeckConfig.from_dict(deck_config_data) if deck_config_data else None
         
         return cls(
-            chine_type=ChineType(data.get("chine_type", "none")),
             chine_width_mm=data.get("chine_width_mm", 0.0),
             chine_count=data.get("chine_count", 1),
             chine_style=data.get("chine_style", "standard"),
             chines=chines,
-            chine_transition_start=data.get("chine_transition_start", 0.3),
-            chine_transition_end=data.get("chine_transition_end", 0.6),
-            reverse_chine_height_ratio=data.get("reverse_chine_height_ratio", 0.4),
-            reverse_chine_extension_m=data.get("reverse_chine_extension_m", 0.1),
+            chine_transition_start=data.get("chine_transition_start", 0.0),
+            chine_transition_end=data.get("chine_transition_end", 0.0),
+            reverse_chine_height_ratio=data.get("reverse_chine_height_ratio", 0.0),
+            reverse_chine_extension_m=data.get("reverse_chine_extension_m", 0.0),
             chine_flat_width_m=data.get("chine_flat_width_m", 0.0),
-            stem_profile=StemProfile(data.get("stem_profile", "raked")),
             stem_rake_deg=data.get("stem_rake_deg", 15.0),
             bow_flare_deg=data.get("bow_flare_deg", 0.0),
             bow_entrance_deg=data.get("bow_entrance_deg", 25.0),
-            bow_style=BowStyle(data.get("bow_style", "traditional")),
             bow_config=bow_config,
             bow_facet_count=data.get("bow_facet_count", 2),
             bow_region_length=data.get("bow_region_length", 0.20),
@@ -2035,12 +1972,11 @@ class HullFeatures:
             has_spray_rails=data.get("has_spray_rails", False),
             knuckle_lines=knuckle_lines,
             has_knuckle_lines=data.get("has_knuckle_lines", False),
-            stern_profile=SternProfile(data.get("stern_profile", "transom")),
-            transom_type=TransomType(data.get("transom_type", "dry")),
             transom_rake_deg=data.get("transom_rake_deg", 12.0),
             transom_width_fraction=data.get("transom_width_fraction", 0.85),
             transom_config=transom_config,
             transom_preset=data.get("transom_preset"),
+            stern=stern,
             # Phase 6: Tumblehome
             tumblehome_enabled=data.get("tumblehome_enabled", False),
             tumblehome_angle_deg=data.get("tumblehome_angle_deg", 5.0),
@@ -2053,8 +1989,8 @@ class HullFeatures:
             deck_enabled=data.get("deck_enabled", True),
             deck_camber_m=data.get("deck_camber_m", 0.0),
             deck_config=deck_config,
-            keel_type=KeelType(data.get("keel_type", "flat")),
             skeg_height_m=data.get("skeg_height_m", 0.0),
+            keel_attachments=keel_attachments,
             has_tunnels=data.get("has_tunnels", False),
             tunnel_width_m=data.get("tunnel_width_m", 0.0),
             tunnel_depth_m=data.get("tunnel_depth_m", 0.0),
@@ -2072,9 +2008,6 @@ class HullDefinition:
     # === IDENTIFICATION ===
     hull_id: str = ""
     hull_name: str = ""
-
-    # === TYPE ===
-    hull_type: HullType = HullType.HARD_CHINE
 
     # === PARAMETERS ===
     dimensions: MainDimensions = field(default_factory=MainDimensions)
@@ -2117,7 +2050,6 @@ class HullDefinition:
         return {
             "hull_id": self.hull_id,
             "hull_name": self.hull_name,
-            "hull_type": self.hull_type.value,
             "dimensions": self.dimensions.to_dict(),
             "coefficients": self.coefficients.to_dict(),
             "deadrise": self.deadrise.to_dict(),
@@ -2133,7 +2065,6 @@ class HullDefinition:
         return cls(
             hull_id=data.get("hull_id", ""),
             hull_name=data.get("hull_name", ""),
-            hull_type=HullType(data.get("hull_type", "hard_chine")),
             dimensions=MainDimensions.from_dict(data.get("dimensions", {})),
             coefficients=FormCoefficients.from_dict(data.get("coefficients", {})),
             deadrise=DeadriseProfile.from_dict(data.get("deadrise", {})),

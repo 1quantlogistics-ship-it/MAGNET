@@ -43,7 +43,7 @@ Propulsion (5)                  │
     ↓                           │
 Weight (6)                      │
     ↓                           │
-Stability (7) ──→ [GATE] ──────→ Reject if GM < 0
+Stability (7) ──→ [GRADE] ─────→ Severe warning if GM < 0 (Human Decision Point)
     ↓
 Compliance (8)
     ↓
@@ -75,10 +75,23 @@ When a phase's inputs change, it becomes `STALE`:
 
 ## Gate vs Grade
 
-Only **Stability (7)** is a Gate. All other phases are Grades.
+### Authoritative doctrine (Unified Physics Theory)
+Per `docs/1-theory/physics/MAGNET_UNIFIED_PHYSICS_THEORY.md`:
+- **Gates (validity)**:
+  - geometric validity (pre-gate)
+  - **hydrostatics** (primary gate: “does it float?”)
+- **Grades (never invalidate design)**:
+  - stability (GM/GZ)
+  - resistance method envelope limits
+  - others
 
-- **Gate:** Failure blocks progression. Design is invalid.
-- **Grade:** Failure produces warning. Design may proceed.
+### Human Decision Point (mandatory halt for severe grades)
+Stability can be *severely* wrong (e.g. GM < 0). This does not make the design “invalid”,
+but it should halt automatic downstream automation until a user explicitly approves continuation.
+
+**Rule**:
+- A severe grade sets `kernel.awaiting_human_decision=true` and provides a structured request.
+- The system returns the computed values + suggested fixes; the user decides “continue anyway” vs “revise”.
 
 ---
 

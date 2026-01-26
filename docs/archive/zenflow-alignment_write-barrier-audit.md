@@ -1,5 +1,16 @@
 # ZenFlow Alignment: Finding the True Write Barrier
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [zenflow, alignment, write, barrier, audit]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 **Created:** January 15, 2026
 **Status:** Active Investigation
 **Predecessor:** AGENT IMPLEMENTATIONRIVER.md (Task 1 Complete)

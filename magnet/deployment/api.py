@@ -21,6 +21,7 @@ import asyncio
 import os
 import json
 import hashlib
+import math
 
 if TYPE_CHECKING:
     from magnet.bootstrap.app import AppContext
@@ -77,6 +78,8 @@ try:
         phases: Optional[List[str]] = None
         max_iterations: int = 5
         async_mode: bool = False
+        # Optional optimistic lock (prevents stale writes / race conditions)
+        expected_version: Optional[int] = None
 
     class PhaseApprove(BaseModel):
         """Request model for approving a phase."""
@@ -92,6 +95,11 @@ try:
         """Request model for running validation."""
         phase: Optional[str] = None
         validators: Optional[List[str]] = None
+        # Optional optimistic lock (prevents stale writes / race conditions)
+        expected_version: Optional[int] = None
+        # If true, persist validator writes as a committed design version.
+        # Default is False: validate is diagnostic and should not create commits by default.
+        persist: bool = False
 
     class ActionSubmit(BaseModel):
         """Request model for submitting an ActionPlan."""
@@ -1255,6 +1263,53 @@ def create_fastapi_app(context: "AppContext" = None):
                 logger.warning(f"Could not resolve ResultAggregator: {e}")
         return None
 
+    def _build_design_scoped_pipeline(state_manager):
+        """
+        Build a design-scoped validator pipeline bound to the provided StateManager.
+
+        IMPORTANT:
+        - ValidatorTopology is definition-only and can be reused.
+        - PipelineExecutor MUST be created per request because it binds state_manager.
+        """
+        from magnet.validators.topology import ValidatorTopology
+        from magnet.validators.registry import ValidatorRegistry
+        from magnet.validators.executor import PipelineExecutor
+        from magnet.validators.aggregator import ResultAggregator
+
+        # Ensure validator instances exist (implementations wired to IDs)
+        try:
+            if not ValidatorRegistry.get_all_instances():
+                ValidatorRegistry.initialize_defaults()
+                ValidatorRegistry.instantiate_all()
+        except Exception as e:
+            logger.warning(f"ValidatorRegistry init: {e}")
+
+        # Always build a fresh topology from the authoritative builtin registry.
+        # (Avoids DI/container-cached topology drift across reloads/workers.)
+        topology = ValidatorTopology()
+        topology.add_all_validators()
+        topology.build()
+
+        executor = PipelineExecutor(
+            topology=topology,
+            state_manager=state_manager,
+            validator_registry=ValidatorRegistry.get_all_instances(),
+            design_id=getattr(getattr(state_manager, "state", None), "design_id", None),
+        )
+        aggregator = ResultAggregator(topology=topology, state_manager=state_manager)
+
+        # Seed cross-phase completion tracking from persisted design state so that
+        # validators in later phases can run even when their dependencies were completed
+        # in earlier phase requests (e.g., weight depends on physics/hydrostatics from hull).
+        try:
+            completed = state_manager.get("orchestration.completed_validators")
+            if isinstance(completed, list) and completed:
+                executor._all_completed_validators = set(str(x) for x in completed if x)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+        return executor, aggregator
+
     def get_action_validator():
         """Get ActionPlanValidator for action validation."""
         try:
@@ -1434,7 +1489,26 @@ def create_fastapi_app(context: "AppContext" = None):
         except Exception:
             raise HTTPException(status_code=503, detail="StateManager not available")
 
-        design_id = f"MAGNET-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:4].upper()}"
+        # Generate an ID with enough entropy to avoid collisions.
+        # Also avoid overwriting an existing design file (single authority: no silent merges).
+        store = None
+        try:
+            store = DesignStore(context.container if context else None)
+        except Exception:
+            store = None
+
+        design_id = None
+        for _ in range(10):
+            candidate = f"MAGNET-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
+            try:
+                if store and store.exists(candidate):
+                    continue
+            except Exception:
+                pass
+            design_id = candidate
+            break
+        if not design_id:
+            design_id = f"MAGNET-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex.upper()}"
 
         sm = StateManager()
 
@@ -1451,6 +1525,14 @@ def create_fastapi_app(context: "AppContext" = None):
         # New designs should start BLANK (no legacy geometry fallback).
         # Geometry should come from design-language resources via spiral chat/sketch.
         set_state_value(sm, "metadata.legacy_geometry_fallback_enabled", False, "api")
+
+        # Truthfulness: new blank designs must never inherit an old truth badge.
+        # Start in DECOUPLED until geometry+physics are explicitly generated and validated.
+        try:
+            set_state_value(sm, "simulation_integrity", "DECOUPLED", "api")
+            set_state_value(sm, "metadata.simulation_integrity", "DECOUPLED", "api")
+        except Exception:
+            pass
 
         if design.vessel_type:
             set_state_value(sm, "mission.vessel_type", design.vessel_type, "api")
@@ -1480,7 +1562,8 @@ def create_fastapi_app(context: "AppContext" = None):
 
         # Persist to DesignStore (single authority for GET /designs/{id} and spiral endpoints)
         try:
-            store = DesignStore(context.container if context else None)
+            if store is None:
+                store = DesignStore(context.container if context else None)
             store.save(design_id, state_manager=sm)
         except Exception as e:
             logger.warning(f"Failed to persist new design {design_id}: {e}")
@@ -1525,13 +1608,37 @@ def create_fastapi_app(context: "AppContext" = None):
             if isinstance(payload, dict):
                 if hasattr(sm, "export_state_flat"):
                     state_flat = sm.export_state_flat(include_metadata=False)
+                    # Expand canonical aliases into the flat map for API consumers.
+                    # (Many parts of the system use canonical keys like hull.bm_m even when the
+                    # underlying stored field is a legacy/dataclass name like hull.bmt.)
+                    try:
+                        from magnet.core.field_aliases import FIELD_ALIASES
+                        if isinstance(state_flat, dict):
+                            for alias, target in (FIELD_ALIASES or {}).items():
+                                if alias not in state_flat and target in state_flat:
+                                    state_flat[alias] = state_flat.get(target)
+                    except Exception:
+                        pass
                     payload["state"] = state_flat
                     if hasattr(sm, "export_api_provenance"):
                         payload["provenance"] = sm.export_api_provenance(state_flat, include=include_provenance)
                         payload["provenance_mode"] = include_provenance
         except Exception as e:
             logger.warning(f"Failed to attach provenance for design {design_id}: {e}")
-        return payload
+
+        # Ensure response is strict-JSON safe (no NaN/Infinity).
+        def _sanitize(obj: Any) -> Any:
+            if isinstance(obj, float):
+                return obj if math.isfinite(obj) else None
+            if isinstance(obj, dict):
+                return {k: _sanitize(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [_sanitize(v) for v in obj]
+            if isinstance(obj, tuple):
+                return [_sanitize(v) for v in obj]
+            return obj
+
+        return _sanitize(payload)
 
     @app.patch("/api/v1/designs/{design_id}")
     async def update_design(
@@ -2056,8 +2163,12 @@ def create_fastapi_app(context: "AppContext" = None):
 
     # Module 63: Phase ID mapping (UI names → kernel canonical names)
     PHASE_ID_MAP = {
+        # Legacy UI/client phase names (compat only)
         "hull_form": "hull",
-        "weight_stability": "weight",  # Note: stability is separate phase
+        "weight_stability": "weight",  # NOTE: stability is separate phase
+        "mission_requirements": "mission",
+        "structural_scantlings": "structure",
+        "general_arrangement": "arrangement",
         # All other names pass through unchanged
     }
 
@@ -2101,51 +2212,37 @@ def create_fastapi_app(context: "AppContext" = None):
             )
             return {"job_id": job_id, "phase": phase, "status": "submitted"}
 
-        # Run synchronously (design-scoped)
+        # Run synchronously (design-scoped + persisted)
         if state_manager:
+            # Optimistic locking (narrow bridge): reject stale runs if provided.
+            try:
+                design_version_before = int(state_manager.get("design_version", 0) or 0)
+            except Exception:
+                design_version_before = 0
+
+            if run_config.expected_version is not None and int(run_config.expected_version) != int(design_version_before):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "version_conflict",
+                        "design_id": design_id,
+                        "expected_version": int(run_config.expected_version),
+                        "actual_version": int(design_version_before),
+                        "message": "Design was modified by another request",
+                    },
+                )
+
+            txn_id = None
             try:
                 from magnet.kernel.conductor import Conductor
+                from magnet.deployment.design_store import DesignStore, VersionConflictError
 
-                # Build a design-scoped conductor wired to a design-scoped validator pipeline.
+                # All kernel writes must be atomic and versioned.
+                txn_id = state_manager.begin_transaction()
+
                 conductor = Conductor(state_manager=state_manager)
                 try:
-                    from magnet.validators.topology import ValidatorTopology
-                    from magnet.validators.registry import ValidatorRegistry
-                    from magnet.validators.executor import PipelineExecutor
-                    from magnet.validators.aggregator import ResultAggregator
-
-                    # Prefer the already-built topology from DI if available.
-                    topology = None
-                    if context and context.container:
-                        try:
-                            topology = context.container.resolve(ValidatorTopology)
-                        except Exception:
-                            topology = None
-
-                    # Ensure validator instances exist BEFORE topology (topology needs definitions).
-                    try:
-                        if not ValidatorRegistry.get_all_instances():
-                            ValidatorRegistry.initialize_defaults()
-                            ValidatorRegistry.instantiate_all()
-                    except Exception as e:
-                        logger.warning(f"ValidatorRegistry init: {e}")
-
-                    # Create and build topology if not from DI.
-                    # CRITICAL: Must add validators BEFORE build() - build() locks the topology.
-                    if topology is None or not getattr(topology, '_is_built', False):
-                        topology = ValidatorTopology()
-                        try:
-                            topology.add_all_validators()
-                            topology.build()
-                        except Exception as e:
-                            logger.warning(f"Topology build: {e}")
-
-                    executor = PipelineExecutor(
-                        topology=topology,
-                        state_manager=state_manager,
-                        validator_registry=ValidatorRegistry.get_all_instances(),
-                    )
-                    aggregator = ResultAggregator(topology=topology, state_manager=state_manager)
+                    executor, aggregator = _build_design_scoped_pipeline(state_manager)
                     conductor.set_pipeline_executor(executor)
                     conductor.set_result_aggregator(aggregator)
                 except Exception as e:
@@ -2153,18 +2250,62 @@ def create_fastapi_app(context: "AppContext" = None):
 
                 result = conductor.run_phase(kernel_phase)
 
+                # If phase execution was blocked before any meaningful execution, do not commit.
+                # (Keeps versions clean and avoids persisting no-op runs.)
+                status_val = getattr(getattr(result, "status", None), "value", "")
+                if status_val == "blocked":
+                    try:
+                        state_manager.rollback()
+                    except Exception:
+                        pass
+                else:
+                    # Persist cross-phase validator completion set for subsequent phases.
+                    try:
+                        completed = sorted(getattr(executor, "get_completed_validators")())
+                        state_manager.set("orchestration.completed_validators", completed, "kernel/validator_pipeline")
+                    except Exception:
+                        pass
+
+                    state_manager.commit()
+                    store = DesignStore(context.container if (context and context.container) else None)
+                    try:
+                        store.save(design_id, state_manager=state_manager, expected_version=design_version_before)
+                    except VersionConflictError as e:
+                        # Roll back in-memory (best-effort) and surface 409.
+                        raise HTTPException(status_code=409, detail=e.to_dict())
+
                 ws_manager.queue_message(WSMessage(
                     type="phase_completed",
                     design_id=design_id,
-                    payload={"phase": phase, "status": "completed"},
+                    payload={
+                        "phase": phase,
+                        "kernel_phase": kernel_phase,
+                        "status": status_val or "completed",
+                    },
                 ))
+
+                design_version_after = design_version_before
+                try:
+                    design_version_after = int(state_manager.get("design_version", design_version_before) or design_version_before)
+                except Exception:
+                    design_version_after = design_version_before
 
                 return {
                     "phase": phase,
-                    "status": "completed",
+                    "kernel_phase": kernel_phase,
+                    "status": status_val or "completed",
+                    "design_version_before": int(design_version_before),
+                    "design_version_after": int(design_version_after),
                     "result": result.to_dict() if hasattr(result, 'to_dict') else {},
                 }
+            except HTTPException:
+                raise
             except Exception as e:
+                try:
+                    if getattr(state_manager, "in_transaction", lambda: False)():
+                        state_manager.rollback()
+                except Exception:
+                    pass
                 logger.error(f"Phase {phase} failed: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
@@ -2180,8 +2321,6 @@ def create_fastapi_app(context: "AppContext" = None):
         phase: str,
         config: ValidationRun = ValidationRun(),
         state_manager=Depends(get_state_manager),
-        executor=Depends(get_pipeline_executor),
-        aggregator=Depends(get_result_aggregator),
     ):
         """Validate a specific phase using the configured pipeline executor."""
         if not state_manager:
@@ -2190,14 +2329,35 @@ def create_fastapi_app(context: "AppContext" = None):
         # Module 63: Map UI phase name to kernel canonical name
         kernel_phase = _map_phase_id(phase)
 
-        if not executor:
-            return {
-                "status": "error",
-                "message": "PipelineExecutor not available",
-                "phase": phase,
-            }
-
+        txn_started = False
+        committed = False
         try:
+            from magnet.deployment.design_store import DesignStore, VersionConflictError
+
+            # optimistic lock (optional)
+            try:
+                design_version_before = int(state_manager.get("design_version", 0) or 0)
+            except Exception:
+                design_version_before = 0
+            if config.expected_version is not None and int(config.expected_version) != int(design_version_before):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "version_conflict",
+                        "design_id": design_id,
+                        "expected_version": int(config.expected_version),
+                        "actual_version": int(design_version_before),
+                        "message": "Design was modified by another request",
+                    },
+                )
+
+            executor, aggregator = _build_design_scoped_pipeline(state_manager)
+
+            # Validate is read-only by default, but validators currently write derived outputs.
+            # We always run in a transaction so we can rollback unless persistence is requested.
+            state_manager.begin_transaction()
+            txn_started = True
+
             # Run phase validation via single authority (Guardrail #2)
             execution_state = executor.execute_phase(kernel_phase)
 
@@ -2266,6 +2426,7 @@ def create_fastapi_app(context: "AppContext" = None):
                 design_id=design_id,
                 payload={
                     "phase": phase,
+                    "kernel_phase": kernel_phase,
                     "passed": phase_success,
                 },
             ))
@@ -2274,6 +2435,7 @@ def create_fastapi_app(context: "AppContext" = None):
             base_payload = {
                 "status": "success" if phase_success else "failed",
                 "phase": phase,
+                "kernel_phase": kernel_phase,
                 "passed": bool(phase_success),
                 "validators_run": len(execution_state.completed) + len(execution_state.failed),
                 "validators_passed": validators_passed,
@@ -2333,14 +2495,29 @@ def create_fastapi_app(context: "AppContext" = None):
                     "grade": f"{kernel_phase}/grade",
                 })
 
+            # Persist validator writes only if explicitly requested.
+            if getattr(config, "persist", False):
+                state_manager.commit()
+                committed = True
+                store = DesignStore(context.container if (context and context.container) else None)
+                try:
+                    store.save(design_id, state_manager=state_manager, expected_version=design_version_before)
+                except VersionConflictError as e:
+                    raise HTTPException(status_code=409, detail=e.to_dict())
+
             return base_payload
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Phase validation failed: {e}")
-            return {
-                "status": "error",
-                "message": str(e),
-                "phase": phase,
-            }
+            raise HTTPException(status_code=500, detail=str(e))
+        finally:
+            # Default: rollback so validate is non-mutating.
+            if txn_started and not committed:
+                try:
+                    state_manager.rollback()
+                except Exception:
+                    pass
 
     @app.post("/api/v1/designs/{design_id}/phases/{phase}/approve")
     async def approve_phase(
@@ -2777,7 +2954,7 @@ def create_fastapi_app(context: "AppContext" = None):
             await ws_manager.disconnect(client.client_id)
 
     # =========================================================================
-    # Design Language Endpoints (NEW PATH - bypasses HullFamily enumeration)
+    # Design Language Endpoints (NEW PATH - bypasses legacy family/type priors)
     # =========================================================================
 
     # Request/Response models for design language
@@ -2837,7 +3014,7 @@ def create_fastapi_app(context: "AppContext" = None):
         """
         Execute a design program using geometry primitives.
         
-        This is the NEW PATH that bypasses HullFamily enumeration.
+        This is the NEW PATH that bypasses legacy family/type priors.
         Agents output geometry.* primitives, kernel compiles to HullGeometry.
         
         Example program:
@@ -3176,7 +3353,7 @@ def create_fastapi_app(context: "AppContext" = None):
     # THIS IS THE NEW PATH — separate from intent_protocol.py.
     #
     # Two systems coexist:
-    # 1. OLD: intent_protocol.py → parameter refinement → synthesis.py → HullFamily
+    # 1. OLD: intent_protocol.py → parameter refinement → legacy synthesis
     # 2. NEW: geometry_proposer.py → program_executor.py → compiler.py → HullGeometry
     #
     # This endpoint uses the NEW path exclusively. It does NOT touch intent_protocol.
@@ -3219,7 +3396,7 @@ def create_fastapi_app(context: "AppContext" = None):
         4. Validation (hydrostatics, resistance)
         5. Feedback returned with deltas
         
-        NO HullFamily. NO synthesis.py. Pure geometry primitives.
+        No family/type priors. Pure geometry primitives.
         
         Example conversation:
         ```
@@ -3510,6 +3687,12 @@ def create_fastapi_app(context: "AppContext" = None):
             return RedirectResponse(url="/ui/v2/")
 
         @app.get("/ui/v2", include_in_schema=False)
+        async def redirect_ui_v2_to_slash():
+            # IMPORTANT: index.html uses relative asset paths. If the user loads
+            # /ui/v2 (no trailing slash), the browser resolves `js/...` as /ui/js/...
+            # and the backend adapter fails to load.
+            return RedirectResponse(url="/ui/v2/")
+
         @app.get("/ui/v2/", response_class=HTMLResponse, include_in_schema=False)
         async def serve_ui_v2():
             """Serve Studio UI (single-origin, canonical at /ui/v2/)."""

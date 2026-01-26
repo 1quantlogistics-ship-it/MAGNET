@@ -4,7 +4,7 @@ Chat-based iterative naval architecture design loop.
 THIS IS THE NEW PATH — separate from intent_protocol.py.
 
 Two systems coexist:
-1. OLD: intent_protocol.py → parameter refinement → synthesis.py → HullFamily
+1. OLD: intent_protocol.py → parameter refinement → legacy synthesis
 2. NEW: geometry_proposer.py → program_executor.py → compiler.py → HullGeometry
 
 This module uses the NEW path exclusively. It does NOT map to intent_protocol.
@@ -168,7 +168,7 @@ class DesignConversation:
     6. NarrativeGenerator creates feedback with EnrichedDeltas
     7. User iterates
     
-    NO HullFamily. NO synthesis.py. Pure geometry primitives.
+    No family/type priors. Pure geometry primitives.
     
     Reference: MAGNET_Merge_Implementation_Plan.md Phase 6
     """

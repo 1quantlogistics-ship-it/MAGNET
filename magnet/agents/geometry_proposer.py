@@ -16,6 +16,16 @@ from pydantic import BaseModel, Field
 
 from .llm_client import LLMClient
 from .state_lens import extract_lens
+from magnet.llm.exceptions import ValidationError as LLMValidationError
+
+from magnet.agents.vessel_thinking_schema import parse_vessel_thinking_response
+from magnet.agents.vessel_thinking_validator import (
+    build_targeted_patch_instruction,
+    reexecute_checks,
+    validate_coverage_and_proof,
+    validate_observation_targets_against_geometry,
+    validate_verified_unverified_rules,
+)
 
 
 # =============================================================================
@@ -71,11 +81,38 @@ RULES:
 3. Use freeform strings for body_type, surface_type, medium — be descriptive
 4. Set confidence < 0.7 if the translation is uncertain
 5. If multiple approaches exist, output the SIMPLEST one first
+   - On a BLANK design, "simplest" means a minimal complete hull (body+sections+lofted surface),
+     NOT a discontinuity-only program.
+
+VERIFICATION CONTRACT (NO PRIORS):
+- You may invent any DOFs you want (open vocabulary).
+- If you claim PASS/FAIL checks (range/monotonic/varies) for a DOF, you MUST bind it to at least one
+  kernel-computable observable and provide measurable observation_targets.
+- If no suitable observable exists, mark the DOF UNVERIFIED (no PASS/FAIL checks) and state the consequence.
+- Observables are measurement functions only (rulers), not templates or hull-type mappings.
+- Observation targets may include `station_range: [lo, hi]` to scope the measurement to a region.
+- Default is whole-hull `[0.0, 1.0]`. Use regional scoping to express entry vs run character.
+- If you claim profile/topside intent (sheer profile, entry shape, flare/tumblehome, freeboard progression), bind those DOFs to the corresponding profile/topside observables and set targets.
+
+BLANK DESIGN REQUIREMENT (CRITICAL RELIABILITY):
+- If the current design has NO existing hull sections, you MUST create a complete minimal hull first:
+  1) CREATE `geometry.body`
+  2) CREATE >= 7 `geometry.section` for that body (stations in 0..1)
+  3) CREATE `geometry.surface` with `definition: "lofted"` for that body
+- Do NOT output only discontinuities/constraints. A hull cannot be compiled without sections.
 
 SECTION POINTS COORDINATE CONTRACT (CRITICAL):
 - For polygon sections, `points` is a 2D cross-section profile: `[[y, z], ...]`
 - DO NOT include X in points (NO `[x,y,z]` triples). X is derived ONLY from `station`.
 - If you need 3D points, use primitives that explicitly take 3D coordinates (e.g., flow_path inlet/outlet).
+
+ABSOLUTE EXAMPLES (DO NOT VIOLATE):
+✅ VALID (2D points only):
+  "points": [[0.0, -1.5], [0.4, -1.4], [1.2, -1.0], [2.2, -0.3], [2.5, 0.0], [2.4, 0.6], [2.2, 1.2], [2.0, 2.0]]
+❌ INVALID (3D points; will be rejected / trigger clarification):
+  "points": [[0.0, 0.0, -1.5], [0.5, 1.2, -1.0], [1.0, 2.5, 0.0]]
+❌ INVALID (mixed formats / dicts with x):
+  "points": [{"x": 0.0, "y": 1.2, "z": -1.0}, [2.5, 0.0]]
 
 SECTION SHAPE CONTRACT (IMPORTANT):
 - For polygon sections, output a ONE-SIDE half-section profile (typical): y>=0 from the section centerline outward.
@@ -87,6 +124,12 @@ SECTION SHAPE CONTRACT (IMPORTANT):
   - z should be strictly increasing (no duplicates); do not include repeated points
 - **All sections for a given body in a single program MUST have the same number of points.**
   This preserves point correspondence and avoids loft twisting / faceting.
+
+STATION CONVENTION CONTRACT (CRITICAL):
+- `geometry.section.station` is ALWAYS normalized 0..1 measured from AFT to FORWARD:
+  - station=0.0 is aft/AP/transom region (x=0)
+  - station=1.0 is forward/FP/bow region (x=LOA)
+- Do NOT invert this. The kernel derives X from station using this convention.
 
 FORBIDDEN CONSTRAINT PATTERNS:
 - NEVER use hull.spray_rail_*, hull.chine_*, hull.step_*
@@ -286,7 +329,7 @@ Note: Flat bottom with hard chine transition. Low deadrise (5-15°).
 4. ❌ **Inconsistent point counts**: All sections should have the SAME number of points for clean lofting
    - For visually smooth hulls, target 12–20 points per section (more around chine/knuckle)
 
-5. ❌ **Z increasing downward**: Z should be NEGATIVE below waterline, POSITIVE above
+5. ❌ **Inconsistent Z convention**: Use baseline-up. Keep `z=0` at baseline/keel and z increases upward. Waterline is at z=draft.
 """
 
 
@@ -412,6 +455,9 @@ class ProposerResult:
     program: Optional[DesignProgram] = None
     program_text: str = ""
     raw_response: str = ""
+    vessel_thinking_pass: Optional[Dict[str, Any]] = None
+    vessel_thinking_pass_hash: Optional[str] = None
+    thinking_pass_failure: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
 
 
@@ -440,6 +486,7 @@ class GeometryProposer:
         current_state: Optional[Dict[str, Any]] = None,
         constraints: Optional[List[str]] = None,
         validation_history: Optional[List[Dict[str, Any]]] = None,
+        shape_document: Optional[Dict[str, Any]] = None,
     ) -> ProposerResult:
         """
         Convert design intent to geometry program.
@@ -449,27 +496,148 @@ class GeometryProposer:
             current_state: Current design state (optional)
             constraints: Additional constraints (optional)
             validation_history: List of previous validation attempts (last 5)
+            shape_document: Shape document with character observables (for EDIT mode)
             
         Returns:
             ProposerResult with DesignProgram if successful
         """
-        # Build prompt with validation history
-        prompt = self._build_prompt(intent, current_state, constraints, validation_history)
+        # Build prompt with validation history and shape document
+        prompt = self._build_prompt(intent, current_state, constraints, validation_history, shape_document)
+        last_raw: str = ""
         
         try:
-            # Call LLM with structured output
-            # Use longer timeout (45s) for geometry proposals - they're complex prompts
-            # that need time to generate detailed section coordinates.
+            # Call LLM as TEXT and parse TWO artifacts:
+            # - VESSEL_THINKING_PASS (JSON)
+            # - GEOMETRY_PROGRAM (DesignProgram JSON)
+            #
+            # This keeps the executable program schema unchanged, while enforcing
+            # an auditable, machine-checkable "thinking pass" contract.
             from magnet.llm.protocol import LLMOptions
-            # FIX_PLAN: align demo/client expectations on ~60s.
-            options = LLMOptions(timeout_seconds=60)
+
+            # CREATE/EDIT can legitimately take >60s (two JSON artifacts, schema validation, retries).
+            # Keep configurable so UI/server timeouts can be aligned without code edits.
+            import os
+            timeout_s = int(os.getenv("MAGNET_GEOMETRY_PROPOSER_TIMEOUT_SECONDS", "180"))
+            max_toks = int(os.getenv("MAGNET_GEOMETRY_PROPOSER_MAX_TOKENS", "3500"))
+            options = LLMOptions(timeout_seconds=timeout_s, temperature=self._temperature, max_tokens=max_toks)
             
-            program = await self._llm.complete_json(
-                prompt,
-                response_model=DesignProgram,
-                system_prompt=GEOMETRY_PROPOSER_SYSTEM_PROMPT,
-                options=options,
-            )
+            async def _call_llm_text(prompt_text: str, *, opts: Optional[LLMOptions] = None) -> str:
+                return await self._llm.complete(
+                    prompt_text,
+                    system_prompt=GEOMETRY_PROPOSER_SYSTEM_PROMPT,
+                    options=opts or options,
+                )
+
+            raw = await _call_llm_text(prompt, opts=options)
+            last_raw = raw
+
+            # Parse thinking + program JSON (fail-closed; retry once if missing markers/invalid)
+            try:
+                thinking_obj, program_obj = self._parse_thinking_and_program(raw)
+            except Exception as e:
+                retry_opts = LLMOptions(timeout_seconds=timeout_s, temperature=0.2, max_tokens=max_toks)
+                retry_prompt = (
+                    prompt
+                    + "\n\n"
+                    + "### STRICT RETRY: OUTPUT CONTRACT FAILURE\n"
+                    + "Your previous response did not include the required TWO JSON artifacts.\n"
+                    + "You MUST output BOTH markers with JSON blocks:\n"
+                    + "- VESSEL_THINKING_PASS\n"
+                    + "- GEOMETRY_PROGRAM\n\n"
+                    + f"Failure: {type(e).__name__}: {e}\n"
+                )
+                raw = await _call_llm_text(retry_prompt, opts=retry_opts)
+                last_raw = raw
+                thinking_obj, program_obj = self._parse_thinking_and_program(raw)
+            thinking = parse_vessel_thinking_response(thinking_obj)
+
+            if hasattr(thinking, "status") and str(getattr(thinking, "status", "")).upper() == "NEEDS_CLARIFICATION":
+                question = str(getattr(thinking, "question", "") or "").strip()
+                return ProposerResult(
+                    success=False,
+                    error=f"NEEDS_CLARIFICATION:{question or 'missing_question'}",
+                    raw_response=raw,
+                )
+
+            issues = validate_coverage_and_proof(thinking)  # type: ignore[arg-type]
+            issues.extend(validate_verified_unverified_rules(thinking))  # type: ignore[arg-type]
+            reexec_issues, computed_by_check = reexecute_checks(thinking)  # type: ignore[arg-type]
+            issues.extend(reexec_issues)
+
+            if issues:
+                retry_opts = LLMOptions(timeout_seconds=timeout_s, temperature=0.2, max_tokens=max_toks)
+                patch = build_targeted_patch_instruction(issues, computed_by_check)
+                retry_prompt = (
+                    prompt
+                    + "\n\n"
+                    + "### STRICT RETRY: VESSEL_THINKING_PASS FAILED VALIDATION\n"
+                    + "Your previous response failed deterministic server-side validation.\n"
+                    + "You MUST output TWO JSON artifacts again (VESSEL_THINKING_PASS + GEOMETRY_PROGRAM).\n\n"
+                    + "Targeted patch instruction (JSON):\n"
+                    + json.dumps(patch, ensure_ascii=False)
+                    + "\n"
+                )
+                raw = await _call_llm_text(retry_prompt, opts=retry_opts)
+                thinking_obj, program_obj = self._parse_thinking_and_program(raw)
+                thinking = parse_vessel_thinking_response(thinking_obj)
+                if hasattr(thinking, "status") and str(getattr(thinking, "status", "")).upper() == "NEEDS_CLARIFICATION":
+                    question = str(getattr(thinking, "question", "") or "").strip()
+                    return ProposerResult(
+                        success=False,
+                        error=f"NEEDS_CLARIFICATION:{question or 'missing_question'}",
+                        raw_response=raw,
+                    )
+                issues2 = validate_coverage_and_proof(thinking)  # type: ignore[arg-type]
+                issues2.extend(validate_verified_unverified_rules(thinking))  # type: ignore[arg-type]
+                reexec_issues2, _ = reexecute_checks(thinking)  # type: ignore[arg-type]
+                issues2.extend(reexec_issues2)
+                if issues2:
+                    return ProposerResult(
+                        success=False,
+                        error="THINKING_PASS_INVALID:" + (issues2[0].message if issues2 else "unknown"),
+                        raw_response=raw,
+                        vessel_thinking_pass=thinking_obj if isinstance(thinking_obj, dict) else None,
+                        thinking_pass_failure=build_targeted_patch_instruction(issues2, {}),
+                    )
+
+            # Now validate the GEOMETRY_PROGRAM JSON into the existing DesignProgram schema.
+            program = DesignProgram.model_validate(program_obj)
+
+            # Prompt-only reliability improvement (NO auto-repair):
+            # On blank designs, the most common catastrophic failure is emitting a “partial” program
+            # (e.g., only a discontinuity) with ZERO sections, which the compiler rejects.
+            #
+            # We do a single retry with an explicit failure message and a hard requirement to emit
+            # body + sections + lofted surface.
+            try:
+                is_blank_geometry = True
+                resources = (current_state or {}).get("resources") or {}
+                if isinstance(resources, dict) and isinstance(resources.get("sections"), list) and resources.get("sections"):
+                    is_blank_geometry = False
+                section_ops = [
+                    op for op in (getattr(program, "operations", []) or [])
+                    if getattr(op, "type", "") == "geometry.section"
+                ]
+                if is_blank_geometry and len(section_ops) == 0:
+                    retry_opts = LLMOptions(timeout_seconds=60, temperature=0.2, max_tokens=6000)
+                    retry_prompt = (
+                        prompt
+                        + "\n\n"
+                        + "### CRITICAL RETRY (LAST OUTPUT WAS INVALID)\n"
+                        + "Your previous program contained NO `geometry.section` operations, so compilation failed with:\n"
+                        + "\"No sections defined - cannot create geometry\".\n\n"
+                        + "You MUST output a complete minimal hull:\n"
+                        + "- CREATE 1 geometry.body\n"
+                        + "- CREATE 12 geometry.section (or at least 7) for that body (stations spanning 0..1)\n"
+                        + "- CREATE 1 geometry.surface with definition \"lofted\" for that body\n"
+                        + "- Only after that, optionally add discontinuities like a hard chine.\n"
+                    )
+                    raw_retry = await _call_llm_text(retry_prompt, opts=retry_opts)
+                    thinking_obj_r, program_obj_r = self._parse_thinking_and_program(raw_retry)
+                    program = DesignProgram.model_validate(program_obj_r)
+            except Exception:
+                # If retry fails for any reason, fall back to original output.
+                pass
             
             # Defensive normalization:
             # Even with explicit prompt rules, models sometimes emit:
@@ -484,6 +652,41 @@ class GeometryProposer:
                 program = self._normalize_section_points(program)
             except Exception:
                 # Never fail the proposal solely due to the normalizer.
+                pass
+
+            # Engineering Truth: surface_definition MUST be explicit (no kernel defaults).
+            # Ensure the proposer output includes an explicit intent at the resource level.
+            try:
+                surface_def = self._infer_surface_definition_from_intent(intent=intent)
+                program = self._ensure_surface_definition(program, default_surface_definition=surface_def)
+            except Exception:
+                pass
+
+            # If the program creates a lofted surface, ensure it has enough section stations.
+            # Prefer "repair and continue" over "clarify and stall".
+            try:
+                program = self._ensure_min_loft_sections(program, min_sections=7)
+            except Exception:
+                # Never fail the proposal solely due to the densifier.
+                pass
+
+            # IMPORTANT: densification may have interpolated between mismatched point counts.
+            # Re-normalize AFTER inserting sections so every section in a body shares a single point count.
+            try:
+                program = self._normalize_section_points(program)
+            except Exception:
+                pass
+
+            # Normalize hard-edge track best-effort so chine indices don't jump across stations.
+            try:
+                program = self._normalize_hard_edge_tracks(program)
+            except Exception:
+                pass
+
+            # Ensure loft surfaces explicitly reference sections in station order.
+            try:
+                program = self._ensure_surface_section_ids(program)
+            except Exception:
                 pass
 
             # Validate output
@@ -515,29 +718,193 @@ class GeometryProposer:
             # Convert to DSL text
             program_text = self._to_dsl_text(program)
             
+            # v0.1: Enforce observation targets against geometry-derived observables (fail-closed).
+            try:
+                obs_issues, obs_computed = validate_observation_targets_against_geometry(
+                    thinking=thinking,  # type: ignore[arg-type]
+                    program_text=program_text,
+                    current_state=(current_state or {}),
+                )
+            except Exception:
+                obs_issues, obs_computed = ([], {})
+
+            if obs_issues:
+                retry_opts = LLMOptions(timeout_seconds=60, temperature=0.2, max_tokens=6000)
+                patch = build_targeted_patch_instruction(obs_issues, {"geometry_observables": obs_computed})
+                retry_prompt = (
+                    prompt
+                    + "\n\n"
+                    + "### STRICT RETRY: GEOMETRY DOES NOT MATCH CLAIMED OBSERVATIONS\n"
+                    + "Your geometry did not satisfy the observation_targets bound in the thinking pass.\n"
+                    + "You MUST output TWO JSON artifacts again (VESSEL_THINKING_PASS + GEOMETRY_PROGRAM).\n\n"
+                    + "Targeted patch instruction (JSON):\n"
+                    + json.dumps(patch, ensure_ascii=False)
+                    + "\n"
+                )
+                raw2 = await _call_llm_text(retry_prompt, opts=retry_opts)
+                thinking_obj2, program_obj2 = self._parse_thinking_and_program(raw2)
+                thinking2 = parse_vessel_thinking_response(thinking_obj2)
+                if hasattr(thinking2, "status") and str(getattr(thinking2, "status", "")).upper() == "NEEDS_CLARIFICATION":
+                    question = str(getattr(thinking2, "question", "") or "").strip()
+                    return ProposerResult(
+                        success=False,
+                        error=f"NEEDS_CLARIFICATION:{question or 'missing_question'}",
+                        raw_response=raw2,
+                    )
+                program2 = DesignProgram.model_validate(program_obj2)
+                # Keep existing deterministic normalizations
+                try:
+                    program2 = self._normalize_section_points(program2)
+                except Exception:
+                    pass
+                try:
+                    surface_def = self._infer_surface_definition_from_intent(intent=intent)
+                    program2 = self._ensure_surface_definition(program2, default_surface_definition=surface_def)
+                except Exception:
+                    pass
+                try:
+                    program2 = self._ensure_min_loft_sections(program2, min_sections=7)
+                except Exception:
+                    pass
+                try:
+                    program2 = self._normalize_section_points(program2)
+                except Exception:
+                    pass
+                try:
+                    program2 = self._normalize_hard_edge_tracks(program2)
+                except Exception:
+                    pass
+                try:
+                    program2 = self._ensure_surface_section_ids(program2)
+                except Exception:
+                    pass
+                program_text2 = self._to_dsl_text(program2)
+                try:
+                    obs_issues2, obs_computed2 = validate_observation_targets_against_geometry(
+                        thinking=thinking2,  # type: ignore[arg-type]
+                        program_text=program_text2,
+                        current_state=(current_state or {}),
+                    )
+                except Exception:
+                    obs_issues2, obs_computed2 = ([], {})
+                if obs_issues2:
+                    return ProposerResult(
+                        success=False,
+                        error="THINKING_PASS_INVALID:" + (obs_issues2[0].message if obs_issues2 else "unknown"),
+                        raw_response=raw2,
+                        vessel_thinking_pass=thinking_obj2 if isinstance(thinking_obj2, dict) else None,
+                        thinking_pass_failure=build_targeted_patch_instruction(obs_issues2, {"geometry_observables": obs_computed2}),
+                    )
+                # Replace successful retry output
+                raw = raw2
+                thinking_obj = thinking_obj2
+                thinking = thinking2  # type: ignore[assignment]
+                program = program2
+                program_text = program_text2
+
+            vessel_thinking_pass = thinking_obj if isinstance(thinking_obj, dict) else None
+            vessel_thinking_hash = None
+            try:
+                from magnet.core.turn_contracts import sha256_hex
+
+                if vessel_thinking_pass is not None:
+                    vessel_thinking_hash = sha256_hex(vessel_thinking_pass)
+            except Exception:
+                vessel_thinking_hash = None
+
             return ProposerResult(
                 success=True,
                 program=program,
                 program_text=program_text,
+                raw_response=raw,
+                vessel_thinking_pass=vessel_thinking_pass,
+                vessel_thinking_pass_hash=vessel_thinking_hash,
             )
             
         except Exception as e:
             error_msg = str(e).lower()
+            # Thinking-pass parse errors should surface as a formatting/contract problem.
+            if "thinking_pass_missing" in error_msg or "geometry_program_missing" in error_msg:
+                return ProposerResult(
+                    success=False,
+                    error=f"THINKING_PASS_MISSING: {str(e)}",
+                    raw_response=last_raw,
+                )
             if "timeout" in error_msg or "timed out" in error_msg:
                 return ProposerResult(
                     success=False,
                     error="LLM_TIMEOUT: The AI model took too long to respond. This can happen with complex requests. Try a simpler request or try again.",
+                    raw_response=last_raw,
                 )
-            # Offline / sandbox fallback: if the LLM provider is unreachable, produce a
-            # deterministic, domain-plausible geometry program so knowledge tests and
-            # local demos can run without network access.
-            try:
-                fallback = self._offline_fallback(intent=intent, current_state=current_state)
-                if fallback and fallback.success:
-                    return fallback
-            except Exception:
-                pass
-            return ProposerResult(success=False, error=f"LLM error: {str(e)}")
+            # Offline / sandbox fallback should only trigger for provider-unavailable scenarios,
+            # not for contract/validator bugs (those must fail-closed and surface the error).
+            lowered = str(e).lower()
+            offline_triggers = (
+                "failed to initialize anthropic client",
+                "operation not permitted",
+                "no api key",
+                "anthropic",
+                "provider is unavailable",
+            )
+            if any(t in lowered for t in offline_triggers):
+                try:
+                    fallback = self._offline_fallback(intent=intent, current_state=current_state)
+                    if fallback and fallback.success:
+                        return fallback
+                except Exception:
+                    pass
+            return ProposerResult(success=False, error=f"LLM error: {type(e).__name__}: {e}")
+
+    # -------------------------------------------------------------------------
+    # VESSEL_THINKING_PASS extraction helpers (fail-closed)
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_json_after_marker(text: str, marker: str) -> Optional[Dict[str, Any]]:
+        """
+        Extract the first JSON object that appears after a marker string.
+
+        Supports:
+        - plain "MARKER" then JSON
+        - fenced blocks (```json ... ```)
+        """
+        s = (text or "").strip()
+        idx = s.lower().find(marker.lower())
+        if idx < 0:
+            return None
+        tail = s[idx + len(marker) :]
+        tail = tail.lstrip(" \t\r\n:").strip()
+
+        # Handle fenced blocks
+        if tail.startswith("```"):
+            parts = tail.split("```")
+            if len(parts) >= 2:
+                tail = parts[1]
+                if tail.lstrip().startswith("json"):
+                    tail = tail.lstrip()[4:]
+                tail = tail.strip()
+
+        # Extract outermost JSON object from tail
+        i = tail.find("{")
+        j = tail.rfind("}")
+        if i < 0 or j <= i:
+            return None
+        candidate = tail[i : j + 1]
+        try:
+            obj = json.loads(candidate)
+            return obj if isinstance(obj, dict) else None
+        except Exception:
+            return None
+
+    def _parse_thinking_and_program(self, raw_response: str) -> tuple[Dict[str, Any], Dict[str, Any]]:
+        raw = (raw_response or "").strip()
+        thinking_obj = self._extract_json_after_marker(raw, "VESSEL_THINKING_PASS")
+        program_obj = self._extract_json_after_marker(raw, "GEOMETRY_PROGRAM")
+        if thinking_obj is None:
+            raise ValueError("THINKING_PASS_MISSING: missing VESSEL_THINKING_PASS JSON block")
+        if program_obj is None:
+            raise ValueError("GEOMETRY_PROGRAM_MISSING: missing GEOMETRY_PROGRAM JSON block")
+        return thinking_obj, program_obj
 
     def _offline_fallback(
         self,
@@ -799,6 +1166,120 @@ class GeometryProposer:
         ask = 'ASK "Can you clarify the geometric change you want?" { options: ["speed", "stability", "catamaran", "spray rails", "deep-V"] }'
         return ProposerResult(success=True, program=None, program_text=ask)
 
+    def _infer_surface_definition_from_intent(self, *, intent: str) -> str:
+        """
+        Infer surface intent from the user request.
+
+        This is NOT a kernel default: we make the intent explicit at the proposer boundary
+        so compilation can be contract-based (MissingSurfaceIntentError remains fail-closed).
+        """
+        low = (intent or "").lower()
+        if "panelized" in low or "faceted" in low or "faceted" in low or "metal shark" in low:
+            return "panelized"
+        return "smooth"
+
+    def _ensure_surface_definition(self, program: DesignProgram, *, default_surface_definition: str) -> DesignProgram:
+        """
+        Ensure any geometry.surface resources carry an explicit surface_definition.
+        """
+        for op in getattr(program, "operations", []) or []:
+            if getattr(op, "type", None) != "geometry.surface":
+                continue
+            params = getattr(op, "params", None) or {}
+            if not isinstance(params, dict):
+                params = {}
+            if params.get("surface_definition") in (None, ""):
+                params["surface_definition"] = default_surface_definition
+            op.params = params
+        return program
+
+    def _ensure_surface_section_ids(self, program: DesignProgram) -> DesignProgram:
+        """
+        Ensure lofted geometry.surface ops have explicit section_ids in station order.
+
+        If section_ids is missing/null, compilers may infer ordering differently over time,
+        which can twist lofts. Making it explicit keeps behavior stable and debuggable.
+        """
+        # Collect sections by body with stations.
+        secs_by_body: Dict[str, List[tuple[float, str]]] = {}
+        for op in getattr(program, "operations", []) or []:
+            if getattr(op, "op", "") != "CREATE" or getattr(op, "type", "") != "geometry.section":
+                continue
+            params = getattr(op, "params", {}) or {}
+            bid = params.get("body_id") or "main_hull"
+            sid = params.get("section_id") or getattr(op, "id", None)
+            st = params.get("station")
+            if not isinstance(sid, str) or not sid:
+                continue
+            try:
+                stf = float(st)
+            except Exception:
+                continue
+            secs_by_body.setdefault(str(bid), []).append((stf, sid))
+
+        for bid in list(secs_by_body.keys()):
+            secs_by_body[bid] = sorted(secs_by_body[bid], key=lambda t: t[0])
+
+        for op in getattr(program, "operations", []) or []:
+            if getattr(op, "op", "") != "CREATE" or getattr(op, "type", "") != "geometry.surface":
+                continue
+            params = getattr(op, "params", {}) or {}
+            if (params.get("definition") or "").strip().lower() != "lofted":
+                continue
+            bid = str(params.get("body_id") or "main_hull")
+            if params.get("section_ids") in (None, "", []):
+                params["section_ids"] = [sid for _st, sid in secs_by_body.get(bid, [])]
+                op.params = params
+
+        return program
+
+    def _normalize_hard_edge_tracks(self, program: DesignProgram) -> DesignProgram:
+        """
+        Best-effort: keep a single consistent HARD edge index per body across sections.
+
+        This is a stabilizer to prevent the chine from "jumping tracks" when some sections
+        have different point counts or the model picks adjacent indices.
+        """
+        # Collect per-body section ops.
+        by_body: Dict[str, List[Any]] = {}
+        for op in getattr(program, "operations", []) or []:
+            if getattr(op, "op", "") != "CREATE" or getattr(op, "type", "") != "geometry.section":
+                continue
+            bid = (getattr(op, "params", {}) or {}).get("body_id") or "main_hull"
+            by_body.setdefault(str(bid), []).append(op)
+
+        for bid, ops in by_body.items():
+            # Determine target point count and candidate hard indices.
+            hard_counts: Dict[int, int] = {}
+            target_n = 0
+            for op in ops:
+                pts = (op.params or {}).get("points") or []
+                et = (op.params or {}).get("edge_types") or []
+                if isinstance(pts, list):
+                    target_n = max(target_n, len(pts))
+                if isinstance(et, list):
+                    for i, e in enumerate(et):
+                        if str(e).lower() == "hard":
+                            hard_counts[i] = hard_counts.get(i, 0) + 1
+
+            if target_n <= 0 or not hard_counts:
+                continue
+
+            # Pick the most common hard index; if tie, prefer 7 (common chine index in our prompts).
+            best = sorted(hard_counts.items(), key=lambda kv: (-kv[1], 0 if kv[0] == 7 else 1, kv[0]))[0][0]
+
+            # Rewrite edge_types for each section to match target_n and set a single hard at best.
+            for op in ops:
+                pts = (op.params or {}).get("points") or []
+                n = len(pts) if isinstance(pts, list) else target_n
+                n = max(n, target_n)
+                et = ["smooth"] * n
+                if 0 <= best < n:
+                    et[best] = "hard"
+                op.params["edge_types"] = et
+
+        return program
+
     def _normalize_section_points(self, program: DesignProgram) -> DesignProgram:
         """
         Normalize polygon section point lists to match the section contract:
@@ -807,6 +1288,18 @@ class GeometryProposer:
         - strictly increasing z (keel -> deck open curve)
         - consistent point counts per body (resample)
         """
+        # Station convention normalization (deterministic, contract-driven):
+        # The kernel's canonical convention is station 0=aft/AP, 1=forward/FP.
+        # LLMs frequently invert this (station 0=bow, 1=stern), which flips longitudinal observables
+        # like deadrise_drop_deg and breaks station_range semantics.
+        #
+        # We detect the most common inverted pattern using section ids (bow/transom naming) and
+        # deterministically invert stations when it is clearly swapped.
+        try:
+            program = self._normalize_station_convention(program)
+        except Exception:
+            pass
+
         # Collect per-body sections first so we can enforce consistent point counts.
         by_body: Dict[str, List[Any]] = {}
         for op in program.operations:
@@ -886,13 +1379,365 @@ class GeometryProposer:
                 if not isinstance(pts, list) or len(pts) < 2:
                     continue
                 if len(pts) != target_n:
-                    op.params["points"] = self._resample_yz_by_z(pts, target_n)
-                    et = op.params.get("edge_types")
-                    n = len(op.params["points"])
-                    if isinstance(et, list) and not (len(et) == n or len(et) == n - 1):
-                        op.params["edge_types"] = ["smooth"] * n
+                    # Preserve hard-edge anchors through resampling:
+                    # if original edge_types marks HARD at certain z locations, re-impose HARD
+                    # at the closest resampled z indices so downstream validators/observables
+                    # (e.g., deadrise at chine) remain measurable.
+                    et_orig = op.params.get("edge_types") or []
+                    hard_yz: List[List[float]] = []
+                    if isinstance(et_orig, list):
+                        for i in range(min(len(et_orig), len(pts))):
+                            try:
+                                if str(et_orig[i]).lower() == "hard":
+                                    hard_yz.append([float(pts[i][0]), float(pts[i][1])])
+                            except Exception:
+                                continue
+
+                    pts_new = self._resample_yz_by_z(pts, target_n)
+                    op.params["points"] = pts_new
+                    n = len(pts_new)
+
+                    # Build new edge_types array of length n and re-apply hard anchors by nearest (y,z)
+                    et_new = ["smooth"] * n
+                    if hard_yz:
+                        yz_new = [
+                            (float(p[0]), float(p[1]))
+                            for p in pts_new
+                            if isinstance(p, (list, tuple)) and len(p) >= 2
+                        ]
+                        for hy, hz in hard_yz:
+                            best_j = None
+                            best_d = None
+                            for j, (y, z) in enumerate(yz_new):
+                                d = (y - hy) * (y - hy) + (z - hz) * (z - hz)
+                                if best_d is None or d < best_d:
+                                    best_d = d
+                                    best_j = j
+                            if best_j is not None and 0 <= best_j < len(et_new):
+                                et_new[best_j] = "hard"
+                    op.params["edge_types"] = et_new
 
         return program
+
+    def _normalize_station_convention(self, program: DesignProgram) -> DesignProgram:
+        """
+        Normalize common LLM station inversion to the kernel contract:
+        - contract: station 0=aft/AP, 1=forward/FP
+        - common LLM mistake: station 0=bow, 1=stern
+
+        Heuristic (deterministic):
+        - If we see a "bow/fore" section with station < 0.2 AND a "transom/stern/aft" section with station > 0.8,
+          interpret it as inverted and set station := 1 - station for ALL polygon sections in that body.
+        """
+        ops = list(getattr(program, "operations", []) or [])
+
+        # Group candidate sections by body_id
+        by_body: Dict[str, List[GeometryOperation]] = {}
+        for op in ops:
+            if getattr(op, "type", "") != "geometry.section":
+                continue
+            params = getattr(op, "params", {}) or {}
+            if (params.get("definition_type") or "polygon") == "nurbs":
+                continue
+            bid = str(params.get("body_id") or "main")
+            by_body.setdefault(bid, []).append(op)
+
+        def _label(sec_id: str) -> str:
+            return (sec_id or "").strip().lower().replace("-", "_")
+
+        for bid, sec_ops in by_body.items():
+            bow_st = None
+            aft_st = None
+            for op in sec_ops:
+                params = op.params or {}
+                sid = _label(str(params.get("section_id") or op.id or ""))
+                try:
+                    st = float(params.get("station"))
+                except Exception:
+                    continue
+
+                if any(t in sid for t in ("bow", "fore", "fwd", "fp", "stem")):
+                    bow_st = st if bow_st is None else min(bow_st, st)
+                if any(t in sid for t in ("transom", "stern", "aft", "ap")):
+                    aft_st = st if aft_st is None else max(aft_st, st)
+
+            # Inverted if "bow" appears near 0 and "transom" appears near 1.
+            if bow_st is not None and aft_st is not None and bow_st < 0.2 and aft_st > 0.8:
+                for op in sec_ops:
+                    try:
+                        st = float((op.params or {}).get("station"))
+                    except Exception:
+                        continue
+                    # invert and clamp
+                    st2 = 1.0 - st
+                    st2 = 0.0 if st2 < 0.0 else (1.0 if st2 > 1.0 else st2)
+                    op.params["station"] = float(st2)
+
+        return program
+
+    def _ensure_min_loft_sections(self, program: DesignProgram, *, min_sections: int = 7) -> DesignProgram:
+        """
+        Ensure lofted surfaces have sufficient stations.
+
+        Some LLM outputs create a lofted surface with too few sections (e.g. 5),
+        which yields unrealistic geometry and triggers validation failure. When a
+        lofted surface exists, we deterministically insert additional sections by:
+        - generating a cosine-spaced station set (denser near bow/transom)
+        - interpolating section points between adjacent authored sections
+        - updating surface.section_ids if present
+        """
+        if min_sections <= 1:
+            return program
+
+        ops = list(program.operations or [])
+
+        # Identify bodies that create lofted surfaces
+        loft_bodies: set[str] = set()
+        for op in ops:
+            if op.op != "CREATE" or op.type != "geometry.surface":
+                continue
+            params = op.params or {}
+            if (params.get("definition") or "").strip().lower() == "lofted":
+                bid = params.get("body_id")
+                if isinstance(bid, str) and bid:
+                    loft_bodies.add(bid)
+
+        if not loft_bodies:
+            return program
+
+        def _as_float_station(v: Any) -> Optional[float]:
+            try:
+                f = float(v)
+                if 0.0 <= f <= 1.0:
+                    return f
+            except Exception:
+                return None
+            return None
+
+        def _cosine_spaced(min_s: float, max_s: float, n: int) -> List[float]:
+            # Cluster near ends (bow/transom) using cosine spacing.
+            import math
+
+            if n <= 1:
+                return [min_s]
+            out: List[float] = []
+            span = max_s - min_s
+            for i in range(n):
+                t = i / float(n - 1)
+                u = 0.5 * (1.0 - math.cos(math.pi * t))  # 0..1 clustered at ends
+                out.append(min_s + u * span)
+            # Clamp and round for stable IDs
+            out = [min(max(x, 0.0), 1.0) for x in out]
+            # Remove near-duplicates
+            dedup: List[float] = []
+            for x in out:
+                if not dedup or abs(x - dedup[-1]) > 1e-6:
+                    dedup.append(x)
+            return dedup
+
+        # Map existing sections per body (station -> op)
+        sections_by_body: Dict[str, List[GeometryOperation]] = {b: [] for b in loft_bodies}
+        for op in ops:
+            if op.type != "geometry.section":
+                continue
+            bid = (op.params or {}).get("body_id")
+            if bid in sections_by_body:
+                sections_by_body[bid].append(op)
+
+        inserts: List[tuple[int, GeometryOperation]] = []
+        surface_updates: Dict[int, Dict[str, Any]] = {}
+
+        for bid, sec_ops in sections_by_body.items():
+            # Extract stations and keep only polygon sections we can interpolate
+            authored: List[tuple[float, GeometryOperation]] = []
+            unstamped: List[GeometryOperation] = []
+            for op in sec_ops:
+                pts = (op.params or {}).get("points")
+                if not isinstance(pts, list) or not pts:
+                    continue
+                st = _as_float_station((op.params or {}).get("station"))
+                if st is None:
+                    unstamped.append(op)
+                    continue
+                authored.append((st, op))
+
+            # If the model omitted stations (common failure mode), assign them deterministically
+            # so we can densify rather than failing validation.
+            if len(authored) < 2 and len(unstamped) >= 2:
+                n = len(unstamped)
+                for i, op in enumerate(unstamped):
+                    st = 0.0 if n == 1 else float(i) / float(n - 1)
+                    try:
+                        if op.params is None:
+                            op.params = {}
+                        op.params["station"] = st
+                    except Exception:
+                        pass
+                    authored.append((st, op))
+
+            authored.sort(key=lambda t: t[0])
+            if len(authored) >= min_sections:
+                continue
+
+            if len(authored) < 2:
+                # Not enough information to interpolate: do not fabricate geometry here.
+                # Let the normal validation path surface the error.
+                continue
+
+            min_s, max_s = authored[0][0], authored[-1][0]
+            target_stations = _cosine_spaced(min_s, max_s, min_sections)
+
+            existing_stations = [s for s, _ in authored]
+
+            def _find_neighbors(s: float) -> tuple[tuple[float, GeometryOperation], tuple[float, GeometryOperation]]:
+                lo = authored[0]
+                hi = authored[-1]
+                for i in range(len(authored) - 1):
+                    a0 = authored[i]
+                    a1 = authored[i + 1]
+                    if a0[0] <= s <= a1[0]:
+                        lo, hi = a0, a1
+                        break
+                return lo, hi
+
+            def _interp_points(p0: List[List[float]], p1: List[List[float]], t: float) -> List[List[float]]:
+                n = min(len(p0), len(p1))
+                out: List[List[float]] = []
+                for i in range(n):
+                    y0, z0 = float(p0[i][0]), float(p0[i][1])
+                    y1, z1 = float(p1[i][0]), float(p1[i][1])
+                    out.append([y0 + (y1 - y0) * t, z0 + (z1 - z0) * t])
+                return out
+
+            # Determine insertion index: before first lofted surface for this body if possible
+            insert_at = len(ops)
+            for idx, op in enumerate(ops):
+                if op.op == "CREATE" and op.type == "geometry.surface":
+                    if (op.params or {}).get("body_id") == bid and (op.params or {}).get("definition", "").strip().lower() == "lofted":
+                        insert_at = idx
+                        break
+
+            added_section_ids: List[str] = []
+
+            for s in target_stations:
+                if any(abs(s - es) <= 1e-6 for es in existing_stations):
+                    continue
+
+                (s0, op0), (s1, op1) = _find_neighbors(s)
+                pts0 = (op0.params or {}).get("points") or []
+                pts1 = (op1.params or {}).get("points") or []
+                if not (isinstance(pts0, list) and isinstance(pts1, list) and pts0 and pts1):
+                    continue
+
+                t = 0.0
+                if abs(s1 - s0) > 1e-9:
+                    t = (s - s0) / (s1 - s0)
+                t = min(max(float(t), 0.0), 1.0)
+
+                pts_new = _interp_points(pts0, pts1, t)
+
+                # Copy edge types from nearest neighbor if present
+                et0 = (op0.params or {}).get("edge_types")
+                et1 = (op1.params or {}).get("edge_types")
+                et_src = et0 if t < 0.5 else et1
+                edge_types: List[str] = []
+                if isinstance(et_src, list) and et_src:
+                    edge_types = [str(x) for x in et_src]
+                if edge_types and len(edge_types) != len(pts_new):
+                    # Normalize to points length (best-effort)
+                    if len(edge_types) > len(pts_new):
+                        edge_types = edge_types[: len(pts_new)]
+                    else:
+                        edge_types = edge_types + [edge_types[-1]] * (len(pts_new) - len(edge_types))
+
+                sec_id = f"sec_auto_{bid}_{int(round(s * 1000)):04d}"
+                added_section_ids.append(sec_id)
+
+                inserts.append((
+                    insert_at,
+                    GeometryOperation(
+                        op="CREATE",
+                        type="geometry.section",
+                        id=sec_id,
+                        params={
+                            "section_id": sec_id,
+                            "body_id": bid,
+                            "station": float(s),
+                            "definition_type": (op0.params or {}).get("definition_type", "polygon"),
+                            "points": pts_new,
+                            **({"edge_types": edge_types} if edge_types else {}),
+                        },
+                        reasoning=(
+                            f"Auto-inserted section at station {s:.3f} to satisfy minimum station count "
+                            f"for lofted surface (need ≥{min_sections})."
+                        ),
+                        confidence=1.0,
+                    ),
+                ))
+
+            # If the lofted surface explicitly lists section_ids, update it to include new ones
+            if added_section_ids:
+                for idx, op in enumerate(ops):
+                    if op.op != "CREATE" or op.type != "geometry.surface":
+                        continue
+                    params = op.params or {}
+                    if (params.get("definition") or "").strip().lower() != "lofted":
+                        continue
+                    if params.get("body_id") != bid:
+                        continue
+                    if isinstance(params.get("section_ids"), list):
+                        # Build mapping from section id -> station for all known sections
+                        sid_to_station: Dict[str, float] = {}
+                        for st, sop in authored:
+                            sid_to_station[sop.id] = float(st)
+                        # Assign stations for newly created ids
+                        for sid in added_section_ids:
+                            try:
+                                # parse trailing station token if present
+                                sid_to_station[sid] = float(int(sid.split("_")[-1]) / 1000.0)
+                            except Exception:
+                                sid_to_station[sid] = 0.5
+                        merged = list({*params.get("section_ids"), *added_section_ids})
+                        merged.sort(key=lambda sid: sid_to_station.get(sid, 0.5))
+                        new_params = dict(params)
+                        new_params["section_ids"] = merged
+                        surface_updates[idx] = new_params
+
+        if not inserts and not surface_updates:
+            return program
+
+        # Apply inserts (stable ordering)
+        inserts.sort(key=lambda t: t[0])
+        new_ops: List[GeometryOperation] = []
+        cursor = 0
+        for insert_at, new_op in inserts:
+            while cursor < insert_at and cursor < len(ops):
+                new_ops.append(ops[cursor])
+                cursor += 1
+            new_ops.append(new_op)
+        while cursor < len(ops):
+            new_ops.append(ops[cursor])
+            cursor += 1
+
+        # Apply surface param updates
+        if surface_updates:
+            for idx, op in enumerate(new_ops):
+                if idx in surface_updates:
+                    new_ops[idx] = GeometryOperation(
+                        op=op.op,
+                        type=op.type,
+                        id=op.id,
+                        params=surface_updates[idx],
+                        reasoning=op.reasoning,
+                        confidence=op.confidence,
+                    )
+
+        return DesignProgram(
+            program_id=program.program_id,
+            version=program.version,
+            operations=new_ops,
+            constraints=list(program.constraints or []),
+        )
 
     def _resample_yz_by_z(self, points: List[List[float]], target_n: int) -> List[List[float]]:
         """
@@ -937,19 +1782,77 @@ class GeometryProposer:
         current_state: Optional[Dict[str, Any]],
         constraints: Optional[List[str]],
         validation_history: Optional[List[Dict[str, Any]]],
+        shape_document: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Build the prompt for the LLM."""
         parts = [f"## Design Request\n\n{intent}\n"]
-        
+
+        # Detect whether this is a blank geometry design (no authored sections yet).
+        # This is used ONLY to steer the LLM to emit a full minimal hull (body + sections + surface)
+        # instead of "partial" operations like a discontinuity-only program.
+        is_blank_geometry = True
+        try:
+            resources = (current_state or {}).get("resources") or {}
+            if isinstance(resources, dict):
+                # sections may be nested in multiple places; treat any list of sections as "not blank"
+                for k in ("sections", "geometry.sections", "geometry.section", "geometry_sections"):
+                    v = resources.get(k)
+                    if isinstance(v, list) and len(v) > 0:
+                        is_blank_geometry = False
+                        break
+                # common shape: resources["sections"] = [...]
+                if isinstance(resources.get("sections"), list) and resources.get("sections"):
+                    is_blank_geometry = False
+        except Exception:
+            is_blank_geometry = True
+
         if current_state:
             # TASK-015: Use bounded State Lens to reduce prompt tokens.
             lens_state = extract_lens(current_state)
             parts.append(format_state_for_injection(lens_state))
+
+        if is_blank_geometry:
+            parts.append(
+                "\n## Current Geometry State\n\n"
+                "BLANK GEOMETRY: There are currently 0 hull sections and no hull surface.\n"
+                "You must create the hull first (body + sections + lofted surface).\n"
+            )
         
         if constraints:
             parts.append("## Additional Constraints\n")
             for c in constraints:
                 parts.append(f"- {c}\n")
+        
+        # Add shape document (character observable analysis for EDIT mode)
+        if shape_document and not shape_document.get("error"):
+            parts.append("\n## Shape Analysis (Character Observables)\n")
+            parts.append("\n**Current hull character:**\n")
+            
+            observable_snapshot = shape_document.get("observable_snapshot", {})
+            if observable_snapshot:
+                parts.append("```json\n")
+                parts.append(json.dumps(observable_snapshot, indent=2))
+                parts.append("\n```\n")
+            
+            critique_hints = shape_document.get("critique_hints", [])
+            if critique_hints:
+                parts.append("\n**Critique:**\n")
+                for hint in critique_hints:
+                    parts.append(f"- {hint}\n")
+            
+            suggested_adjustments = shape_document.get("suggested_adjustments", [])
+            if suggested_adjustments:
+                parts.append("\n**Suggested adjustments:**\n")
+                for adj in suggested_adjustments[:3]:  # Top 3 suggestions
+                    parts.append(f"- {adj.get('rationale', 'No rationale')}\n")
+                    parts.append(f"  ADJUST `{adj.get('observable_id', 'unknown')}` BY {adj.get('delta', 0)} {adj.get('unit', '')}\n")
+                    if adj.get('scope'):
+                        parts.append(f"  Scope: {adj.get('scope')}\n")
+            
+            quality_summary = shape_document.get("quality_summary", {})
+            if quality_summary and quality_summary.get("targets_defined", 0) > 0:
+                parts.append(f"\n**Target progress:** {quality_summary.get('targets_met', 0)}/{quality_summary.get('targets_defined', 0)} met ")
+                parts.append(f"({quality_summary.get('completion_pct', 0):.0f}% complete)\n")
         
         # Add failure patterns from validation history
         if validation_history:
@@ -967,9 +1870,26 @@ class GeometryProposer:
                 parts.append("\n**DO NOT repeat these patterns. Learn from them and try different approaches.**\n")
         
         parts.append("""
-## Your Task
+## Your Task (Two artifacts; fail-closed)
 
-Generate a DesignProgram with geometry.* operations to achieve this design.
+You MUST output exactly TWO JSON artifacts, in this order:
+
+1) VESSEL_THINKING_PASS
+2) GEOMETRY_PROGRAM
+
+Both are validated server-side. Geometry is NOT executed unless VESSEL_THINKING_PASS is valid.
+
+### Artifact 1: VESSEL_THINKING_PASS (JSON)
+- Includes: station_plan, dof_schema, verification_schema, closure_proof
+- Coverage rules (server-enforced):
+  - Every non-defaulted DOF must have ≥1 check targeting it
+  - Every check must have a closure_proof entry
+  - closure_proof must not reference unknown checks
+- If you cannot proceed, return:
+  { "status": "NEEDS_CLARIFICATION", "question": "..." }
+
+### Artifact 2: GEOMETRY_PROGRAM (JSON)
+Generate a DesignProgram with geometry.* operations to achieve the design.
 
 Requirements:
 1. Use ONLY geometry.* primitives (geometry.body, geometry.section, etc.)
@@ -977,7 +1897,38 @@ Requirements:
 3. Set confidence based on how certain the translation is
 4. Output valid JSON matching the DesignProgram schema
 
-IMPORTANT: Your response must be valid JSON matching this schema:
+HARD CONTRACT (MOST COMMON FAILURE MODE):
+- For every `geometry.section` with polygon points: `points` MUST be `[[y,z], ...]` (2 numbers per point).
+- NEVER output `[x,y,z]` triples in section points. X comes ONLY from `station`.
+- If you accidentally think in 3D, DROP X before emitting JSON.
+
+### Output format (exact markers)
+VESSEL_THINKING_PASS
+```json
+{ ... }
+```
+
+GEOMETRY_PROGRAM
+```json
+{ ... }
+```
+""")
+
+        if is_blank_geometry:
+            parts.append("""
+
+BLANK DESIGN (YOU MUST BUILD THE HULL FIRST):
+- This design currently has no hull sections.
+- You MUST output a complete minimal hull program:
+  - CREATE 1 geometry.body (body_id like "main_hull")
+  - CREATE 12 geometry.section (or at least 7) for that body with stations spanning 0..1
+  - CREATE 1 geometry.surface with definition "lofted" for that body
+- Do NOT output only discontinuities/constraints. That will fail compilation with: "No sections defined".
+""")
+
+        parts.append("""
+
+IMPORTANT: GEOMETRY_PROGRAM must be valid JSON matching this schema:
 {
   "program_id": "string",
   "version": 1,
@@ -1181,6 +2132,7 @@ IMPORTANT: Your response must be valid JSON matching this schema:
                 bid = params.get("body_id")
                 if bid in sec_counts:
                     sec_counts[bid] += 1
+
             for bid, count in sec_counts.items():
                 if count < 7:
                     return (

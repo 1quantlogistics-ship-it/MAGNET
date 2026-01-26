@@ -16,6 +16,7 @@ def test_compiler_passes_through_opening_flow_path_attachment():
     state = {
         "design_id": "TEST",
         "hull": {"loa": 10.0},
+        "geometry_intent": {"surface_definition": "smooth"},
         "resources": {
             "s0": _minimal_section(0.0),
             "s1": _minimal_section(0.5),
@@ -63,6 +64,7 @@ def test_deleted_primitives_are_ignored():
     state = {
         "design_id": "TEST",
         "hull": {"loa": 10.0},
+        "geometry_intent": {"surface_definition": "smooth"},
         "resources": {
             "s0": _minimal_section(0.0),
             "s1": _minimal_section(0.5),

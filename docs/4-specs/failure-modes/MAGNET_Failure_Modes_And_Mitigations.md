@@ -1,5 +1,16 @@
 # MAGNET Implementation Plan: Engineer Creativity Amplifier
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [magnet, failure, modes, and, mitigations]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 **Version:** 4.0  
 **Date:** 2026-01-05  
 **Status:** Implementation Specification  

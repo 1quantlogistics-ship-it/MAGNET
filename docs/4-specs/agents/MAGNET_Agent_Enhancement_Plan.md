@@ -1,5 +1,16 @@
 # MAGNET Agent Enhancement Plan
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [magnet, agent, enhancement, plan]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 **Date:** January 6, 2026  
 **Status:** 🔴 CRITICAL - Agent lacks domain knowledge  
 **Priority:** P0 - Blocks production readiness  

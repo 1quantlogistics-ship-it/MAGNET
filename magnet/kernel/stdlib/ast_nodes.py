@@ -91,6 +91,36 @@ class AskStatement(Statement):
 
 
 @dataclass
+class AdjustStatement(Statement):
+    """
+    ADJUST <observable_id> AT <scope> BY <delta><unit>
+
+    Example:
+      ADJUST section_metric:deadrise_deg_at_chine AT station_range=(0.8,1.0) BY +5deg
+    """
+
+    observable_id: str = ""
+    scope: Dict[str, Any] = field(default_factory=dict)  # station_range, station, body_id
+    delta: float = 0.0
+    unit: str = ""  # "deg" | "m" | "ratio"
+
+
+@dataclass
+class TargetStatement(Statement):
+    """
+    TARGET <observable_id> AT <scope> = <value><unit>
+
+    Example:
+      TARGET longitudinal_metric:entry_fineness_p95 AT station_range=(0.0,0.25) = 0.25ratio
+    """
+
+    observable_id: str = ""
+    scope: Dict[str, Any] = field(default_factory=dict)
+    value: float = 0.0
+    unit: str = ""  # "deg" | "m" | "ratio"
+
+
+@dataclass
 class Program:
     """Complete design program."""
     statements: List[Statement] = field(default_factory=list)

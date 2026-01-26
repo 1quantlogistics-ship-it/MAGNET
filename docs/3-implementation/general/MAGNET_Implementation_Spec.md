@@ -1,5 +1,16 @@
 # MAGNET Implementation Specification v1.0
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [magnet, implementation, spec]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 > **Document Purpose:** Unified specification for agents, API contracts, and testing.  
 > **Status:** Implementation Specification  
 > **Last Updated:** 2026-01-05  

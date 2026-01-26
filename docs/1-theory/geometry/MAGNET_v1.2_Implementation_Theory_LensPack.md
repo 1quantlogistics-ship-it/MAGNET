@@ -1,5 +1,16 @@
 # MAGNET v1.2 Implementation (Theory): Lens Pack + Diff‑Only DSL + Deterministic Lenses + Dependency Graph
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [magnet, v1.2, implementation, theory, lenspack]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 **Purpose**: Describe what a constitution-aligned v1.2 “actually working” runtime would look like *in theory*, with an emphasis on **token efficiency** and **scalability**:
 
 > **Lens Pack (dictionary‑coded compact JSON text) + diff‑only DSL edits + deterministic lens builder + dependency graph**

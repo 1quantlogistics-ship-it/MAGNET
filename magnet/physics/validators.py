@@ -50,7 +50,6 @@ from magnet.kernel.stdlib.compiler import compile_to_geometry
 
 if TYPE_CHECKING:
     from magnet.core.state_manager import StateManager
-    from magnet.hull_gen.enums import HullType
 
 logger = logging.getLogger(__name__)
 
@@ -585,6 +584,19 @@ class HydrostaticsValidator(ValidatorInterface):
                 ))
                 state = ValidatorState.WARNING
 
+            # -----------------------------------------------------------------
+            # Truthfulness: stamp physics freshness (used to flip to DECOUPLED when stale)
+            # -----------------------------------------------------------------
+            try:
+                dv = state_manager.get("design_version")
+                state_manager.set("kernel.physics_last_validated_version", int(dv) if dv is not None else None, source)
+                state_manager.set("kernel.physics_last_validated_at", datetime.utcnow().isoformat(), source)
+                # Hydrostatics is the source-of-truth for displacement; stamp separately.
+                state_manager.set("kernel.hydrostatics_last_validated_version", int(dv) if dv is not None else None, source)
+                state_manager.set("kernel.hydrostatics_last_validated_at", datetime.utcnow().isoformat(), source)
+            except Exception:
+                pass
+
             # Create success result
             elapsed_ms = int((time.perf_counter() - start_time) * 1000)
             result = ValidationResult(
@@ -744,7 +756,6 @@ class HydrostaticsValidator(ValidatorInterface):
             DeadriseProfile,
             HullFeatures,
         )
-        from magnet.hull_gen.enums import HullType
 
         # Lazy generator init (odd num_sections preferred for Simpson integration)
         if self._hull_generator is None:
@@ -763,17 +774,6 @@ class HydrostaticsValidator(ValidatorInterface):
         if cwp is None:
             cwp_est = 0.18 + 0.86 * float(cb)
             cwp = max(0.50, min(0.95, float(cwp_est)))
-
-        # Derive hull form enum from geometry-derived signals only (no string maps).
-        body_count = _get_body_count_from_state(state_manager)
-        if int(body_count) == 2:
-            hull_type_enum = HullType.CATAMARAN
-        elif int(body_count) == 3:
-            hull_type_enum = HullType.TRIMARAN
-        elif planing_like:
-            hull_type_enum = HullType.DEEP_V_PLANING
-        else:
-            hull_type_enum = HullType.HARD_CHINE
 
         # Get additional hull-form inputs (best-effort)
         loa = state_manager.get("hull.loa")
@@ -810,7 +810,6 @@ class HydrostaticsValidator(ValidatorInterface):
         definition = HullDefinition(
             hull_id=str(state_manager.get("design_id", "")) or "geometry-hydrostatics",
             hull_name="Hydrostatics",
-            hull_type=hull_type_enum,
             dimensions=MainDimensions(
                 loa=float(loa),
                 lwl=float(lwl),
@@ -1420,6 +1419,51 @@ class ResistanceValidator(ValidatorInterface):
             effective_power_kw_out = float(results.effective_power_kw) + (float(primitive_resistance_kn) * float(speed_ms))
             effective_power_hp_out = float(effective_power_kw_out) * 1.34102
 
+            # -----------------------------------------------------------------
+            # Engineering Truth: detect unmodeled planing features (spray rails)
+            # If present (and we are materially in Savitsky-weighted regime), we must
+            # downgrade validity so UI/scene integrity becomes APPROXIMATE.
+            # -----------------------------------------------------------------
+            unmodeled_features: List[str] = []
+            try:
+                has_spray_rails = bool(state_manager.get("hull.has_spray_rails", False))
+                spray_rail_count = int(state_manager.get("hull.spray_rail_count", 0) or 0)
+                if has_spray_rails or spray_rail_count > 0:
+                    unmodeled_features.append(f"spray_rails(count={spray_rail_count})")
+            except Exception:
+                pass
+            try:
+                resources = state_manager.get("resources", {}) or {}
+                if isinstance(resources, dict):
+                    for _rid, r in resources.items():
+                        if not isinstance(r, dict) or r.get("_deleted"):
+                            continue
+                        if r.get("_type") != "geometry.discontinuity":
+                            continue
+                        dt = str(r.get("discontinuity_type") or "").lower()
+                        if "spray" in dt or "rail" in dt or "strake" in dt:
+                            unmodeled_features.append(f"discontinuity:{dt}")
+                            break
+            except Exception:
+                pass
+
+            # Only downgrade when Savitsky is meaningfully contributing.
+            if unmodeled_features and (savitsky is not None) and float(w_sav) > 0.25:
+                try:
+                    results.method_valid = False  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+                note = str(getattr(results, "validity_note", "") or "").strip()
+                addon = f"Unmodeled planing features detected: {', '.join(sorted(set(unmodeled_features)))}"
+                try:
+                    results.validity_note = (note + "; " + addon) if note else addon  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+                try:
+                    results.warnings.append(addon)  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+
             state_manager.set("resistance.total_resistance_kn", total_kn_out, source)
             state_manager.set("resistance.frictional_resistance_kn", results.frictional_kn, source)
             state_manager.set("resistance.residuary_resistance_kn", results.residuary_kn, source)
@@ -1437,6 +1481,7 @@ class ResistanceValidator(ValidatorInterface):
             state_manager.set("resistance.regime", results.regime, source)
             state_manager.set("resistance.method_valid", results.method_valid, source)
             state_manager.set("resistance.validity_note", results.validity_note, source)
+            state_manager.set("resistance.unmodeled_features", list(sorted(set(unmodeled_features))), source)
             state_manager.set("resistance.primitive_resistance_kn", float(primitive_resistance_kn), source)
             state_manager.set("resistance.primitive_resistance_breakdown", list(primitive_breakdown), source)
 
@@ -1603,6 +1648,16 @@ class ResistanceValidator(ValidatorInterface):
                         adjustment={"path": "hull.lwl", "direction": "increase", "magnitude": 0.04},
                     ))
                     state = ValidatorState.WARNING
+
+            # -----------------------------------------------------------------
+            # Truthfulness: stamp physics freshness (used to flip to DECOUPLED when stale)
+            # -----------------------------------------------------------------
+            try:
+                dv = state_manager.get("design_version")
+                state_manager.set("kernel.physics_last_validated_version", int(dv) if dv is not None else None, source)
+                state_manager.set("kernel.physics_last_validated_at", datetime.utcnow().isoformat(), source)
+            except Exception:
+                pass
 
             # Create success result
             elapsed_ms = int((time.perf_counter() - start_time) * 1000)
@@ -2055,6 +2110,17 @@ class EquilibriumDraftValidator(ValidatorInterface):
                 "hull": {"loa": state_manager.get("hull.loa") or lwl or 25.0},
                 "resources": resources,
             }
+            # Surface intent is a hard contract (no silent defaults). Prefer the state-level control intent if present.
+            try:
+                gi = state_manager.get("geometry_intent")
+                if isinstance(gi, dict) and gi:
+                    state_dict["geometry_intent"] = gi
+                else:
+                    sd = state_manager.get("geometry_intent.surface_definition")
+                    if sd is not None:
+                        state_dict["geometry_intent"] = {"surface_definition": sd}
+            except Exception:
+                pass
             geometry = compile_to_geometry(state_dict)
         except Exception as e:
             if not auto_apply:

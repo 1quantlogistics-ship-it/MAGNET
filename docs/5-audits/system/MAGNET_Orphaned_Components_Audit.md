@@ -1,5 +1,16 @@
 # MAGNET Orphaned Components Audit
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [magnet, orphaned, components, audit]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 > **Implementation Plan:** See `MAGNET_Merge_Implementation_Plan.md` for the concrete 6-day execution plan derived from this audit.
 
 ## Executive Summary

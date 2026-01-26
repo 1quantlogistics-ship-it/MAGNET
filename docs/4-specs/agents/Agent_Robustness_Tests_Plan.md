@@ -1,5 +1,16 @@
 # Agent Robustness Tests Implementation Plan
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [agent, robustness, tests, plan]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 ## Overview
 
 Implement the 18 Agent Robustness Tests specified in the task to validate that the MAGNET multi-agent system correctly handles edge cases, ambiguity, and adversarial inputs without breaking the architecture.

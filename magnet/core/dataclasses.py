@@ -21,6 +21,139 @@ from magnet.core.enums import (
     StructuralZone,
 )
 
+@dataclass
+class ValidatorReceipt:
+    """
+    Typed validator receipt (v0).
+
+    Stable, versioned shape to prevent receipts from turning into a dumping ground.
+    """
+    schema_version: str = "1.0"
+    validator_id: str = ""
+    state: str = ""  # passed|warning|failed|error|skipped (matches taxonomy output)
+    is_gate: bool = False
+    metrics: Dict[str, float] = field(default_factory=dict)
+    details: Dict[str, Any] = field(default_factory=dict)  # escape hatch (non-contractual)
+
+
+@dataclass
+class PhaseReceipt:
+    """
+    Typed phase receipt (v0).
+
+    Timestamp authority: these are stamped once by the Conductor and must never enter deterministic hashes.
+    """
+    schema_version: str = "1.0"
+    phase_id: str = ""
+    phase_status: str = ""  # completed|failed|blocked|...
+    started_at_s: Optional[float] = None
+    completed_at_s: Optional[float] = None
+    validators_run: int = 0
+    validators_passed: int = 0
+    validators_failed: int = 0
+    errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    details: Dict[str, Any] = field(default_factory=dict)  # escape hatch (non-contractual)
+
+
+@dataclass
+class IntegrityInputs:
+    """
+    Typed integrity inputs block (v0).
+
+    Observational only: does not introduce new policy.
+    """
+    schema_version: str = "1.0"
+    surface_definition: Optional[str] = None
+    required_stamps_present: bool = False
+    stamp_versions: Dict[str, Optional[int]] = field(default_factory=dict)
+
+
+@dataclass
+class SceneReceipt:
+    """
+    Typed scene-time receipt (v0).
+
+    This records mesh/render-time checks and must not be confused with phase guarantees.
+    """
+    schema_version: str = "1.0"
+    scene_receipt_id: str = ""
+    design_id: str = ""
+    design_version: int = 0
+    geometry_version_id: str = ""
+    mesh_hash: str = ""
+    checks: Dict[str, Any] = field(default_factory=dict)
+    integrity_effect: Dict[str, Any] = field(default_factory=dict)  # {before, after, reason}
+    timestamp_s: float = 0.0
+
+
+@dataclass
+class TurnContract:
+    """
+    Turn Contract (Receipt) — append-only ledger entry.
+
+    This is the "vault" artifact that binds a specific design_version to:
+    - explicit intent hash
+    - stable state snapshot hash
+    - integrity classification + primary reason
+    - violations (structured later; stable strings for now)
+    """
+
+    schema_version: str = "1.0"
+
+    contract_id: str = ""
+    design_id: str = ""
+    design_version: int = 0
+    state_snapshot_hash: str = ""
+    intent_snapshot_hash: str = ""
+
+    integrity_state: str = "APPROXIMATE"  # "AUTHORITATIVE" | "APPROXIMATE" | "DECOUPLED"
+    primary_reason: Optional[str] = None
+    violations: List[str] = field(default_factory=list)
+
+    # Typed receipt bundle (v0)
+    phase_receipt: Optional[PhaseReceipt] = None
+    validator_receipts: List[ValidatorReceipt] = field(default_factory=list)
+    integrity_inputs: Optional[IntegrityInputs] = None
+
+    # Timestamp is informational only and excluded from deterministic hashes.
+    timestamp_s: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "TurnContract":
+        # Defensive parsing for older/malformed payloads
+        pr = data.get("phase_receipt")
+        vr = data.get("validator_receipts", []) or []
+        ii = data.get("integrity_inputs")
+
+        phase_receipt = PhaseReceipt(**pr) if isinstance(pr, dict) else None
+        validator_receipts: List[ValidatorReceipt] = []
+        if isinstance(vr, list):
+            for x in vr:
+                if isinstance(x, dict):
+                    validator_receipts.append(ValidatorReceipt(**x))
+
+        integrity_inputs = IntegrityInputs(**ii) if isinstance(ii, dict) else None
+
+        return cls(
+            schema_version=str(data.get("schema_version", "1.0")),
+            contract_id=str(data.get("contract_id", "")),
+            design_id=str(data.get("design_id", "")),
+            design_version=int(data.get("design_version", 0) or 0),
+            state_snapshot_hash=str(data.get("state_snapshot_hash", "")),
+            intent_snapshot_hash=str(data.get("intent_snapshot_hash", "")),
+            integrity_state=str(data.get("integrity_state", "APPROXIMATE")),
+            primary_reason=data.get("primary_reason", None),
+            violations=list(data.get("violations", []) or []),
+            phase_receipt=phase_receipt,
+            validator_receipts=validator_receipts,
+            integrity_inputs=integrity_inputs,
+            timestamp_s=float(data.get("timestamp_s", 0.0) or 0.0),
+        )
+
 
 # ==================== 1. MissionConfig ====================
 
@@ -124,6 +257,24 @@ class HullState:
     draft_aft_m: Optional[float] = None  # Draft at AP (m)
     bow_flare_deg: Optional[float] = None  # Bow flare angle above waterline (deg)
     stem_rake_deg: Optional[float] = None  # Stem rake from vertical (deg)
+
+    # Hydro-weight convergence controls (T7.5 / §0.9.8)
+    auto_equilibrate_draft: Optional[bool] = None
+    """If true, allow equilibrium draft solver to apply to hull.draft (advisory path)."""
+
+    auto_converge_hydro_weight: Optional[bool] = None
+    """If true, run hydro-weight fixed-point loop and mutate hull.draft to equilibrium draft."""
+
+    hydro_weight_converged: Optional[bool] = None
+    hydro_weight_iterations: Optional[int] = None
+
+    # Equilibrium diagnostics (written by equilibrium solver and/or convergence loop)
+    equilibrium_draft_m: Optional[float] = None
+    equilibrium_converged: Optional[bool] = None
+    equilibrium_iterations: Optional[int] = None
+    equilibrium_residual_mt: Optional[float] = None
+    equilibrium_target_displacement_mt: Optional[float] = None
+    equilibrium_reason: Optional[str] = None
 
     # Derived values
     displacement_m3: Optional[float] = None  # Volume displacement (m³)
@@ -978,6 +1129,17 @@ class KernelState:
     # Performance
     computation_time_s: float = 0.0
     memory_usage_mb: float = 0.0
+
+    # =============================================================================
+    # Truthfulness: physics freshness stamp (used to detect DECOUPLED state)
+    # =============================================================================
+    physics_last_validated_version: Optional[int] = None
+    physics_last_validated_at: Optional[str] = None
+
+    # Hydrostatics freshness is tracked separately because some integrity rules
+    # (panelized surfaces) require hydrostatics to be present and same-version.
+    hydrostatics_last_validated_version: Optional[int] = None
+    hydrostatics_last_validated_at: Optional[str] = None
 
     # ==================== Human Decision Point (Unified Physics Theory) ====================
     # When True, downstream automation is paused until explicit approval.

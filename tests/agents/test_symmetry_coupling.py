@@ -5,6 +5,17 @@ import pytest
 VALID_SECTION_POINTS = [[0.0, i * 0.3] for i in range(12)]  # 12 points from y=0 to z=3.3
 
 
+def _resp(thinking_json: str, program_json: str) -> str:
+    return f"""VESSEL_THINKING_PASS
+```json
+{thinking_json}
+```
+GEOMETRY_PROGRAM
+```json
+{program_json}
+```"""
+
+
 @pytest.mark.asyncio
 async def test_symmetry_coupling_adds_missing_section_update(monkeypatch):
     """
@@ -13,27 +24,42 @@ async def test_symmetry_coupling_adds_missing_section_update(monkeypatch):
     section at the same station (if it exists).
     """
     from magnet.agents.geometry_proposer import GeometryProposer, DesignProgram, GeometryOperation
+    import json
 
     class FakeLLM:
-        async def complete_json(self, *args, **kwargs):
-            return DesignProgram(
-                program_id="p",
-                version=1,
-                operations=[
-                    GeometryOperation(
-                        op="UPDATE",
-                        type="geometry.section",
-                        id="bow_port",
-                        params={"points": VALID_SECTION_POINTS},
-                        reasoning="update port bow",
-                        confidence=0.9,
-                    )
-                ],
-                constraints=[],
+        async def complete(self, prompt, **kwargs):
+            thinking = json.dumps(
+                {
+                    "schema_version": "0.4",
+                    "station_plan": {"count": 7, "distribution": "uniform", "explicit_xs": None, "rationale": "x"},
+                    "dof_schema": [],
+                    "verification_schema": [],
+                    "closure_proof": [],
+                    "binding_table": [],
+                }
             )
+            program = json.dumps(
+                {
+                    "program_id": "p",
+                    "version": 1,
+                    "operations": [
+                        {
+                            "op": "UPDATE",
+                            "type": "geometry.section",
+                            "id": "bow_port",
+                            "params": {"points": VALID_SECTION_POINTS},
+                            "reasoning": "update port bow",
+                            "confidence": 0.9,
+                        }
+                    ],
+                    "constraints": [],
+                }
+            )
+            return _resp(thinking, program)
 
     proposer = GeometryProposer(FakeLLM())
     state = {
+        "geometry_intent": {"surface_definition": "smooth"},
         "resources": {
             "port": {"_type": "geometry.body", "offset_y_m": -5.0},
             "stbd": {"_type": "geometry.body", "offset_y_m": 5.0},
@@ -51,27 +77,42 @@ async def test_symmetry_coupling_adds_missing_section_update(monkeypatch):
 @pytest.mark.asyncio
 async def test_symmetry_coupling_noop_when_paired_section_missing(monkeypatch):
     from magnet.agents.geometry_proposer import GeometryProposer, DesignProgram, GeometryOperation
+    import json
 
     class FakeLLM:
-        async def complete_json(self, *args, **kwargs):
-            return DesignProgram(
-                program_id="p",
-                version=1,
-                operations=[
-                    GeometryOperation(
-                        op="UPDATE",
-                        type="geometry.section",
-                        id="bow_port",
-                        params={"points": VALID_SECTION_POINTS},
-                        reasoning="update port bow",
-                        confidence=0.9,
-                    )
-                ],
-                constraints=[],
+        async def complete(self, prompt, **kwargs):
+            thinking = json.dumps(
+                {
+                    "schema_version": "0.4",
+                    "station_plan": {"count": 7, "distribution": "uniform", "explicit_xs": None, "rationale": "x"},
+                    "dof_schema": [],
+                    "verification_schema": [],
+                    "closure_proof": [],
+                    "binding_table": [],
+                }
             )
+            program = json.dumps(
+                {
+                    "program_id": "p",
+                    "version": 1,
+                    "operations": [
+                        {
+                            "op": "UPDATE",
+                            "type": "geometry.section",
+                            "id": "bow_port",
+                            "params": {"points": VALID_SECTION_POINTS},
+                            "reasoning": "update port bow",
+                            "confidence": 0.9,
+                        }
+                    ],
+                    "constraints": [],
+                }
+            )
+            return _resp(thinking, program)
 
     proposer = GeometryProposer(FakeLLM())
     state = {
+        "geometry_intent": {"surface_definition": "smooth"},
         "resources": {
             "port": {"_type": "geometry.body", "offset_y_m": -5.0},
             "stbd": {"_type": "geometry.body", "offset_y_m": 5.0},

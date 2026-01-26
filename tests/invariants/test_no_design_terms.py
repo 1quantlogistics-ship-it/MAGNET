@@ -371,6 +371,7 @@ class TestCompilerProducesCanonicalGeometry:
         
         state = {
             "hull": {"loa": 25.0},
+            "geometry_intent": {"surface_definition": "smooth"},
             "resources": {
                 "bow": {
                     "_type": "geometry.section",
@@ -402,6 +403,7 @@ class TestCompilerProducesCanonicalGeometry:
         
         state = {
             "hull": {"loa": 30.0},
+            "geometry_intent": {"surface_definition": "smooth"},
             "resources": {
                 "port_body": {
                     "_type": "geometry.body",
@@ -478,6 +480,7 @@ class TestConductorIntegration:
         
         program = '''
         CREATE geometry.body main { body_type: "test", physics_category: "surface_piercing" }
+        SET geometry_intent.surface_definition = "smooth"
         SET hull.loa = 20.0
         '''
         
@@ -550,7 +553,7 @@ class TestNewPathIsolation:
         assert not result.errors, f"Expansion errors: {result.errors}"
         
         # Build state from actions
-        state = {"hull": {"loa": 25.0}, "resources": {}}
+        state = {"hull": {"loa": 25.0}, "geometry_intent": {"surface_definition": "smooth"}, "resources": {}}
         for action in result.actions:
             if action.path.startswith("resources."):
                 rid = action.path.split(".")[1]

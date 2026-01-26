@@ -34,7 +34,8 @@ class TestStateManagerPathAccess:
     def test_get_simple_path(self):
         """Test getting value at simple path."""
         manager = StateManager()
-        manager.state.design_name = "Test"
+        with manager.state.mutator_context():
+            manager.state.design_name = "Test"
         assert manager.get("design_name") == "Test"
 
     def test_get_nested_path(self):
@@ -171,7 +172,8 @@ class TestStateManagerSerialization:
     def test_to_dict(self):
         """Test exporting to dictionary."""
         manager = StateManager()
-        manager.state.design_name = "Test"
+        with manager.state.mutator_context():
+            manager.state.design_name = "Test"
         data = manager.to_dict()
         assert isinstance(data, dict)
         assert data["design_name"] == "Test"
@@ -191,7 +193,8 @@ class TestStateManagerFileIO:
     def test_save_and_load_file(self):
         """Test saving and loading from file."""
         manager = StateManager()
-        manager.state.design_name = "File Test"
+        with manager.state.mutator_context():
+            manager.state.design_name = "File Test"
         manager.state.mission.vessel_type = "patrol"
         manager.state.hull.loa = 25.0
 
@@ -279,7 +282,8 @@ class TestStateManagerUtilities:
     def test_get_design_name(self):
         """Test getting design name."""
         manager = StateManager()
-        manager.state.design_name = "Test Name"
+        with manager.state.mutator_context():
+            manager.state.design_name = "Test Name"
         assert manager.get_design_name() == "Test Name"
 
     def test_set_design_name(self):
@@ -291,7 +295,8 @@ class TestStateManagerUtilities:
     def test_summary(self):
         """Test summary output."""
         manager = StateManager()
-        manager.state.design_name = "Summary Test"
+        with manager.state.mutator_context():
+            manager.state.design_name = "Summary Test"
         summary = manager.summary()
         assert isinstance(summary, str)
         assert "Summary Test" in summary

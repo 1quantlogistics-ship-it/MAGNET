@@ -1,5 +1,16 @@
 # Walking Trail Plan: Honest Intermediate States
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [walking, trail, plan, provenance, contracts]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 **Created:** January 15, 2026
 **Updated:** January 15, 2026
 **Philosophy:** "The potter never finishes the wheel, but each vessel fired must still hold water."

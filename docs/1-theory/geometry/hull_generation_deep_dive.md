@@ -1,5 +1,16 @@
 # MAGNET Hull Generation System: Technical Deep Dive
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [hull, generation, deep, dive]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 This document provides a comprehensive technical reference for the MAGNET Hull Generation System, covering the complete pipeline from parametric input to 3D mesh output and hydrostatic analysis.
 
 ---

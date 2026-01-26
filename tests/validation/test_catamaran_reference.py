@@ -93,6 +93,9 @@ def generate_catamaran_dsl(reference: PublishedCatamaranData) -> str:
 # Reference: {reference.name}
 # Source: {reference.source}
 
+# Explicit surface intent (fail-closed contract)
+SET geometry_intent.surface_definition = "smooth"
+
 # Port demihull
 CREATE geometry.section port_bow {{
     station: 0.0,

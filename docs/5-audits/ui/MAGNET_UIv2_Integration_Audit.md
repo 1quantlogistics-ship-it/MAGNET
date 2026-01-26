@@ -1,5 +1,16 @@
 ## MAGNET UIv2 Integration Audit (Single Production Interface, No Duplicate Paths)
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [magnet, uiv2, integration, audit]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 **Date:** 2026-01-06  
 **Goal:** Connect **UIv2** (served from `magnet/ui_v2/`) to MAGNET's **finalized endpoints** so the complete flow runs through **one production-ready interface**:
 

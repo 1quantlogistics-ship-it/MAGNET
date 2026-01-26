@@ -1,5 +1,15 @@
 # Intent→Action Protocol Architecture
 
+<!-- AGENT_CONTEXT
+Purpose: Firewall between LLM proposals and kernel state mutations
+Authoritative: Yes
+Keywords: intent, action, protocol, firewall, llm, validation, mutations
+Depends_On: CONSTITUTION.md
+Used_By: agents, kernel, action_validator
+Status: current
+Last_Verified: 2026-01-15
+-->
+
 ## Overview
 
 The Intent→Action Protocol is the **firewall between LLM proposals and kernel state mutations**. It ensures that:

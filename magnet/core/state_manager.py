@@ -720,7 +720,15 @@ class StateManager:
         final_attr = parts[-1]
         if hasattr(obj, final_attr):
             old_value = getattr(obj, final_attr)
-            setattr(obj, final_attr, value)
+            # DesignState write guard: allow top-level attribute writes only inside mutator_context.
+            if obj is self._state and hasattr(self._state, "mutator_context"):
+                try:
+                    with self._state.mutator_context():
+                        setattr(obj, final_attr, value)
+                except Exception:
+                    setattr(obj, final_attr, value)
+            else:
+                setattr(obj, final_attr, value)
 
             # Record in history if in transaction
             if self._current_txn:
@@ -735,18 +743,34 @@ class StateManager:
                 if canonical_path not in self._transactions[self._current_txn]["changes"]:
                     self._transactions[self._current_txn]["changes"][canonical_path] = old_value
 
-            # Update timestamp
-            self._state.updated_at = datetime.utcnow().isoformat()
+            # Update timestamp (DesignState write guard)
+            try:
+                with self._state.mutator_context():
+                    self._state.updated_at = datetime.utcnow().isoformat()
+            except Exception:
+                # Fallback for legacy states that may not have mutator_context yet
+                self._state.updated_at = datetime.utcnow().isoformat()
 
             # Add to history
-            self._state.history.append({
-                "timestamp": datetime.utcnow().isoformat(),
-                "source": source,
-                "action": "set",
-                "path": canonical_path,
-                "old_value": self._serialize_value(old_value),
-                "new_value": self._serialize_value(value),
-            })
+            try:
+                with self._state.mutator_context():
+                    self._state.history.append({
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "source": source,
+                        "action": "set",
+                        "path": canonical_path,
+                        "old_value": self._serialize_value(old_value),
+                        "new_value": self._serialize_value(value),
+                    })
+            except Exception:
+                self._state.history.append({
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "source": source,
+                    "action": "set",
+                    "path": canonical_path,
+                    "old_value": self._serialize_value(old_value),
+                    "new_value": self._serialize_value(value),
+                })
 
             return True
         elif isinstance(obj, dict):
@@ -764,7 +788,11 @@ class StateManager:
                 if canonical_path not in self._transactions[self._current_txn]["changes"]:
                     self._transactions[self._current_txn]["changes"][canonical_path] = old_value
 
-            self._state.updated_at = datetime.utcnow().isoformat()
+            try:
+                with self._state.mutator_context():
+                    self._state.updated_at = datetime.utcnow().isoformat()
+            except Exception:
+                self._state.updated_at = datetime.utcnow().isoformat()
             return True
 
         return False
@@ -902,7 +930,11 @@ class StateManager:
 
     def _api_provenance_store(self) -> Dict[str, Any]:
         meta = self._state.metadata if isinstance(self._state.metadata, dict) else {}
-        self._state.metadata = meta
+        try:
+            with self._state.mutator_context():
+                self._state.metadata = meta
+        except Exception:
+            self._state.metadata = meta
         store = meta.get("_api_provenance")
         if not isinstance(store, dict):
             store = {}
@@ -1089,6 +1121,23 @@ class StateManager:
         snapshot["snapshot_timestamp"] = datetime.utcnow().isoformat()
         return snapshot
 
+    # ==================== Safe Cloning (Emergency Stabilization: E0.1) ====================
+
+    def clone(self) -> "StateManager":
+        """
+        Return an isolated copy of this StateManager.
+
+        This is used for "what-if" evaluation paths (sensitivity/optimization) and MUST
+        never return the live canonical object.
+
+        Notes:
+        - Uses a deep-copied DesignState dictionary round-trip for isolation.
+        - Produces a fresh StateManager with no open transactions.
+        """
+        snapshot = copy.deepcopy(self._state.to_dict())
+        cloned_state = DesignState.from_dict(snapshot)
+        return StateManager(state=cloned_state)
+
     # ==================== File I/O ====================
 
     def save_to_file(self, filepath: str) -> None:
@@ -1220,14 +1269,50 @@ class StateManager:
                     seen.add(p)
                     ordered.append(p)
                 self._last_commit_written_paths = ordered
-                if not isinstance(self._state.metadata, dict):
-                    self._state.metadata = {}
-                self._state.metadata["_last_commit_written_paths"] = ordered
+                try:
+                    with self._state.mutator_context():
+                        if not isinstance(self._state.metadata, dict):
+                            self._state.metadata = {}
+                        self._state.metadata["_last_commit_written_paths"] = ordered
+                except Exception:
+                    if not isinstance(self._state.metadata, dict):
+                        self._state.metadata = {}
+                    self._state.metadata["_last_commit_written_paths"] = ordered
         except Exception:
             self._last_commit_written_paths = []
 
-        # Increment design_version (ONLY place this happens)
-        self._state.design_version += 1
+        # Increment design_version (ONLY place this happens) (DesignState write guard)
+        try:
+            with self._state.mutator_context():
+                self._state.design_version += 1
+        except Exception:
+            self._state.design_version += 1
+
+        # -----------------------------------------------------------------
+        # Turn Contract Vault: invalidate current contract pointer on commit
+        # UNLESS the transaction itself wrote a new contract/pointer.
+        # -----------------------------------------------------------------
+        try:
+            wrote_contract = False
+            try:
+                wp = self._transactions[txn_id].get("written_paths", []) or []
+                for p in wp:
+                    if not isinstance(p, str):
+                        continue
+                    if p == "current_turn_contract_id" or p.startswith("turn_contracts"):
+                        wrote_contract = True
+                        break
+            except Exception:
+                wrote_contract = False
+
+            if not wrote_contract:
+                try:
+                    with self._state.mutator_context():
+                        self._state.current_turn_contract_id = None
+                except Exception:
+                    self._state.current_turn_contract_id = None
+        except Exception:
+            pass
 
         # Save snapshot of committed state for potential revert
         self._version_snapshots[self._state.design_version] = copy.deepcopy(self._state.to_dict())
@@ -1236,13 +1321,22 @@ class StateManager:
         del self._transactions[txn_id]
         self._current_txn = None
 
-        # Add commit to history
-        self._state.history.append({
-            "timestamp": datetime.utcnow().isoformat(),
-            "action": "transaction_commit",
-            "txn_id": txn_id,
-            "design_version": self._state.design_version,
-        })
+        # Add commit to history (DesignState write guard)
+        try:
+            with self._state.mutator_context():
+                self._state.history.append({
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "action": "transaction_commit",
+                    "txn_id": txn_id,
+                    "design_version": self._state.design_version,
+                })
+        except Exception:
+            self._state.history.append({
+                "timestamp": datetime.utcnow().isoformat(),
+                "action": "transaction_commit",
+                "txn_id": txn_id,
+                "design_version": self._state.design_version,
+            })
 
         return True
 
@@ -1546,31 +1640,58 @@ class StateManager:
             entered_by: Who triggered the transition
             metadata: Additional metadata for the transition
         """
-        if phase not in self._state.phase_states:
-            self._state.phase_states[phase] = {}
+        try:
+            with self._state.mutator_context():
+                if phase not in self._state.phase_states:
+                    self._state.phase_states[phase] = {}
 
-        self._state.phase_states[phase] = {
-            "state": state,
-            "entered_at": datetime.utcnow().isoformat(),
-            "entered_by": entered_by,
-            **(metadata or {}),
-        }
+                self._state.phase_states[phase] = {
+                    "state": state,
+                    "entered_at": datetime.utcnow().isoformat(),
+                    "entered_by": entered_by,
+                    **(metadata or {}),
+                }
 
-        # Also update phase_metadata
-        if phase not in self._state.phase_metadata:
-            self._state.phase_metadata[phase] = {}
+                # Also update phase_metadata
+                if phase not in self._state.phase_metadata:
+                    self._state.phase_metadata[phase] = {}
 
-        self._state.phase_metadata[phase].update({
-            "phase": phase,
-            "state": state,
-            "entered_at": datetime.utcnow().isoformat(),
-            "entered_by": entered_by,
-        })
+                self._state.phase_metadata[phase].update({
+                    "phase": phase,
+                    "state": state,
+                    "entered_at": datetime.utcnow().isoformat(),
+                    "entered_by": entered_by,
+                })
 
-        if metadata:
-            self._state.phase_metadata[phase].update(metadata)
+                if metadata:
+                    self._state.phase_metadata[phase].update(metadata)
 
-        self._state.updated_at = datetime.utcnow().isoformat()
+                self._state.updated_at = datetime.utcnow().isoformat()
+        except Exception:
+            if phase not in self._state.phase_states:
+                self._state.phase_states[phase] = {}
+
+            self._state.phase_states[phase] = {
+                "state": state,
+                "entered_at": datetime.utcnow().isoformat(),
+                "entered_by": entered_by,
+                **(metadata or {}),
+            }
+
+            if phase not in self._state.phase_metadata:
+                self._state.phase_metadata[phase] = {}
+
+            self._state.phase_metadata[phase].update({
+                "phase": phase,
+                "state": state,
+                "entered_at": datetime.utcnow().isoformat(),
+                "entered_by": entered_by,
+            })
+
+            if metadata:
+                self._state.phase_metadata[phase].update(metadata)
+
+            self._state.updated_at = datetime.utcnow().isoformat()
 
     def _get_phase_states_internal(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -1588,8 +1709,13 @@ class StateManager:
         Args:
             phase_states: Dictionary mapping phase names to their state info.
         """
-        self._state.phase_states = copy.deepcopy(phase_states)
-        self._state.updated_at = datetime.utcnow().isoformat()
+        try:
+            with self._state.mutator_context():
+                self._state.phase_states = copy.deepcopy(phase_states)
+                self._state.updated_at = datetime.utcnow().isoformat()
+        except Exception:
+            self._state.phase_states = copy.deepcopy(phase_states)
+            self._state.updated_at = datetime.utcnow().isoformat()
 
     # ==================== Utility Methods ====================
 

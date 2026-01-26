@@ -482,33 +482,23 @@
   border-top-color: var(--accent-primary, #7c3aed);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
-}
-
-.loading-indicator .loading-text {
+}.loading-indicator .loading-text {
   color: var(--text-secondary, #a0a0b0);
   font-size: 0.9em;
-}
-
-.loading-indicator.warning .loading-text {
+}.loading-indicator.warning .loading-text {
   color: var(--warning, #f59e0b);
-}
-
-@keyframes spin {
+}@keyframes spin {
   to { transform: rotate(360deg); }
 }
 
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
-}
-
-/* Loading states for chat input */
+}/* Loading states for chat input */
 .chat-input-container.loading .chat-input {
   opacity: 0.6;
   pointer-events: none;
-}
-
-.chat-input-container.loading .chat-send-btn {
+}.chat-input-container.loading .chat-send-btn {
   opacity: 0.6;
   pointer-events: none;
 }

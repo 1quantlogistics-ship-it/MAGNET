@@ -10,7 +10,7 @@ NO SECOND GEOMETRY ENGINE:
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 import logging
 
 from magnet.hull_gen.geometry import (
@@ -20,6 +20,8 @@ from magnet.hull_gen.geometry import (
     Point3D,
     LongitudinalFeature,
 )
+from magnet.kernel.synthesis import harmonize_sections_global
+from magnet.kernel.feature_curve_extractor import extract_feature_curves
 from .quality_gates import check_resolution, check_fairness
 from .section_compiler import compile_sections, compile_sections_for_bodies
 
@@ -29,6 +31,16 @@ logger = logging.getLogger(__name__)
 
 class CompilationError(Exception):
     """Raised when compilation fails."""
+    pass
+
+
+class MissingSurfaceIntentError(CompilationError):
+    """
+    Raised when surface intent is missing.
+
+    Truthfulness rule: we must never silently default to "smooth" because it changes
+    physics/visual coupling decisions (integration method + faceting).
+    """
     pass
 
 
@@ -61,6 +73,9 @@ def compile_to_geometry(
         CompilationError: If compilation fails
     """
     resources = state.get("resources", {})
+
+    # Determine surface intent early so compilation + topology rules can use it.
+    surface_definition, truth_warnings = _determine_surface_definition(state, resources)
     
     # Get LOA from state or default
     if loa is None:
@@ -77,12 +92,66 @@ def compile_to_geometry(
     
     # Decide single vs multi-body compilation
     if len(bodies) > 1:
-        geometry = _compile_multi_body(resources, bodies, loa, state)
+        geometry = _compile_multi_body(resources, bodies, loa, state, surface_definition=surface_definition)
     else:
-        geometry = _compile_single_hull(resources, loa, state)
+        geometry = _compile_single_hull(resources, loa, state, surface_definition=surface_definition)
+
+    # Attach intent + warnings to canonical geometry metadata (SSOT)
+    if not geometry.metadata:
+        geometry.metadata = {}
+    geometry.metadata["surface_definition"] = surface_definition
+    if truth_warnings:
+        geometry.metadata.setdefault("truth_warnings", []).extend(truth_warnings)
 
     _apply_quality_gates(geometry)
     return geometry
+
+
+def _determine_surface_definition(
+    state: Dict[str, Any],
+    resources: Dict[str, Dict],
+) -> Tuple[str, List[str]]:
+    """
+    Determine explicit surface_definition for the design.
+
+    Precedence:
+    1) state.geometry_intent.surface_definition
+    2) geometry.surface(surface_type="hull_shell").surface_definition (must be consistent)
+    3) ERROR (MissingSurfaceIntentError)
+    """
+    warnings: List[str] = []
+
+    gi = state.get("geometry_intent") or {}
+    if isinstance(gi, dict):
+        sd = gi.get("surface_definition")
+        if isinstance(sd, str) and sd:
+            if sd not in ("smooth", "panelized"):
+                raise CompilationError(f"Invalid geometry_intent.surface_definition: {sd!r}")
+            return sd, warnings
+
+    surfaces = _extract_surfaces(resources)
+    sds = []
+    for _sid, s in surfaces.items():
+        if not isinstance(s, dict):
+            continue
+        if s.get("surface_type", "hull_shell") != "hull_shell":
+            continue
+        sd = s.get("surface_definition")
+        if isinstance(sd, str) and sd:
+            sds.append(sd)
+    sds = sorted({x for x in sds})
+    if len(sds) == 1:
+        sd = sds[0]
+        if sd not in ("smooth", "panelized"):
+            raise CompilationError(f"Invalid geometry.surface.surface_definition: {sd!r}")
+        return sd, warnings
+    if len(sds) > 1:
+        raise CompilationError(f"Conflicting surface_definition across hull_shell surfaces: {sds}")
+
+    raise MissingSurfaceIntentError(
+        "Missing surface intent: set state.geometry_intent.surface_definition "
+        "or geometry.surface(surface_type='hull_shell').surface_definition"
+    )
 
 
 def _extract_bodies(resources: Dict[str, Dict]) -> Dict[str, Dict]:
@@ -189,6 +258,8 @@ def _compile_single_hull(
     resources: Dict[str, Dict],
     loa: float,
     state: Dict[str, Any],
+    *,
+    surface_definition: str,
 ) -> HullGeometry:
     """Compile single-body hull geometry."""
     
@@ -202,6 +273,9 @@ def _compile_single_hull(
     for section in sections:
         for pt in section.points:
             pt.position.x = section.x_position
+
+    # Phase 1: Global Topological Harmonization (uniform vertex count)
+    harmonize_sections_global(sections, surface_definition=surface_definition)
     
     # Get hull parameters
     hull_params = state.get("hull", {})
@@ -215,6 +289,14 @@ def _compile_single_hull(
     
     # Set properties
     geometry.hull_id = state.get("design_id", "")
+
+    # Truthfulness: explicit per-body centerline map (SSOT for tessellation).
+    # Monohull: single body at y=0.
+    try:
+        geometry.metadata = geometry.metadata or {}
+        geometry.metadata.setdefault("body_centerline_y_by_body", {"main": 0.0})
+    except Exception:
+        pass
     
     # Compile discontinuities into longitudinal features
     discontinuities = _extract_discontinuities(resources)
@@ -238,6 +320,25 @@ def _compile_single_hull(
     # Take absolute value of volume (geometry is correct, sign comes from integration direction)
     geometry.volume = abs(geometry.volume)
     
+    # Extract feature curves (Section 0 prerequisite for character observables)
+    feature_curves = extract_feature_curves(geometry.sections, loa=loa)
+    geometry.stem_profile = feature_curves.get("stem_profile", [])
+    geometry.keel_profile = feature_curves.get("keel_line", [])
+    geometry.chine_curve = feature_curves.get("chine_line", [])
+    geometry.deck_edge = feature_curves.get("sheer_line", [])
+    geometry.transom_outline = feature_curves.get("transom_outline", [])
+    
+    # Mirror in metadata for JSON-friendly access
+    if not geometry.metadata:
+        geometry.metadata = {}
+    geometry.metadata["feature_curves"] = {
+        "stem_profile": [[p.x, p.y, p.z] for p in geometry.stem_profile],
+        "transom_outline": [[p.x, p.y, p.z] for p in geometry.transom_outline],
+        "sheer_line": [[p.x, p.y, p.z] for p in geometry.deck_edge],
+        "chine_line": [[p.x, p.y, p.z] for p in geometry.chine_curve],
+        "keel_line": [[p.x, p.y, p.z] for p in geometry.keel_profile],
+    }
+    
     return geometry
 
 
@@ -246,6 +347,8 @@ def _compile_multi_body(
     bodies: Dict[str, Dict],
     loa: float,
     state: Dict[str, Any],
+    *,
+    surface_definition: str,
 ) -> HullGeometry:
     """
     Compile multi-body hull geometry.
@@ -260,6 +363,10 @@ def _compile_multi_body(
     if not body_sections:
         raise CompilationError("No sections defined for any body")
     
+    # Phase 1: Global Topological Harmonization PER BODY (uniform vertex count per body)
+    for _bid, secs in list(body_sections.items()):
+        harmonize_sections_global(secs, surface_definition=surface_definition)
+
     # Apply body offsets to sections
     all_sections = []
     for body_id, body_config in bodies.items():
@@ -305,6 +412,16 @@ def _compile_multi_body(
     # Store body configuration for hydrostatics
     # This is crucial for parallel axis theorem BM calculation
     geometry.bodies = bodies  # type: ignore
+
+    # Truthfulness: explicit per-body centerline map (SSOT for tessellation).
+    # Use authored body offsets as each body's centerline in ship coordinates.
+    try:
+        geometry.metadata = geometry.metadata or {}
+        geometry.metadata["body_centerline_y_by_body"] = {
+            str(bid): float(cfg.get("offset_y_m", 0.0)) for bid, cfg in (bodies or {}).items()
+        }
+    except Exception:
+        pass
     
     # Compile discontinuities
     discontinuities = _extract_discontinuities(resources)
@@ -327,6 +444,25 @@ def _compile_multi_body(
     
     # Take absolute value of volume (geometry is correct, sign comes from integration direction)
     geometry.volume = abs(geometry.volume)
+    
+    # Extract feature curves (Section 0 prerequisite for character observables)
+    feature_curves = extract_feature_curves(geometry.sections, loa=loa)
+    geometry.stem_profile = feature_curves.get("stem_profile", [])
+    geometry.keel_profile = feature_curves.get("keel_line", [])
+    geometry.chine_curve = feature_curves.get("chine_line", [])
+    geometry.deck_edge = feature_curves.get("sheer_line", [])
+    geometry.transom_outline = feature_curves.get("transom_outline", [])
+    
+    # Mirror in metadata for JSON-friendly access
+    if not geometry.metadata:
+        geometry.metadata = {}
+    geometry.metadata["feature_curves"] = {
+        "stem_profile": [[p.x, p.y, p.z] for p in geometry.stem_profile],
+        "transom_outline": [[p.x, p.y, p.z] for p in geometry.transom_outline],
+        "sheer_line": [[p.x, p.y, p.z] for p in geometry.deck_edge],
+        "chine_line": [[p.x, p.y, p.z] for p in geometry.chine_curve],
+        "keel_line": [[p.x, p.y, p.z] for p in geometry.keel_profile],
+    }
     
     return geometry
 

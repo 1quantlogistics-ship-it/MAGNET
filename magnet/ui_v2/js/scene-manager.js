@@ -206,12 +206,64 @@ class MAGNETSceneManager {
     }
 
     /**
+     * Clear current scene geometry for a design.
+     *
+     * Use this when:
+     * - switching to a brand-new blank design (no geometry yet)
+     * - a GLB load definitively indicates "no geometry" (404/GeometryUnavailable)
+     *
+     * Do NOT call this during normal "update in progress" retries (avoid flicker).
+     */
+    clear() {
+        try {
+            if (this.hull) {
+                // Best-effort dispose (avoid GPU memory leaks on repeated design switches)
+                try {
+                    this.hull.traverse(child => {
+                        if (child && child.isMesh) {
+                            try { child.geometry?.dispose?.(); } catch (e) {}
+                            try {
+                                const mat = child.material;
+                                if (Array.isArray(mat)) mat.forEach(m => m?.dispose?.());
+                                else mat?.dispose?.();
+                            } catch (e) {}
+                        }
+                    });
+                } catch (e) {}
+
+                try { this.scene.remove(this.hull); } catch (e) {}
+                this.hull = null;
+            }
+
+            if (this._markersGroup) {
+                try { this.scene.remove(this._markersGroup); } catch (e) {}
+                this._markersGroup = null;
+            }
+
+            // Reset viewport stats / status
+            try { MagnetStudio?.setViewportStats?.([]); } catch (e) {}
+        } catch (e) {
+            console.warn('[MAGNET] Scene clear failed:', e);
+        }
+    }
+
+    /**
      * Configure design context so the scene manager can fetch /3d/scene metadata.
      * Called by backend-adapter.js after connect.
      */
     setDesignContext(baseUrl, designId) {
+        const prev = this._designId;
         this._baseUrl = baseUrl;
         this._designId = designId;
+
+        // Defensive: on design switch, immediately reset truth badge + clear stale geometry.
+        // This prevents "authoritative carryover" when starting a new blank design.
+        try {
+            if (prev && designId && prev !== designId) {
+                this.clear();
+                MagnetStudio?.setTruthBadge?.('DECOUPLED', 'design_context_changed');
+            }
+        } catch (e) {}
     }
 
     setShowDiagnostics(enabled) {
@@ -219,10 +271,20 @@ class MAGNETSceneManager {
     }
 
     async _loadAndRenderPrimitives({ center }) {
-        const url = `${this._baseUrl}/api/v1/designs/${this._designId}/3d/scene?lod=medium&allow_visual_only=true&_t=` + Date.now();
+        // Engineering Truth: do not request visual-only fallback by default.
+        const url = `${this._baseUrl}/api/v1/designs/${this._designId}/3d/scene?lod=medium&allow_visual_only=false&_t=` + Date.now();
         const resp = await fetch(url, { cache: 'no-store', method: 'GET' });
         if (!resp.ok) return;
         const payload = await resp.json();
+        // Truth badge (scene.simulation_integrity)
+        try {
+            const integrity =
+                payload?.data?.simulation_integrity ||
+                payload?.data?.metadata?.simulation_integrity ||
+                null;
+            const reason = payload?.data?.metadata?.simulation_integrity_reason || null;
+            MagnetStudio?.setTruthBadge?.(integrity, reason);
+        } catch (e) {}
         const primitives = payload?.data?.metadata?.primitives || null;
         if (!primitives) return;
         this._renderPrimitiveMarkers(primitives, center);

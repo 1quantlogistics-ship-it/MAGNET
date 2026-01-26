@@ -9,7 +9,7 @@
  * 4. Unknown message logging
  * 5. Validated API routes from api.py
  * 6. RunPod proxy URL format (no explicit port)
- * 7. Phase ID mapping (UI 'hull' ↔ backend 'hull_form')
+ * 7. Phase ID mapping (UI → kernel canonical phases)
  * 8. Validation response normalization
  */
 
@@ -20,35 +20,40 @@
 const PhaseIdMapper = {
     // UI → Backend
     toBackend: {
-        'mission': 'mission_requirements',
-        'hull': 'hull_form',
-        'hydrostatics': 'hydrostatics',
-        'resistance': 'resistance_propulsion',
-        'structure': 'structural_scantlings',
-        'arrangement': 'general_arrangement',
-        // Module 64: Add missing phases (verified from PHASE_DEPENDENCIES)
+        // Canonical kernel phases (single-authority):
+        // UI may expose sub-tabs (hydrostatics/resistance) but backend run/validate is phase-based.
+        'mission': 'mission',
+        'hull': 'hull',
+        'hydrostatics': 'hull',
+        'resistance': 'hull',
+        'structure': 'structure',
+        'arrangement': 'arrangement',
         'propulsion': 'propulsion',
-        'systems': 'systems',
-        'weight': 'weight_stability',
-        'stability': 'weight_stability',
-        'weight_stability': 'weight_stability',
+        'weight': 'weight',
+        'stability': 'stability',
         'compliance': 'compliance',
         'production': 'production'
     },
     // Backend → UI
     toUI: {
+        // Canonical phases
+        'mission': 'mission',
+        'hull': 'hull',
+        'structure': 'structure',
+        'arrangement': 'arrangement',
+        'propulsion': 'propulsion',
+        'weight': 'weight',
+        'stability': 'stability',
+        'compliance': 'compliance',
+        'production': 'production',
+
+        // Legacy compatibility (may appear in WS payloads or older routes)
         'mission_requirements': 'mission',
         'hull_form': 'hull',
-        'hydrostatics': 'hydrostatics',
-        'resistance_propulsion': 'resistance',
+        'weight_stability': 'weight_stability',
         'structural_scantlings': 'structure',
         'general_arrangement': 'arrangement',
-        // Module 64: Add missing phases
-        'propulsion': 'propulsion',
-        'systems': 'systems',
-        'weight_stability': 'weight_stability',
-        'compliance': 'compliance',
-        'production': 'production'
+        'resistance_propulsion': 'resistance'
     },
     // Convert UI phase ID to backend phase ID
     uiToBackend(uiPhase) {
@@ -248,27 +253,30 @@ class MAGNETBackendAdapter {
             // Phase events (from websocket.py MessageType enum)
             // Use PhaseIdMapper to translate backend phase IDs to UI phase IDs
             case 'phase_started': {
-                const uiPhase = PhaseIdMapper.backendToUI(payload.phase);
+                const backendPhase = payload.kernel_phase || payload.phase;
+                const uiPhase = PhaseIdMapper.backendToUI(backendPhase);
                 MagnetStudio.setPhaseState(uiPhase, 'active', 'Running...');
                 MagnetStudio.setStatus('Processing', 'processing');
                 break;
             }
 
             case 'phase_completed': {
-                const uiPhase = PhaseIdMapper.backendToUI(payload.phase);
+                const backendPhase = payload.kernel_phase || payload.phase;
+                const uiPhase = PhaseIdMapper.backendToUI(backendPhase);
                 MagnetStudio.setPhaseState(uiPhase, 'complete');
                 MagnetStudio.terminal.success(`Phase ${uiPhase} completed`);
                 MagnetStudio.setStatus('Ready');
 
                 // Module 63.2: Load GLB after hull phase
-                if ((uiPhase === 'hull' || payload.phase === 'hull_form') && window.magnetThreeScene) {
+                if ((uiPhase === 'hull' || backendPhase === 'hull') && window.magnetThreeScene) {
                     this._loadHullGeometry();
                 }
                 break;
             }
 
             case 'phase_failed': {
-                const uiPhase = PhaseIdMapper.backendToUI(payload.phase);
+                const backendPhase = payload.kernel_phase || payload.phase;
+                const uiPhase = PhaseIdMapper.backendToUI(backendPhase);
                 MagnetStudio.setPhaseState(uiPhase, 'error', payload.error || payload.message);
                 MagnetStudio.terminal.error(`Phase ${uiPhase} failed: ${payload.error || payload.message}`);
                 MagnetStudio.setStatus('Error', 'error');
@@ -276,7 +284,8 @@ class MAGNETBackendAdapter {
             }
 
             case 'phase_approved': {
-                const uiPhase = PhaseIdMapper.backendToUI(payload.phase);
+                const backendPhase = payload.kernel_phase || payload.phase;
+                const uiPhase = PhaseIdMapper.backendToUI(backendPhase);
                 MagnetStudio.setPhaseState(uiPhase, 'complete', 'Approved');
                 MagnetStudio.toast(`Phase ${uiPhase} approved`, 'success');
                 break;
@@ -286,13 +295,15 @@ class MAGNETBackendAdapter {
             // Backend returns: { validators_run: [...], results: {...}, contract_satisfied: bool }
             // UI expects: pass/fail state with detail string
             case 'validation_started': {
-                const uiPhase = PhaseIdMapper.backendToUI(payload.phase || payload.validator_id);
+                const backendPhase = payload.kernel_phase || payload.phase || payload.validator_id;
+                const uiPhase = PhaseIdMapper.backendToUI(backendPhase);
                 MagnetStudio.setValidatorState(uiPhase, 'running');
                 break;
             }
 
             case 'validation_completed': {
-                const uiPhase = PhaseIdMapper.backendToUI(payload.phase || payload.validator_id);
+                const backendPhase = payload.kernel_phase || payload.phase || payload.validator_id;
+                const uiPhase = PhaseIdMapper.backendToUI(backendPhase);
                 // Normalize validation response - handle both simple and structured formats
                 let valState, detail;
                 if (payload.contract_satisfied !== undefined) {
@@ -434,6 +445,25 @@ class MAGNETBackendAdapter {
 
             const cmd = command.trim().toLowerCase();
 
+            // ============================================================
+            // NON-LLM UI COMMANDS (must NOT go to spiral chat)
+            // ============================================================
+            if (cmd === 'show hydrostatics' || cmd === 'hydrostatics') {
+                try {
+                    if (!this.designId) throw new Error('No design loaded');
+                    MagnetStudio.terminal.info('Running hydrostatics (hull phase)…');
+                    await this.post(`/api/v1/designs/${this.designId}/phases/hull/run`, {});
+                    await this.loadDesignState();
+                    this._printHydrostaticsSummary();
+                } catch (e) {
+                    MagnetStudio.terminal.error(`Hydrostatics failed: ${e.message || e}`);
+                } finally {
+                    MagnetStudio.setStatus('Ready');
+                    MagnetStudio.terminal.cursor();
+                }
+                return;
+            }
+
             // Create new design command
             if (cmd === 'new' || cmd === 'new design' || cmd.startsWith('create new design')) {
                 MagnetStudio.terminal.info('Creating new design...');
@@ -445,6 +475,12 @@ class MAGNETBackendAdapter {
                     if (newDesign.design_id) {
                         this.designId = newDesign.design_id;
                         MagnetStudio.terminal.success(`Created design: ${this.designId}`);
+                        // Defensive: ensure 3D scene rebinds to the new design immediately (fixes "rebind to old ID").
+                        try {
+                            window.magnetThreeScene?.setDesignContext?.(this.baseUrl, this.designId);
+                            window.magnetThreeScene?.clear?.();
+                            MagnetStudio?.setTruthBadge?.('DECOUPLED', 'design_context_changed');
+                        } catch (e) {}
                         // Update URL
                         try {
                             const url = new URL(window.location.href);
@@ -473,6 +509,12 @@ class MAGNETBackendAdapter {
                         this.designId = newDesign.design_id;
                         MagnetStudio.terminal.success(`══ BLANK DESIGN ══`);
                         MagnetStudio.terminal.success(`ID: ${this.designId} (v${newDesign.design_version || 1})`);
+                        // Defensive: rebind 3D scene to the new design immediately and reset truth badge.
+                        try {
+                            window.magnetThreeScene?.setDesignContext?.(this.baseUrl, this.designId);
+                            window.magnetThreeScene?.clear?.();
+                            MagnetStudio?.setTruthBadge?.('DECOUPLED', 'design_reset');
+                        } catch (e) {}
                         try {
                             const url = new URL(window.location.href);
                             url.searchParams.set('design', this.designId);
@@ -640,11 +682,21 @@ class MAGNETBackendAdapter {
         // Use PhaseIdMapper to translate UI phase to backend phase
         MagnetStudio.on('validatorClick', async ({ validator }) => {
             try {
-                // Get current phase from UI state and translate to backend phase
-                const state = MagnetStudio.getState();
-                const uiPhase = state.currentPhase || 'hull';
-                const backendPhase = PhaseIdMapper.uiToBackend(uiPhase);
-                await this.post(`/api/v1/designs/${this.designId}/phases/${backendPhase}/validate`, {});
+                // Validators are NOT phases. Route validator clicks to the corresponding
+                // kernel phase validation regardless of current UI tab.
+                //
+                // Option A (phase-scoped): map validator widgets → kernel phase validate.
+                const v = String(validator || '').toLowerCase();
+                const validatorToKernelPhase = {
+                    // IMO intact stability criteria live in the stability phase outputs
+                    'stability': 'stability',
+                    // Class/regulatory checks are represented as compliance in kernel
+                    'lloyds': 'compliance',
+                    'abs_hsnc': 'compliance',
+                    'dnv_gl': 'compliance',
+                };
+                const kernelPhase = validatorToKernelPhase[v] || 'compliance';
+                await this.post(`/api/v1/designs/${this.designId}/phases/${kernelPhase}/validate`, {});
             } catch (error) {
                 MagnetStudio.terminal.error(`Validation failed: ${error.message}`);
             }
@@ -692,7 +744,7 @@ class MAGNETBackendAdapter {
 
                 // Re-run dependent phases so outputs are not stale (draft affects hydrostatics → resistance/stability).
                 // Keep this explicit and finite (do not try to "run everything").
-                const phasesToRun = ['hydrostatics', 'resistance', 'weight_stability'];
+                const phasesToRun = ['hull', 'weight', 'stability'];
                 for (const uiPhase of phasesToRun) {
                     try {
                         const backendPhase = PhaseIdMapper.uiToBackend(uiPhase);
@@ -924,6 +976,10 @@ class MAGNETBackendAdapter {
             // Blank designs are expected to have no geometry until the first spiral program is applied.
             const msg = String(error?.message || '');
             if (msg.includes('404') || msg.includes('No geometry') || msg.includes('GeometryUnavailable')) {
+                // IMPORTANT: avoid stale geometry confusion when switching to a blank design.
+                // Only clear on definitive "no geometry" signals (404/GeometryUnavailable),
+                // not on transient retries.
+                try { window.magnetThreeScene?.clear?.(); } catch (e) {}
                 MagnetStudio.terminal.info('No geometry yet (blank design). Send a command to generate hull geometry.');
             } else {
                 MagnetStudio.terminal.error(`Geometry failed: ${msg}`);
@@ -986,6 +1042,43 @@ class MAGNETBackendAdapter {
             console.error('[MAGNET] Failed to load design:', error);
             MagnetStudio.terminal.error(`Failed to load design: ${error.message}`);
         }
+    }
+
+    _getStateValue(path) {
+        if (!this.designState) return undefined;
+        // Preferred: canonical flat map attached by backend (design.state)
+        const flat = this.designState.state;
+        if (flat && typeof flat === 'object' && path in flat) return flat[path];
+
+        // Fallback: nested payload
+        const parts = String(path || '').split('.');
+        let cur = this.designState;
+        for (const p of parts) {
+            if (!cur || typeof cur !== 'object' || !(p in cur)) return undefined;
+            cur = cur[p];
+        }
+        return cur;
+    }
+
+    _printHydrostaticsSummary() {
+        const T = MagnetStudio.terminal;
+        const disp = this._getStateValue('hull.displacement_m3');
+        const vcb = this._getStateValue('hull.vcb_m');
+        const bm = this._getStateValue('hull.bm_m');
+        const gm = this._getStateValue('stability.gm_m') ?? this._getStateValue('hull.gm_m');
+
+        if (disp === undefined && vcb === undefined && bm === undefined) {
+            T.info('No hydrostatics outputs found yet.');
+            T.info('Tip: run a hull generation prompt first, then run "show hydrostatics" again.');
+            return;
+        }
+
+        const fmt = (v, digits = 3) => (typeof v === 'number' && isFinite(v) ? v.toFixed(digits) : String(v));
+        T.success('══ HYDROSTATICS ══');
+        if (disp !== undefined) T.info(`displacement: ${fmt(disp, 3)} m³`);
+        if (vcb !== undefined) T.info(`VCB: ${fmt(vcb, 3)} m`);
+        if (bm !== undefined) T.info(`BM: ${fmt(bm, 3)} m`);
+        if (gm !== undefined) T.info(`GM: ${fmt(gm, 3)} m`);
     }
 
     /**

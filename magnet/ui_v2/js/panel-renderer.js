@@ -303,15 +303,39 @@ var PanelRenderer = (function() {
             return false;
         }
 
-        // Get source data
+        // SINGLE-AUTHORITY: panels read from design.state flat map only.
+        // For ergonomics, config may specify sourcePrefix (e.g. "hull.") and keys may be relative.
+        var flat = (designState && typeof designState.state === 'object' && designState.state) ? designState.state : null;
         var sourceData = null;
-        if (designState && config.source) {
+
+        if (flat) {
+            var prefix = null;
+            if (typeof config.sourcePrefix === 'string' && config.sourcePrefix) {
+                prefix = config.sourcePrefix;
+            } else if (typeof config.source === 'string' && config.source) {
+                // Back-compat: older configs used `source: "hull"` (nested). Treat as prefix.
+                prefix = config.source.endsWith('.') ? config.source : (config.source + '.');
+            }
+
+            if (prefix) {
+                sourceData = {};
+                for (var k in flat) {
+                    if (!Object.prototype.hasOwnProperty.call(flat, k)) continue;
+                    if (k.indexOf(prefix) !== 0) continue;
+                    sourceData[k.slice(prefix.length)] = flat[k];
+                }
+            } else {
+                // No prefix: pass full flat map through.
+                sourceData = flat;
+            }
+        } else if (designState && config.source) {
+            // Final fallback (legacy): nested objects.
             sourceData = designState[config.source];
         }
 
         // Handle missing data gracefully
         if (!sourceData) {
-            console.info('[PanelRenderer] No data for ' + phaseId + ' (source: ' + config.source + ')');
+            console.info('[PanelRenderer] No data for ' + phaseId + ' (sourcePrefix/source: ' + (config.sourcePrefix || config.source || 'none') + ')');
             
             if (typeof MagnetStudio !== 'undefined' && MagnetStudio.setDataPanel) {
                 MagnetStudio.setDataPanel(

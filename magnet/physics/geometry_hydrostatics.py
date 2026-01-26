@@ -16,7 +16,7 @@ Reference: MAGNET_Critical_Corrections.md Part II Issue 2.1
 
 import math
 from dataclasses import dataclass
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Optional, Tuple, Any, Literal
 
 from magnet.hull_gen.geometry import HullGeometry, HullSection, SectionPoint
 
@@ -165,6 +165,18 @@ def compute_hydrostatics_from_geometry(
     """
     if not geometry.sections:
         raise ValueError("Geometry has no sections — cannot compute hydrostatics")
+
+    # Phase 2: deterministic geometry↔physics coupling (Engineering Truth)
+    # panelized => trapezoidal integration (piecewise-linear stations)
+    # smooth    => Simpson (when eligible) with trapezoid fallback for irregular spacing
+    surface_definition = None
+    try:
+        surface_definition = (getattr(geometry, "metadata", {}) or {}).get("surface_definition")
+    except Exception:
+        surface_definition = None
+    integration_rule: Literal["auto", "trapezoid", "simpson"] = "simpson"
+    if surface_definition == "panelized":
+        integration_rule = "trapezoid"
     
     # Determine body count from geometry
     # NOTE: body_count is a GEOMETRIC FACT, not a design classification.
@@ -176,14 +188,14 @@ def compute_hydrostatics_from_geometry(
     if body_count > 1:
         # Multi-body: Use parallel axis theorem
         return _compute_multi_body_hydrostatics(
-            geometry, draft, vcg, seawater_density, body_count
+            geometry, draft, vcg, seawater_density, body_count, integration_rule=integration_rule
         )
     else:
         # Single body: Standard integration.
         # NOTE: single-body geometry may still have a non-"main" body_id (e.g., demihull-only export).
         only_body = body_ids[0] if body_ids else "main"
         return _compute_single_body_hydrostatics(
-            geometry, draft, vcg, seawater_density, body_id=str(only_body)
+            geometry, draft, vcg, seawater_density, body_id=str(only_body), integration_rule=integration_rule
         )
 
 
@@ -222,6 +234,7 @@ def _compute_single_body_hydrostatics(
     seawater_density: float,
     body_id: str = "main",
     sections: Optional[List[HullSection]] = None,
+    integration_rule: Literal["auto", "trapezoid", "simpson"] = "simpson",
 ) -> HydrostaticsResult:
     """
     Compute hydrostatics for a single hull body using numerical integration.
@@ -234,14 +247,17 @@ def _compute_single_body_hydrostatics(
     if not sections:
         return _empty_hydrostatics_result(body_id)
 
+    # Ensure deterministic integration order
+    sections = sorted(list(sections), key=lambda s: float(getattr(s, "x_position", 0.0) or 0.0))
+
     # Integrate volume and moments from sections
     displacement_m3, lcb_m, vcb_m, tcb_m = _integrate_displacement_and_centers(
-        sections, draft
+        sections, draft, integration_rule=integration_rule
     )
     
     # Compute waterplane properties
     waterplane_area_m2, Ix_waterplane, Iy_waterplane = _integrate_waterplane_properties(
-        sections, draft
+        sections, draft, integration_rule=integration_rule
     )
     
     # Compute wetted surface
@@ -281,6 +297,29 @@ def _compute_single_body_hydrostatics(
         confidence="high",
     )
 
+    # -------------------------------------------------------------------------
+    # Truthfulness: station spacing risk warning (numerical integration honesty)
+    # If station spacing variation RMS is high, trapezoid (and even simpson fallbacks)
+    # can silently bias volume/moments.
+    # -------------------------------------------------------------------------
+    try:
+        xs = [float(getattr(s, "x_position", 0.0) or 0.0) for s in sections]
+        dxs = [xs[i + 1] - xs[i] for i in range(len(xs) - 1)]
+        dxs = [d for d in dxs if d > 0]
+        if len(dxs) >= 2:
+            mean_dx = sum(dxs) / len(dxs)
+            if mean_dx > 0:
+                import math as _math
+                rms = _math.sqrt(sum(((d / mean_dx) - 1.0) ** 2 for d in dxs) / len(dxs))
+                if rms > 0.2:
+                    result.warnings.append(
+                        f"IntegrationRiskWarning: station_spacing_variation_rms={rms:.3f} > 0.200. "
+                        "Non-uniform station spacing can bias trapezoidal/strip integrations."
+                    )
+                    result.confidence = "medium"
+    except Exception:
+        pass
+
     # Phase 3B: primitive volume semantics (opt-in, explicit-only)
     _apply_primitive_volume_corrections(geometry, draft, seawater_density, result, body_id=body_id)
 
@@ -319,6 +358,7 @@ def _compute_multi_body_hydrostatics(
     vcg: Optional[float],
     seawater_density: float,
     body_count: int,
+    integration_rule: Literal["auto", "trapezoid", "simpson"] = "simpson",
 ) -> HydrostaticsResult:
     """
     Compute hydrostatics for multi-body vessel using parallel axis theorem.
@@ -334,7 +374,7 @@ def _compute_multi_body_hydrostatics(
     body_results: Dict[str, HydrostaticsResult] = {}
     for bid in body_ids:
         body_results[bid] = _compute_single_body_hydrostatics(
-            geometry, draft, None, seawater_density, body_id=bid
+            geometry, draft, None, seawater_density, body_id=bid, integration_rule=integration_rule
         )
     
     # 2. Combine displacement
@@ -565,6 +605,8 @@ def _apply_primitive_volume_corrections(
 def _integrate_displacement_and_centers(
     sections: List[HullSection],
     draft: float,
+    *,
+    integration_rule: Literal["auto", "trapezoid", "simpson"] = "auto",
 ) -> Tuple[float, float, float, float]:
     """
     Integrate displacement and centers of buoyancy.
@@ -594,14 +636,14 @@ def _integrate_displacement_and_centers(
         ycs.append(float(cy))
         zcs.append(float(cz))
 
-    # Integrate using Simpson where possible (uniform spacing), otherwise trapezoid.
-    total_volume = _integrate_1d(xs, areas)
+    # Phase 2 coupling: integration_rule selects Simpson vs trapezoid behavior.
+    total_volume = _integrate_1d(xs, areas, rule=integration_rule)
     if total_volume <= 0:
         return (0.0, 0.0, 0.0, 0.0)
 
-    x_moment = _integrate_1d(xs, [areas[i] * xs[i] for i in range(len(xs))])
-    y_moment = _integrate_1d(xs, [areas[i] * ycs[i] for i in range(len(xs))])
-    z_moment = _integrate_1d(xs, [areas[i] * zcs[i] for i in range(len(xs))])
+    x_moment = _integrate_1d(xs, [areas[i] * xs[i] for i in range(len(xs))], rule=integration_rule)
+    y_moment = _integrate_1d(xs, [areas[i] * ycs[i] for i in range(len(xs))], rule=integration_rule)
+    z_moment = _integrate_1d(xs, [areas[i] * zcs[i] for i in range(len(xs))], rule=integration_rule)
 
     volume_x_moment = x_moment
     volume_y_moment = y_moment
@@ -620,6 +662,8 @@ def _integrate_displacement_and_centers(
 def _integrate_waterplane_properties(
     sections: List[HullSection],
     draft: float,
+    *,
+    integration_rule: Literal["auto", "trapezoid", "simpson"] = "auto",
 ) -> Tuple[float, float, float]:
     """
     Integrate waterplane area and second moments of area.
@@ -639,14 +683,14 @@ def _integrate_waterplane_properties(
     beams: List[float] = [_compute_waterline_beam(s.points, draft) for s in sections]
 
     # Waterplane area = ∫ beam dx
-    total_area = _integrate_1d(xs, beams)
+    total_area = _integrate_1d(xs, beams, rule=integration_rule)
 
     # Transverse inertia about centerline (longitudinal axis): ∫ (B^3/12) dx
-    Ix_total = _integrate_1d(xs, [(b ** 3) / 12.0 for b in beams])
+    Ix_total = _integrate_1d(xs, [(b ** 3) / 12.0 for b in beams], rule=integration_rule)
 
     # Longitudinal inertia about AP (compat with previous implementation):
     # Iy = ∫ x^2 * beam dx   (strip method, about x=0)
-    Iy_total = _integrate_1d(xs, [(xs[i] ** 2) * beams[i] for i in range(len(xs))])
+    Iy_total = _integrate_1d(xs, [(xs[i] ** 2) * beams[i] for i in range(len(xs))], rule=integration_rule)
     
     return (total_area, Ix_total, Iy_total)
 
@@ -857,11 +901,17 @@ def _section_points_to_full_polygon_yz(points: List[SectionPoint]) -> List[Tuple
     return poly
 
 
-def _integrate_1d(xs: List[float], fs: List[float]) -> float:
+def _integrate_1d(
+    xs: List[float],
+    fs: List[float],
+    *,
+    rule: Literal["auto", "trapezoid", "simpson"] = "auto",
+) -> float:
     """
     Deterministic 1D integration over x.
-    - Uses composite Simpson's 1/3 when spacing is (approximately) uniform
-    - Otherwise falls back to trapezoidal
+    - rule="trapezoid": force trapezoidal (piecewise-linear; matches panelized visuals)
+    - rule="simpson": attempt composite Simpson where eligible; otherwise trapezoidal
+    - rule="auto": legacy behavior (Simpson where eligible; otherwise trapezoidal)
     """
     n = min(len(xs), len(fs))
     if n < 2:
@@ -869,6 +919,16 @@ def _integrate_1d(xs: List[float], fs: List[float]) -> float:
 
     xs2 = xs[:n]
     fs2 = fs[:n]
+
+    # Forced trapezoid path (panelized truthfulness)
+    if rule == "trapezoid":
+        pairs = list(zip(xs2, fs2))
+        pairs.sort(key=lambda t: t[0])
+        return sum(
+            0.5 * (pairs[i][1] + pairs[i + 1][1]) * (pairs[i + 1][0] - pairs[i][0])
+            for i in range(len(pairs) - 1)
+            if (pairs[i + 1][0] - pairs[i][0]) > 0
+        )
 
     # Detect approximate uniform spacing
     dxs = [xs2[i + 1] - xs2[i] for i in range(n - 1)]
@@ -886,7 +946,7 @@ def _integrate_1d(xs: List[float], fs: List[float]) -> float:
     # Composite Simpson requires odd n; if even, use Simpson on first n-1 then trap on last
     if n % 2 == 0:
         simpson_n = n - 1
-        simpson = _integrate_1d(xs2[:simpson_n], fs2[:simpson_n])
+        simpson = _integrate_1d(xs2[:simpson_n], fs2[:simpson_n], rule=rule)
         trap = 0.5 * (fs2[n - 2] + fs2[n - 1]) * (xs2[n - 1] - xs2[n - 2])
         return simpson + trap
 

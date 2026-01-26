@@ -11,7 +11,6 @@ import math
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from .enums import HullType, ChineType, SectionShape, BowStyle
 from .parameters import HullDefinition, MainDimensions, FormCoefficients, DeadriseProfile, HullFeatures, ChineConfig, BowConfig, TransomConfig
 from .geometry import Point3D, SectionPoint, HullSection, Waterline, HullGeometry, EdgeType, LongitudinalFeature
 from .bow_generator import BowGenerator, BowGeometry
@@ -136,7 +135,7 @@ class HullGenerator:
 
     def _generate_sections(self, definition: HullDefinition) -> List[HullSection]:
         """Generate transverse sections."""
-        if definition.hull_type == HullType.CATAMARAN:
+        if int(getattr(definition.features, "num_hulls", 1) or 1) >= 2:
             return self._generate_catamaran_sections(definition)
         else:
             return self._generate_monohull_sections(definition)
@@ -150,8 +149,14 @@ class HullGenerator:
         features = definition.features or HullFeatures()
         bow_config = features.get_bow_config()
         
-        # Check if we should use specialized bow generation
-        use_bow_generator = bow_config.style != BowStyle.TRADITIONAL
+        # Check if we should use specialized bow generation (enum-free).
+        #
+        # IMPORTANT: An explicit BowConfig object is NOT sufficient to trigger
+        # the specialized bow generator; many callers (e.g. constraint synthesis)
+        # pass BowConfig just to set continuous entry/rake values while still
+        # wanting the standard smooth-hull generator. We only switch to the
+        # specialized generator when the config explicitly requests planar facets.
+        use_bow_generator = bool(getattr(bow_config, "is_angular", lambda: False)())
         
         if use_bow_generator:
             return self._generate_sections_with_bow(definition, bow_config)
@@ -285,7 +290,7 @@ class HullGenerator:
         The section is generated centered at y=y_offset.
         Points go from keel (centerline of demihull) outward.
         
-        v1.1: Sets EdgeType.HARD on chine points when ChineType is HARD/SINGLE.
+        v1.1: Sets EdgeType.HARD on chine points when a chine is present (chine_count>=1).
         """
         section = HullSection(station=station, x_position=x_pos)
 
@@ -321,9 +326,9 @@ class HullGenerator:
         bottom_exp = 1.4 + 6.0 * fullness
         deadrise_scale = 1.0 - 0.7 * fullness
 
-        # v1.1: Determine edge type for chine based on ChineType
-        chine_type = definition.features.chine_type if definition.features else ChineType.SOFT
-        chine_edge_type = EdgeType.HARD if chine_type in (ChineType.HARD, ChineType.SINGLE) else EdgeType.SMOOTH
+        # Determine whether chine should be treated as hard edge (enum-free)
+        chine_count = int(getattr(getattr(definition, "features", None), "chine_count", 0) or 0)
+        chine_edge_type = EdgeType.HARD if chine_count >= 1 else EdgeType.SMOOTH
 
         # Generate points from keel to deck for the demihull
         # Keel point (at demihull centerline, offset from ship centerline)
@@ -398,21 +403,98 @@ class HullGenerator:
         bow_end_base = 0.02 + 0.43 * cp_norm  # 0.02..0.45
         bow_end = bow_end_base * (0.30 + 0.70 * entrance_norm)
 
-        if station < 0.1:
-            # Transom area (stern) - starts at transom fraction
-            t = station / 0.1
-            return transom_fraction + (1.0 - transom_fraction) * t
-        elif station < lcb:
-            # Run (aft of midship) - full beam
+        # NOTE (E0.3): this function must be at least C1-continuous for any
+        # gradient-based methods (and even for robust finite differences).
+        # We therefore smooth transitions between piecewise regions using a
+        # Hermite smoothstep blend.
+
+        def _clamp01(x: float) -> float:
+            return max(0.0, min(1.0, float(x)))
+
+        def _smoothstep01(t: float) -> float:
+            # C1 Hermite smoothstep: 0->0, 1->1 with zero slope at ends.
+            t = _clamp01(t)
+            return t * t * (3.0 - 2.0 * t)
+
+        def _lerp(a: float, b: float, t: float) -> float:
+            return float(a) + (float(b) - float(a)) * float(t)
+
+        def _softplus(z: float, beta: float = 60.0) -> float:
+            # Stable softplus: log(1+exp(beta*z))/beta
+            bz = float(beta) * float(z)
+            if bz > 50.0:
+                return float(z)  # asymptotic
+            if bz < -50.0:
+                return 0.0
+            return float(math.log1p(math.exp(bz)) / float(beta))
+
+        def _softmin(x: float, upper: float, beta: float = 60.0) -> float:
+            # Smoothly enforce x <= upper without a hard kink.
+            return float(upper) - _softplus(float(upper) - float(x), beta=beta)
+
+        def _softclip01(x: float, beta: float = 60.0) -> float:
+            # Lower bound: smooth max(x, 0) then upper bound: smooth min(., 1)
+            y = _softplus(float(x), beta=beta)  # ~= max(x,0) smoothly
+            return _softmin(y, 1.0, beta=beta)
+
+        s = _clamp01(float(station))
+
+        # Region functions (defined everywhere for blending)
+        def _stern_ramp(x: float) -> float:
+            # Do NOT clamp: clamping would create a flat region inside the
+            # blend window and re-introduce a derivative kink.
+            t = float(x) / 0.1
+            return float(transom_fraction + (1.0 - transom_fraction) * t)
+
+        def _full_beam(_x: float) -> float:
             return 1.0
-        elif station < 0.9:
-            # Forward of LCB - gradual reduction toward bow
-            t = (station - lcb) / (0.9 - lcb)
-            return 1.0 - 0.1 * t
+
+        def _fore_reduction(x: float) -> float:
+            denom = max(1e-9, (0.9 - lcb))
+            # Do NOT clamp: allow mild extrapolation inside blend windows.
+            t = float(x - lcb) / denom
+            return float(1.0 - 0.1 * t)
+
+        def _bow_entrance(x: float) -> float:
+            # Clamp: used in blend window slightly before 0.9.
+            t = _clamp01((x - 0.9) / 0.1)
+            return float(0.9 - (0.9 - bow_end) * (t ** 1.5))
+
+        # Blend window half-widths. Keep small but non-zero to remove kinks.
+        w01 = 0.01  # around station=0.1
+        wlcb = 0.02  # around station=lcb
+        w09 = 0.02  # around station=0.9
+
+        # Segment boundaries
+        b01 = 0.1
+        b_lcb = float(lcb)
+        b09 = 0.9
+
+        # Blend regions with smoothstep around boundaries.
+        if s < b01 - w01:
+            out = _stern_ramp(s)
+        elif s < b01 + w01:
+            t = _smoothstep01((s - (b01 - w01)) / (2.0 * w01))
+            out = _lerp(_stern_ramp(s), _full_beam(s), t)
+        elif s < b_lcb - wlcb:
+            out = _full_beam(s)
+        elif s < b_lcb + wlcb:
+            t = _smoothstep01((s - (b_lcb - wlcb)) / (2.0 * wlcb))
+            out = _lerp(_full_beam(s), _fore_reduction(s), t)
+        elif s < b09 - w09:
+            out = _fore_reduction(s)
+        elif s < b09 + w09:
+            t = _smoothstep01((s - (b09 - w09)) / (2.0 * w09))
+            out = _lerp(_fore_reduction(s), _bow_entrance(s), t)
         else:
-            # Bow entrance - narrows to fine entry
-            t = (station - 0.9) / 0.1
-            return 0.9 - (0.9 - bow_end) * t ** 1.5
+            out = _bow_entrance(s)
+
+        # Prevent tiny overshoots (>1.0) without hard clamping.
+        #
+        # IMPORTANT: Do NOT hard-clamp synthesis-path blend factors like beam_factor.
+        # A hard clamp introduces a flat derivative at the boundary (kink), which
+        # breaks the C1 continuity invariant required for stable finite differences.
+        return float(_softclip01(out, beta=60.0))
 
     def _generate_section_at_station(
         self,
@@ -428,7 +510,8 @@ class HullGenerator:
             station: Station position (0=AP, 1=FP)
             x_pos: Longitudinal position in meters
             
-        v1.2: Dispatches to appropriate chine generator based on ChineType.
+        v1.2: Dispatches to appropriate chine generator based on continuous controls
+        (chine_count / reverse parameters / variable transition window).
         """
         section = HullSection(station=station, x_position=x_pos)
 
@@ -441,27 +524,35 @@ class HullGenerator:
         section.draft_local = draft
         section.deadrise_deg = deadrise
 
-        # Get chine type from features
+        # Determine chine behavior from features (enum-free)
         features = definition.features or HullFeatures()
-        chine_type = features.chine_type
-        chine_style = features.chine_style
-        
-        # v1.2: Dispatch based on chine type and style
-        if chine_style == "variable" or chine_type == ChineType.VARIABLE:
+        chine_style = str(features.chine_style or "standard")
+        chine_count = int(features.chine_count or 0)
+        has_variable_window = (
+            chine_style == "variable"
+            and float(features.chine_transition_end or 0.0) > float(features.chine_transition_start or 0.0)
+        )
+        has_reverse_chine = (
+            chine_style == "reverse"
+            and float(features.reverse_chine_height_ratio or 0.0) > 0.0
+            and float(features.reverse_chine_extension_m or 0.0) > 0.0
+        )
+
+        if has_variable_window:
             points = self._generate_variable_chine_section(
                 half_beam, draft, deadrise, definition, station
             )
-        elif chine_style == "reverse" or chine_type == ChineType.REVERSE:
+        elif has_reverse_chine:
             points = self._generate_reverse_chine_section(
                 half_beam, draft, deadrise, definition, station
             )
-        elif chine_type in (ChineType.DOUBLE, ChineType.TRIPLE):
+        elif chine_count >= 2:
             points = self._generate_multi_chine_section(
                 half_beam, draft, deadrise, definition, station
             )
-        elif definition.hull_type == HullType.ROUND_BILGE or chine_type in (ChineType.NONE, ChineType.SOFT):
+        elif chine_count <= 0:
             points = self._generate_round_section(half_beam, draft, definition, station)
-        elif definition.hull_type in [HullType.DEEP_V_PLANING, HullType.HARD_CHINE] or chine_type in (ChineType.HARD, ChineType.SINGLE):
+        elif chine_count == 1:
             points = self._generate_chine_section(
                 half_beam, draft, deadrise, definition, station
             )
@@ -501,7 +592,7 @@ class HullGenerator:
         """
         Generate hard-chine section profile.
         
-        v1.1: Sets EdgeType.HARD on chine points when ChineType is HARD/SINGLE.
+        v1.1: Sets EdgeType.HARD on chine points when a chine is present (chine_count>=1).
         """
         points = []
         num_points = self.config.points_per_section
@@ -523,9 +614,9 @@ class HullGenerator:
         cm_norm = max(0.0, min(1.0, cm_norm))
         fullness = max(0.0, min(1.0, 0.7 * cb_norm + 0.3 * cm_norm))
 
-        # v1.1: Determine edge type for chine based on ChineType
-        chine_type = definition.features.chine_type if definition.features else ChineType.SOFT
-        chine_edge_type = EdgeType.HARD if chine_type in (ChineType.HARD, ChineType.SINGLE) else EdgeType.SMOOTH
+        # Determine whether chine should be treated as hard edge (enum-free)
+        chine_count = int(getattr(getattr(definition, "features", None), "chine_count", 0) or 0)
+        chine_edge_type = EdgeType.HARD if chine_count >= 1 else EdgeType.SMOOTH
 
         # Keel point
         keel = SectionPoint(
@@ -546,7 +637,7 @@ class HullGenerator:
                 x=station * definition.dimensions.lwl, y=chine_y, z=chine_z
             ),
             is_chine=True,
-            edge_type=chine_edge_type,  # v1.1: Set edge type based on ChineType
+            edge_type=chine_edge_type,  # v1.1: Set edge type based on chine presence
             feature_id="chine_main" if chine_edge_type == EdgeType.HARD else None,
         )
 
@@ -1283,8 +1374,8 @@ def generate_hull_from_parameters(
     lwl: float,
     beam: float,
     draft: float,
-    hull_type: HullType = HullType.HARD_CHINE,
     deadrise_deg: float = 18.0,
+    num_hulls: int = 1,
 ) -> HullGeometry:
     """
     Convenience function to generate hull geometry.
@@ -1293,16 +1384,15 @@ def generate_hull_from_parameters(
         lwl: Length on waterline (m)
         beam: Beam (m)
         draft: Draft (m)
-        hull_type: Hull type
         deadrise_deg: Deadrise angle at transom (degrees)
+        num_hulls: Number of hull bodies (1=monohull, 2=catamaran, ...)
 
     Returns:
         Generated hull geometry
     """
     definition = HullDefinition(
         hull_id=f"HULL-{lwl:.0f}M",
-        hull_name=f"{lwl:.0f}m {hull_type.value} hull",
-        hull_type=hull_type,
+        hull_name=f"{lwl:.0f}m hull",
         dimensions=MainDimensions(
             loa=lwl * 1.08,
             lwl=lwl,
@@ -1313,8 +1403,16 @@ def generate_hull_from_parameters(
             depth=draft * 2.2,
             draft=draft,
         ),
-        coefficients=FormCoefficients.for_hull_type(hull_type),
+        coefficients=FormCoefficients(
+            cb=0.40,
+            cp=0.58,
+            cm=0.70,
+            cwp=0.72,
+            lcb=0.45,
+            lcf=0.47,
+        ),
         deadrise=DeadriseProfile.warped(deadrise_deg, deadrise_deg + 2, deadrise_deg + 25),
+        features=HullFeatures(num_hulls=int(num_hulls or 1)),
     )
 
     definition.compute_displacement()

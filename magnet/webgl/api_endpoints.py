@@ -271,13 +271,12 @@ async def get_scene(
             allow_visual_only=allow_visual_only,
         )
 
+        # NOTE: SceneData is the canonical schema; legacy wrapper keys (scene_id/version) are not guaranteed.
         return {
             "success": True,
-            "geometry_mode": scene.geometry_mode.value if hasattr(scene.geometry_mode, 'value') else scene.geometry_mode,
-            "lod": scene.lod,
-            "scene_id": scene.scene_id,
-            "version": scene.version,
-            "schema_version": "1.1.0",
+            "geometry_mode": scene.geometry_mode.value if hasattr(scene.geometry_mode, "value") else scene.geometry_mode,
+            "lod": lod_level.value,
+            "schema_version": getattr(getattr(scene, "schema", None), "schema_version", "unknown"),
             "data": scene.to_dict(),
         }
 

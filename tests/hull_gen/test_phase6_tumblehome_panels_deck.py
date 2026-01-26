@@ -20,7 +20,6 @@ from magnet.hull_gen.parameters import (
     HullDefinition, HullFeatures, MainDimensions, FormCoefficients,
     TumblehomeConfig, PanelConfig, DeckConfig, ChineConfig,
 )
-from magnet.hull_gen.enums import ChineType
 from magnet.hull_gen.modifiers import TumblehomeModifier
 
 
@@ -448,7 +447,7 @@ class TestHullGeneratorIntegration:
         # Use large tumblehome angle to ensure effect is visible
         # Also disable bow flare which can counteract tumblehome
         features = HullFeatures(
-            chine_type=ChineType.HARD,
+            chine_count=1,
             tumblehome_enabled=True,
             tumblehome_angle_deg=15.0,  # Large angle for clear effect
             tumblehome_start_ratio=0.0,
@@ -483,7 +482,7 @@ class TestHullGeneratorIntegration:
     def test_deck_in_generated_hull(self):
         """HullGenerator should include deck geometry when enabled."""
         features = HullFeatures(
-            chine_type=ChineType.HARD,
+            chine_count=1,
             deck_enabled=True,
         )
         definition = self._create_full_definition(features)
@@ -497,7 +496,7 @@ class TestHullGeneratorIntegration:
     def test_deck_disabled_no_geometry(self):
         """HullGenerator should not include deck when disabled."""
         features = HullFeatures(
-            chine_type=ChineType.HARD,
+            chine_count=1,
             deck_enabled=False,
         )
         definition = self._create_full_definition(features)
@@ -510,7 +509,7 @@ class TestHullGeneratorIntegration:
     def test_combined_features(self):
         """Hull with tumblehome and deck should work together."""
         features = HullFeatures(
-            chine_type=ChineType.HARD,
+            chine_count=1,
             tumblehome_enabled=True,
             tumblehome_angle_deg=5.0,
             deck_enabled=True,
@@ -531,7 +530,7 @@ class TestHullGeneratorIntegration:
     def test_faceted_panel_config(self):
         """HullFeatures should support faceted panel configuration."""
         features = HullFeatures(
-            chine_type=ChineType.HARD,
+            chine_count=1,
             panel_style="faceted",
         )
         
@@ -562,7 +561,7 @@ class TestFacetedTessellation:
     def test_faceted_mesh_builds_without_error(self):
         """Faceted tessellation should complete without errors."""
         features = HullFeatures(
-            chine_type=ChineType.HARD,
+            chine_count=1,
             panel_style="faceted",
         )
         definition = self._create_full_definition(features)
@@ -618,7 +617,7 @@ class TestHydrostaticsUnchanged:
     def test_tumblehome_volume_reasonable(self):
         """Hull with tumblehome should have reasonable volume."""
         # Hull without tumblehome
-        features_no_th = HullFeatures(chine_type=ChineType.HARD)
+        features_no_th = HullFeatures(chine_count=1)
         def_no_th = self._create_full_definition(features_no_th)
         
         generator = HullGenerator()
@@ -626,7 +625,7 @@ class TestHydrostaticsUnchanged:
         
         # Hull with tumblehome
         features_th = HullFeatures(
-            chine_type=ChineType.HARD,
+            chine_count=1,
             tumblehome_enabled=True,
             tumblehome_angle_deg=10.0,
         )
@@ -643,13 +642,13 @@ class TestHydrostaticsUnchanged:
     def test_deck_does_not_affect_volume(self):
         """Deck geometry should not affect hull volume calculation."""
         features_deck = HullFeatures(
-            chine_type=ChineType.HARD,
+            chine_count=1,
             deck_enabled=True,
         )
         def_deck = self._create_full_definition(features_deck)
         
         features_no_deck = HullFeatures(
-            chine_type=ChineType.HARD,
+            chine_count=1,
             deck_enabled=False,
         )
         def_no_deck = self._create_full_definition(features_no_deck)
@@ -685,7 +684,7 @@ class TestMeshValidity:
     def test_no_nan_in_mesh(self):
         """Mesh should not contain NaN values."""
         features = HullFeatures(
-            chine_type=ChineType.HARD,
+            chine_count=1,
             tumblehome_enabled=True,
             tumblehome_angle_deg=8.0,
             deck_enabled=True,

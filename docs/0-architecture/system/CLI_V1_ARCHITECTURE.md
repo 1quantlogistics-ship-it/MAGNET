@@ -1,5 +1,16 @@
 # MAGNET CLI v1 Architecture — Kernel-First Design
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [cli, v1, architecture]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 ## Core Principle
 
 **Every rule lives in kernel. Every interface is dumb.**

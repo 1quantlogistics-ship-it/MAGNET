@@ -1,5 +1,18 @@
 # MAGNET Multi-Agent Design OS — Unified Implementation Plan
 
+> **Superseded:** Consolidated into `CORTEX_V2_IMPLEMENTATION_GUIDE.md` (project root).
+
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [magnet, unified, implementation, plan]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 ## Executive Summary
 
 **What MAGNET Is:**
@@ -71,14 +84,73 @@ ENGINEER PRODUCTIVITY = creative expression × instant feedback × no artificial
 | Explainability (ExplainRecord, Query) | Ready | 8/10 |
 | NURBS/Section Infrastructure | **Ready** | **8/10** |
 | Feedback Loop | Partial | 6/10 |
-| Design Language | Not Implemented | 0/10 |
-| Type Registry (kernel-owned) | Not Implemented | 0/10 |
-| Agent Infrastructure | Partial | 3/10 |
+| Design Language (parser/expander/compiler + program path) | **Implemented (in use)** | **7/10** |
+| Type Registry (kernel-owned schemas) | Implemented | 6/10 |
+| Agent Infrastructure | Partial | 5/10 |
 | Swarm Coordination | Not Implemented | 1/10 |
 
 **Timeline:** 4 weeks (20 working days)
 
 **Reference:** See `MAGNET_Design_Language_Spec_v1.0.md` for complete language specification.
+
+---
+
+## Addendum (2026-01-21): Full Vessel Generative + Edit (CORTEX v2 Alignment)
+
+The original plan focuses on hull geometry + design language foundations. To reach the “Claude builds a vessel” target (create-from-nothing **and** edit-existing), we must extend the same MAGNET loop to **systems** (fuel/electrical/plumbing/etc.) as first-class, editable artifacts.
+
+**Critical alignment constraints:**
+- **No second SSOT**: treat any “ArtifactGraph” as a *view/adapter* over `DesignState.resources`.
+- **Systems must be visible + editable**: represent components and routes using existing `geometry.*` primitives:
+  - components → `geometry.body` (tagged with `system_id`, `component_type`)
+  - routes → `geometry.flow_path` (tagged with `system_id`, medium + endpoints)
+  - penetrations → `geometry.opening`
+  - mounts → `geometry.attachment`
+
+**Gap audit reference:**
+- `CORTEX_V2_IMPLEMENTATION_GAP_AUDIT.md`
+
+**Near-term vertical slice (fuel-first):**
+- Generate fuel system → emit geometry artifacts + flow paths → visible in WebGL
+- Enable edit: relocate components + re-route affected paths
+- Add observable schema packaging to LLM context + deterministic query rejection
+
+### Addendum: Framing (“Trillions of forms”)
+Replace the “trillions of forms” framing with a more precise claim:
+- The design space is **continuous** (a bounded but effectively infinite manifold).
+- Physics + manufacturing constraints carve out a feasible subset; the system’s power is in exploring that feasible region quickly via iteration and compositional primitives.
+
+### Addendum: Kernel Feedback Contract (valid syntax, invalid geometry)
+The Agent→Kernel interface must return **actionable, structured** failures when a DSL program parses but produces invalid geometry/physics.
+
+**Minimum required fields:**
+- `error_code` (stable string)
+- `severity` (`blocking` | `warning` | `info`)
+- `resource_ids` involved (section/body/surface ids)
+- `evidence` (numeric witnesses: indices, distances, self-intersection location, etc.)
+- `suggested_fixes` (structured: reduce delta, narrow station_range, re-anchor witness, request rewrite)
+
+This is required for both:
+- agent “revise” loops (machine-usable)
+- human explanations (readable, but same IDs/evidence)
+
+### Addendum: Clarification Threshold Calibration (confidence is not universal)
+The “0.6 confidence” threshold is a placeholder. Confidence values vary by provider and can be poorly calibrated.
+
+**Required policy upgrade:**
+- Trigger clarification based on **(confidence + impact)**:
+  - low confidence OR high-impact edits (large spatial extent / many statements) → clarify
+- Instrument outcomes:
+  - log confidence vs success/failure per model version to calibrate thresholds
+- Optional model-agnostic checks:
+  - critique disagreement / self-consistency samples
+  - proof/coverage failures (for bounded claims)
+
+### Addendum: Multi-body physics is a first-class requirement
+If an agent emits 2+ `geometry.body`, the physics layer must compute coupled results correctly or surface uncertainty honestly.
+
+**Implementation note:**
+- MAGNET already has multi-body handling in the physics layer; this plan must make it a top-level success criterion and include explicit tests for multi-body designs.
 
 ---
 

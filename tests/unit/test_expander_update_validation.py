@@ -25,7 +25,10 @@ UPDATE s1 { points: [[0.0, 0.0, -2.0], [1.0, 0.0, -1.0]] }
 """
     ast = parse(program_text)
     result = expand(ast, state)
-    assert result.errors, "Expected UPDATE to fail validation for 3D polygon points"
-    assert any("points" in e.lower() and "[y, z]" in e for e in result.errors), result.errors
+    # Contract: UPDATE validates AND normalizes common LLM output shapes.
+    # [x,y,z] triples are accepted and normalized to canonical [y,z] pairs (drop x).
+    assert not result.errors, result.errors
+    action = next(a for a in result.actions if a.op == "SET" and a.path == "resources.s1")
+    assert action.value["points"] == [[0.0, -2.0], [0.0, -1.0]]
 
 

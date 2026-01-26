@@ -70,7 +70,7 @@ def compile_section(
     The resource format:
         {
             "_type": "geometry.section",
-            "station": 0.5,  # 0=bow, 1=stern
+            "station": 0.5,  # 0=aft (AP), 1=forward (FP)
             "points": [[y, z], [y, z], ...],  # Section profile
             "body_id": "main",
             "definition_type": "polygon" | "nurbs",
@@ -91,8 +91,9 @@ def compile_section(
         )
     
     # Compute x position from station
-    # Station 0 = bow (x = loa), Station 1 = stern (x = 0)
-    station_m = (1.0 - station_ratio) * loa
+    # Canonical convention (vessel-agnostic):
+    #   station 0 = AP/aft (x = 0), station 1 = FP/forward (x = loa)
+    station_m = station_ratio * loa
     
     definition_type = resource.get("definition_type", "polygon")
     

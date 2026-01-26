@@ -1,5 +1,15 @@
 # MAGNET Documentation Index
 
+<!-- AGENT_CONTEXT
+Purpose: Documentation hub and navigation index
+Authoritative: No
+Keywords: index, hub, navigation, documentation
+Depends_On: None
+Used_By: all agents, developers
+Status: current
+Last_Verified: 2026-01-15
+-->
+
 Welcome to the MAGNET documentation hub. Navigate by **folder** (numbered categories) or by **topic** (cross-cutting indexes).
 
 ---

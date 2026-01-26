@@ -1,5 +1,18 @@
 # MAGNET V1 Complete Integration Plan (Revised)
 
+<!-- AGENT_CONTEXT
+Purpose: DEPRECATED - V1 integration plan, superseded by V2
+Authoritative: No
+Keywords: integration, plan, v1, deprecated
+Depends_On: None
+Used_By: None (legacy)
+Status: deprecated
+Redirect: INTEGRATION_PLAN_V2.md
+Last_Verified: 2026-01-15
+-->
+
+> **DEPRECATED:** This document is superseded by [INTEGRATION_PLAN_V2.md](./INTEGRATION_PLAN_V2.md). Use the V2 plan for current work.
+
 ## Executive Summary
 
 MAGNET has two parallel validation systems that were never wired together. This plan completes the integration **with 4 critical guardrails** to prevent recreating the "looks valid but isn't" problem.

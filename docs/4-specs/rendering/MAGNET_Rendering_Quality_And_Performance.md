@@ -1,5 +1,16 @@
 # MAGNET Rendering Quality & Performance (Local, MacBook Air-Friendly)
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [magnet, rendering, quality, and, performance]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 **Status: ✅ IMPLEMENTED** (2026-01-09)
 
 This document proposes a **non-enumerative** path to smooth, high-quality hull renderings that run locally on a "new-ish" MacBook Air.

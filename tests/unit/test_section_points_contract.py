@@ -1,10 +1,10 @@
 from magnet.kernel.stdlib.type_registry import validate_resource
 
 
-def test_geometry_section_polygon_points_must_be_2d_pairs():
+def test_geometry_section_polygon_points_allows_3d_triples_by_dropping_x():
     """
-    Regression: prevent accidental [x,y,z] triples from being accepted as polygon section points.
-    Polygon section points must be exactly [y,z] pairs; X comes from station.
+    Regression: LLMs sometimes emit polygon section points as [x,y,z] triples.
+    The kernel deterministically drops X (since X comes from station) and treats them as [y,z].
     """
     errors = validate_resource(
         "geometry.section",
@@ -17,7 +17,6 @@ def test_geometry_section_polygon_points_must_be_2d_pairs():
             ],
         },
     )
-    assert errors, "Expected validation errors for 3D polygon section points"
-    assert any("points[0]" in e and "[y, z]" in e for e in errors), f"Unexpected errors: {errors}"
+    assert not errors, f"Expected 3D triples to be normalized to [y,z] pairs (drop x). Errors: {errors}"
 
 

@@ -1,5 +1,16 @@
 # MAGNET System State Analysis & Implementation Guide
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [magnet, system, state, analysis]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 **Document Purpose**: Complete guide to the MAGNET generative geometry system — state analysis, implementation paths, best practices, and the iterative design spiral.  
 **Last Updated**: January 2026  
 **Status**: Living document — the source of truth

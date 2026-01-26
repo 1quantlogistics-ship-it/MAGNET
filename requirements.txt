@@ -24,3 +24,4 @@ Pillow>=9.0.0
 # Config/Serialization
 PyYAML>=6.0
 python-dateutil>=2.8.0
+

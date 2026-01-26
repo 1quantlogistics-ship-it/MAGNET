@@ -1,5 +1,16 @@
 # MAGNET Critical Corrections Plan
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [magnet, critical, corrections]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 **Created:** 2026-01-06  
 **Status:** Pre-Implementation Audit  
 **Reference:** Post-implementation audit of MAGNET_Merge_Implementation_Plan.md

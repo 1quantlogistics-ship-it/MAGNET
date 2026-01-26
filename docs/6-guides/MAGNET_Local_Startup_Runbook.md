@@ -1,5 +1,15 @@
 # MAGNET Local Startup Runbook (macOS) — Spiral Architecture (UIv2 + DesignStore + WS + GLB)
 
+<!-- AGENT_CONTEXT
+Purpose: Step-by-step guide to run MAGNET locally on macOS
+Authoritative: No
+Keywords: startup, local, development, runbook, macos, uvicorn
+Depends_On: None
+Used_By: developers, new contributors
+Status: current
+Last_Verified: 2026-01-15
+-->
+
 This is the **single source of truth** for running and validating the **new spiral architecture** locally on a Mac:
 
 **UIv2 (browser)** → **/spiral/chat + /spiral/sketch** → **program execution** → **physics phases** → **GLB export** → **WebSocket updates** → **persisted DesignStore**.

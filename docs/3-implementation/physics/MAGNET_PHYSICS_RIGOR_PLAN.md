@@ -1,5 +1,16 @@
 # MAGNET Physics Rigor & Primitives Upgrade Plan
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [magnet, physics, rigor, plan]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 **Version:** 1.0  
 **Status:** Implementation Roadmap  
 **Target:** Transition from Operational Prototype to Scientifically Defensible Kernel  

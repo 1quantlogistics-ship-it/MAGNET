@@ -1,5 +1,15 @@
 # MAGNET Design Language Specification v1.0
 
+<!-- AGENT_CONTEXT
+Purpose: Domain-specific language specification for hull design operations
+Authoritative: Yes
+Keywords: language, dsl, specification, syntax, primitives, operations
+Depends_On: CONSTITUTION.md, GEOMETRY_CONVENTIONS.md
+Used_By: kernel/stdlib, agents, program_executor
+Status: current
+Last_Verified: 2026-01-15
+-->
+
 ## What MAGNET Is
 
 ```

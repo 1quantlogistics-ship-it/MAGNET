@@ -56,6 +56,7 @@ class TestProgramExecutorAtomicity:
         
         # Valid program
         program = """
+            SET geometry_intent.surface_definition = "smooth"
             CREATE geometry.section bow {
                 station: 0.0,
                 points: [[0, 0], [1, -0.5], [1, 0.5]]
@@ -149,6 +150,7 @@ class TestPartialExecutionRollback:
         
         # First statement might succeed, second should fail
         program = """
+            SET geometry_intent.surface_definition = "smooth"
             CREATE geometry.section valid_section {
                 station: 0.0,
                 points: [[0, 0], [1, -0.5], [1, 0.5]]

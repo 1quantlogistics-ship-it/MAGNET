@@ -1,5 +1,16 @@
 # MAGNET Hard Questions & Answers
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [magnet, hard, questions, answers]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 > **Purpose:** Honest answers to implementation-blocking questions.  
 > **Status:** Reality Check  
 > **Last Updated:** 2026-01-05

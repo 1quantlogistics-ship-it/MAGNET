@@ -1,5 +1,16 @@
 # MAGNET Prompt Architecture Plan v2
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [magnet, prompt, architecture, plan, v2]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 **Status:** Active  
 **Priority:** High  
 **Goal:** Complete compositional operators + transparency + token efficiency

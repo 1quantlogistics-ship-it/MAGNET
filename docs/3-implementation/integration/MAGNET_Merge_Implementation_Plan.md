@@ -1,5 +1,18 @@
 # MAGNET Merge Implementation Plan
 
+> **Superseded:** Consolidated into `CORTEX_V2_IMPLEMENTATION_GUIDE.md` (project root).
+
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [magnet, merge, implementation, plan]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 ## Mission Alignment
 
 ### The Goal
@@ -21,11 +34,24 @@ NOVELTY = continuous parameters × compositional operators × physics validation
 | Speak in surfaces, sections, bodies | Return structured feedback |
 | **Never select from catalog** | **Never suggest designs** |
 
+**No Second SSOT (2026-01-21 clarification):**
+- Treat any “ArtifactGraph” concept as a view/adapter over `DesignState.resources` (SSOT remains `StateManager`).
+- “Systems” should be expressed using existing `geometry.*` primitives (tagged), not a parallel system-graph store.
+
+**Gap audit reference (CORTEX v2 target):**
+- `CORTEX_V2_IMPLEMENTATION_GAP_AUDIT.md`
+
 ### The Test (Must Pass After Implementation)
 
 1. ☐ Create "stepped ventilated planing hull" using only discontinuities, flow paths, openings — **No "stepped hull" type**
 2. ☐ Create "catamaran" using only bodies, sections, surfaces — **No "catamaran" type**
 3. ☐ Create novel configuration — **Validate without adding code**
+
+**Addendum Test (CORTEX v2 target):**
+4. ☐ Create a vessel from nothing **including at least one system** (fuel-first):
+   - system components are visible as `geometry.*` artifacts (bodies/flow_paths/openings)
+   - user can edit: relocate a component and re-route affected connections
+   - system validates and reports conflicts/violations deterministically
 
 ---
 
@@ -54,6 +80,10 @@ NOVELTY = continuous parameters × compositional operators × physics validation
 - **Complete METRIC_POLARITY** — 50+ metrics with direction defined
 - **Rollback tests** — 3 tests verify atomic execution
 - **Vision input (Phase 0.5)** — engineers can sketch on paper/tablet, system interprets geometry
+
+**2026-01-21 clarification (complexity is not LOC):**
+- “Net -200 lines” is not a meaningful complexity metric. The real risks are coupling, state-space, and concurrency.
+- This plan must explicitly track integration points and add end-to-end tests to catch interface breakage.
 
 ---
 
@@ -177,7 +207,7 @@ NOVELTY = continuous parameters × compositional operators × physics validation
 
 | Goal Requirement | How Architecture Delivers |
 |:-----------------|:--------------------------|
-| **Trillions of forms** | DSL grammar is fixed; parameters are continuous; bodies/sections/surfaces compose |
+| **Unbounded variations (continuous manifold)** | DSL grammar is fixed; parameters are continuous; composition yields effectively infinite variants. Physics/manufacturing constraints bound the feasible region. |
 | **No enumeration** | `GeometryProposal` contains DSL text, not hull type strings |
 | **Kernel validates physics** | `ProgramExecutor` → `Compiler` → Physics validators |
 | **Kernel doesn't recognize intent** | Kernel receives geometry, not "catamaran" or "stepped hull" |
@@ -186,6 +216,62 @@ NOVELTY = continuous parameters × compositional operators × physics validation
 | **Iteration** | `CycleExecutor.execute_cycle()` with transaction rollback |
 
 ---
+
+## Addendum: Metric Polarity Must Support “Optimal Ranges”
+
+Many metrics are non-monotonic (they have an acceptable/optimal band rather than “higher is better”).
+
+**Required upgrade:**
+- Extend polarity semantics to support:
+  - `target_range` (in-range vs out-of-range)
+  - `target_value` (distance-to-target)
+  - `neutral` (no preference)
+- Update EnrichedDelta direction to:
+  - `improved` when moving toward the range/target
+  - `degraded` when moving away
+  - `neutral` when inside range and change is small
+
+This avoids incorrect “improved/degraded” labeling for metrics like L/B, Cp, etc.
+
+## Addendum: Parallel Recalc Requires an Explicit Execution DAG
+
+Using `ThreadPoolExecutor` is only safe if calculators are actually independent.
+
+**Required upgrade:**
+- DependencyGraph must be an explicit DAG of computed values, not just PHASE_OWNERSHIP.
+- CascadeExecutor should schedule tasks topologically; parallelism is only within independent subgraphs.
+- If a calculator depends on displacement (hydrostatics), that must be encoded as an edge, not assumed.
+
+## Addendum: VisionInterpreter → GeometryProposer Handoff (latency + error surface)
+
+The current plan implies two LLM hops:
+1) vision → interpretation JSON
+2) interpretation → intent string → GeometryProposer → DSL
+
+**Required clarity (choose one):**
+- Option A: keep two hops but cache and strictly validate the intermediate representation.
+- Option B (preferred for latency): generate DSL directly from the vision output via a single structured prompt that yields *both* interpretation + DSL (dual-output contract), reducing error surface.
+
+## Addendum: Concurrency / Atomicity (beyond single-thread rollback)
+
+Rollback tests are necessary but insufficient. The system must be safe under concurrent requests.
+
+**Required upgrade:**
+- Use explicit locking or optimistic concurrency control at the design level:
+  - enforce `expected_version` on writes
+  - reject stale plans deterministically
+  - serialize program execution per design_id (mutex) or use transactions with conflict detection
+
+Add an integration test:
+- two simultaneous proposals against the same design_id
+- exactly one commits; the other receives a “stale version” response and must retry.
+
+## Addendum: End-to-end integration test (the spiral)
+
+Add at least one integration test that runs the whole loop:
+User intent → (optional vision) → GeometryProposer → ProgramExecutor → Validators → Cascade → Narrative → response contract.
+
+This catches cross-module interface drift early; module-only tests are not sufficient.
 
 ## Part III: Implementation Tasks
 

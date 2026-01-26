@@ -14,6 +14,8 @@ from .ast_nodes import (
     DeleteStatement, LoftStatement, MirrorStatement,
     AlignStatement, ConstrainStatement, DeriveStatement, SetStatement,
     AskStatement,
+    AdjustStatement,
+    TargetStatement,
 )
 
 
@@ -79,9 +81,50 @@ def parse(program_text: str) -> Program:
 def _parse_statement(line: str, line_num: int, lines: List[str], idx: int) -> tuple:
     """Parse a single statement. Returns (statement, lines_consumed)."""
     
+    # ADJUST observable_id AT scope BY +5deg
+    adjust_match = re.match(
+        r'ADJUST\s+(\S+)\s+AT\s+(.+?)\s+BY\s+([+-]?[0-9]*\.?[0-9]+)\s*([a-zA-Z]+)\s*$',
+        line,
+        re.IGNORECASE,
+    )
+    if adjust_match:
+        observable_id = adjust_match.group(1).strip()
+        scope_str = adjust_match.group(2).strip()
+        delta = float(adjust_match.group(3))
+        unit = adjust_match.group(4).strip().lower()
+        scope = _parse_scope(scope_str, line_num)
+        return AdjustStatement(
+            observable_id=observable_id,
+            scope=scope,
+            delta=delta,
+            unit=unit,
+            line_number=line_num,
+        ), 1
+
+    # TARGET observable_id AT scope = 0.25ratio
+    target_match = re.match(
+        r'TARGET\s+(\S+)\s+AT\s+(.+?)\s*=\s*([+-]?[0-9]*\.?[0-9]+)\s*([a-zA-Z]+)\s*$',
+        line,
+        re.IGNORECASE,
+    )
+    if target_match:
+        observable_id = target_match.group(1).strip()
+        scope_str = target_match.group(2).strip()
+        value = float(target_match.group(3))
+        unit = target_match.group(4).strip().lower()
+        scope = _parse_scope(scope_str, line_num)
+        return TargetStatement(
+            observable_id=observable_id,
+            scope=scope,
+            value=value,
+            unit=unit,
+            line_number=line_num,
+        ), 1
+
     # CREATE geometry.section bow { ... }
+    # NOTE: IDs may include hyphens; treat them as valid identifiers.
     create_match = re.match(
-        r'CREATE\s+(\S+)\s+(\w+)\s*(\{.*)?',
+        r'CREATE\s+(\S+)\s+([\w-]+)\s*(\{.*)?',
         line,
         re.IGNORECASE
     )
@@ -106,7 +149,7 @@ def _parse_statement(line: str, line_num: int, lines: List[str], idx: int) -> tu
         ), lines_consumed
 
     # UPDATE bow { ... }
-    update_match = re.match(r'UPDATE\s+(\w+)\s*(\{.*)?', line, re.IGNORECASE)
+    update_match = re.match(r'UPDATE\s+([\w-]+)\s*(\{.*)?', line, re.IGNORECASE)
     if update_match:
         resource_id = update_match.group(1)
         props_str = update_match.group(2) or '{}'
@@ -121,7 +164,7 @@ def _parse_statement(line: str, line_num: int, lines: List[str], idx: int) -> tu
         ), lines_consumed
 
     # DELETE bow
-    delete_match = re.match(r'DELETE\s+(\w+)', line, re.IGNORECASE)
+    delete_match = re.match(r'DELETE\s+([\w-]+)', line, re.IGNORECASE)
     if delete_match:
         return DeleteStatement(
             resource_id=delete_match.group(1),
@@ -146,7 +189,7 @@ def _parse_statement(line: str, line_num: int, lines: List[str], idx: int) -> tu
 
     # LOFT main_surface FROM [bow, mid, stern]
     loft_match = re.match(
-        r'LOFT\s+(\w+)\s+FROM\s+\[([^\]]+)\]',
+        r'LOFT\s+([\w-]+)\s+FROM\s+\[([^\]]+)\]',
         line,
         re.IGNORECASE
     )
@@ -161,7 +204,7 @@ def _parse_statement(line: str, line_num: int, lines: List[str], idx: int) -> tu
 
     # MIRROR port_rail AS stbd_rail
     mirror_match = re.match(
-        r'MIRROR\s+(\w+)\s+AS\s+(\w+)',
+        r'MIRROR\s+([\w-]+)\s+AS\s+([\w-]+)',
         line,
         re.IGNORECASE
     )
@@ -174,7 +217,7 @@ def _parse_statement(line: str, line_num: int, lines: List[str], idx: int) -> tu
 
     # ALIGN rail TO chine AXIS y
     align_match = re.match(
-        r'ALIGN\s+(\w+)\s+TO\s+(\w+)\s+AXIS\s+(\w+)',
+        r'ALIGN\s+([\w-]+)\s+TO\s+([\w-]+)\s+AXIS\s+(\w+)',
         line,
         re.IGNORECASE
     )
@@ -237,6 +280,61 @@ def _parse_statement(line: str, line_num: int, lines: List[str], idx: int) -> tu
         ), 1
 
     raise ParseError(f"Unrecognized statement: {line}", line_num)
+
+
+def _parse_scope(scope_str: str, line_num: int) -> Dict[str, Any]:
+    """
+    Parse the scope grammar used by ADJUST/TARGET.
+
+    Supported (order-insensitive):
+    - station_range=(a,b)
+    - station=a
+    - body_id="string"
+    """
+    s = (scope_str or "").strip()
+    out: Dict[str, Any] = {}
+    if not s:
+        return out
+
+    # Parse station_range first (it may contain spaces).
+    m_sr = re.search(
+        r"station_range\s*=\s*\(\s*([0-9]*\.?[0-9]+)\s*,\s*([0-9]*\.?[0-9]+)\s*\)",
+        s,
+    )
+    if m_sr:
+        out["station_range"] = (float(m_sr.group(1)), float(m_sr.group(2)))
+        # Remove it to simplify tokenization
+        s = re.sub(
+            r"station_range\s*=\s*\(\s*([0-9]*\.?[0-9]+)\s*,\s*([0-9]*\.?[0-9]+)\s*\)",
+            " ",
+            s,
+        ).strip()
+
+    tokens = [t for t in re.split(r"\s+", s) if t]
+    for tok in tokens:
+        if tok.startswith("station_range"):
+            # station_range is parsed via the regex above; reaching here means malformed tokenization.
+            m = re.match(r"station_range\s*=\s*\(\s*([0-9]*\.?[0-9]+)\s*,\s*([0-9]*\.?[0-9]+)\s*\)\s*$", tok)
+            if not m:
+                raise ParseError(f"Invalid scope token: {tok}", line_num)
+            out["station_range"] = (float(m.group(1)), float(m.group(2)))
+            continue
+        if tok.startswith("station"):
+            m = re.match(r"station\s*=\s*([0-9]*\.?[0-9]+)\s*$", tok)
+            if not m:
+                raise ParseError(f"Invalid scope token: {tok}", line_num)
+            out["station"] = float(m.group(1))
+            continue
+        if tok.startswith("body_id"):
+            m = re.match(r"body_id\s*=\s*(.+)\s*$", tok)
+            if not m:
+                raise ParseError(f"Invalid scope token: {tok}", line_num)
+            v = m.group(1).strip()
+            out["body_id"] = v.strip('"\'')
+            continue
+        raise ParseError(f"Unknown scope token: {tok}", line_num)
+
+    return out
 
 
 def _parse_value(value_str: str) -> Any:

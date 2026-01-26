@@ -185,9 +185,10 @@ def get_displacement_bounds(loa_m: float, froude_number: float = 0.5) -> Tuple[f
 
 def migrate_from_family(family_name: str, speed_kts: float, loa_m: Optional[float] = None) -> Dict[str, Any]:
     """
-    Migration helper: convert family-based request to geometry-based.
+    Migration helper: convert legacy request to geometry-based.
     
-    This allows gradual migration from HullFamily to physics-derived defaults.
+    This exists only to support older call sites; new code should call
+    physics-derived defaults directly.
     
     Args:
         family_name: Legacy family name (e.g., "patrol", "workboat")

@@ -44,21 +44,14 @@ from .validator import (
 # v1.1: Hull Synthesis Engine
 from .synthesis import (
     HullSynthesizer,
-    SynthesisRequest,
     SynthesisProposal,
     SynthesisResult,
     ConvergenceCriteria,
     TerminationReason,
+    GeometrySynthesisRequest,
+    harmonize_sections_global,
 )
 from .synthesis_lock import SynthesisLock, SynthesisLockError
-from .synthesis_fallback import (
-    FallbackProposal,
-    FallbackMode,
-    create_fallback_proposal,
-)
-
-# TASK-002: Import geometry-based synthesis (PREFERRED)
-from .synthesis import GeometrySynthesisRequest
 
 # TASK-002: Import geometry-based analysis (PREFERRED)
 from .analysis import (
@@ -67,8 +60,7 @@ from .analysis import (
     recommend_regime_defaults,
 )
 
-# DEPRECATED: HullFamily imports (will be removed in Phase 2)
-# Lazy import to allow removal - access via magnet.kernel.priors.hull_families if needed
+# Legacy family/type synthesis is removed in Phase 3.
 
 
 __all__ = [
@@ -96,17 +88,14 @@ __all__ = [
     "register_kernel_validators",
     # Synthesis (v1.1)
     "HullSynthesizer",
-    "SynthesisRequest",  # DEPRECATED - use GeometrySynthesisRequest
     "GeometrySynthesisRequest",  # PREFERRED (TASK-002)
     "SynthesisProposal",
     "SynthesisResult",
     "ConvergenceCriteria",
     "TerminationReason",
+    "harmonize_sections_global",
     "SynthesisLock",
     "SynthesisLockError",
-    "FallbackProposal",
-    "FallbackMode",
-    "create_fallback_proposal",
     # Analysis (TASK-002)
     "calculate_froude_geometry",
     "classify_regime_geometry",

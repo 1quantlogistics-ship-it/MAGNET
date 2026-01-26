@@ -1,5 +1,16 @@
 # MAGNET Codebase & System Integration Audit
 
+<!-- AGENT_CONTEXT
+Purpose: [TODO: Add purpose description]
+Authoritative: No
+Keywords: [magnet, audit, prompts]
+Depends_On: None
+Used_By: [TODO: Add users]
+Status: current
+Last_Verified: 2026-01-15
+-->
+
+
 **Version:** 1.0  
 **Date:** 2026-01-05  
 **Purpose:** Comprehensive audit of the MAGNET codebase against failure modes and system integration requirements  

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
+import math
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -154,7 +155,19 @@ class DesignStore:
                     f"state_manager.design_version={dv}. Commit before save."
                 )
 
-        data = sm.to_dict()
+        def _sanitize(obj: Any) -> Any:
+            # Ensure persisted JSON never contains NaN/Infinity (breaks strict JSON consumers).
+            if isinstance(obj, float):
+                return obj if math.isfinite(obj) else None
+            if isinstance(obj, dict):
+                return {k: _sanitize(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [_sanitize(v) for v in obj]
+            if isinstance(obj, tuple):
+                return [_sanitize(v) for v in obj]
+            return obj
+
+        data = _sanitize(sm.to_dict())
         out = self._path_for(design_id)
         tmp = out.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")

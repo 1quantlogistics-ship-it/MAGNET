@@ -1,5 +1,15 @@
 # MAGNET Module 65.1: Broad-First Intent Resolution (v6)
 
+<!-- AGENT_CONTEXT
+Purpose: Compound intent resolution - parsing multiple changes from single user input
+Authoritative: Yes
+Keywords: intent, compound, resolution, parsing, hypothetical, gates
+Depends_On: INTENT_ACTION_PROTOCOL.md
+Used_By: agents, intent_resolver, api
+Status: current
+Last_Verified: 2026-01-15
+-->
+
 ## Implementation Status: COMPLETE ✓
 
 **All phases implemented and tested (2025-12-19):**
