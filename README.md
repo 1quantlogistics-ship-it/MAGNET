@@ -106,6 +106,8 @@ Traditional marine design workflows require:
 
 ### V2 — Concept-to-Preliminary Designer (Roadmap)
 
+All roadmap items below are **future improvements**; see `NEXT BIG THING/MAGNET_UNIFIED_LIBRARY_INTEGRATION_PLAN.md` for sequencing.
+
 - Multi-candidate exploration with determinism & cost semantics
 - Bounded Cp movement for shape character exploration
 - Variant generation & comparison
@@ -113,6 +115,11 @@ Traditional marine design workflows require:
 - Natural language mission briefs
 - Sketch/image interpretation
 - Automated trade studies
+
+### Future Improvements (Phase 4+)
+
+The remaining roadmap items (e.g., xeokit-sdk visualization, FreeCAD Ship interop, GenCAD firewall) are **future enhancements**.  
+See the implementation guide for sequencing and constraints: `NEXT BIG THING/MAGNET_UNIFIED_LIBRARY_INTEGRATION_PLAN.md`.
 
 ### V3 — Interior + Systems Intelligence (Roadmap)
 

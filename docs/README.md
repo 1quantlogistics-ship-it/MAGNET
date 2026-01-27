@@ -70,6 +70,8 @@ Active plans, technical specs, and integration roadmaps.
 | [**physics/**](./3-implementation/physics/) | PHYSICS_RIGOR_PLAN |
 | [**general/**](./3-implementation/general/) | Implementation_Guide, Spec, Unified_Plan |
 
+**Roadmap note:** Remaining roadmap items are **future improvements**; see `NEXT BIG THING/MAGNET_UNIFIED_LIBRARY_INTEGRATION_PLAN.md` for sequencing.
+
 ---
 
 ## [4. Specifications](./4-specs/)
