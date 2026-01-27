@@ -37,6 +37,10 @@ class GateCondition:
         """
         Evaluate this gate condition against the current state.
 
+        Constraint-Aware Completion v1.0: For hull dimension paths, also
+        checks that the value has real provenance (not placeholder).
+        Placeholder ship-scale baselines do NOT satisfy gate conditions.
+
         Returns:
             Tuple of (passed, message)
         """
@@ -52,6 +56,21 @@ class GateCondition:
             passed = value is not None
             if passed and isinstance(value, (list, dict, str)):
                 passed = len(value) > 0
+
+        # === PROVENANCE CHECK (Constraint-Aware Completion v1.0) ===
+        # For hull dimensions (beam, draft, depth), also verify the value
+        # has real provenance (user/synthesized/kernel), not placeholder.
+        if passed and self.check_path.startswith("hull."):
+            hull_dimension_paths = {"hull.beam", "hull.draft", "hull.depth"}
+            if self.check_path in hull_dimension_paths:
+                if hasattr(state_manager, 'is_placeholder'):
+                    if state_manager.is_placeholder(self.check_path):
+                        return False, (
+                            f"Gate '{self.name}' failed: {self.check_path} is a placeholder "
+                            f"(ship-scale baseline). Synthesis required to compute "
+                            f"proportional dimensions from mission constraints."
+                        )
+        # === END PROVENANCE CHECK ===
 
         if passed:
             return True, f"Gate '{self.name}' passed"

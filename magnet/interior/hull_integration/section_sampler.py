@@ -182,7 +182,7 @@ class SampledSection:
         Check if point is inside hull at this section.
 
         Args:
-            y: Transverse position (meters, positive = starboard)
+            y: Transverse position (meters, positive = port per MAGNET Standard)
             z: Vertical position from baseline (meters)
 
         Returns:

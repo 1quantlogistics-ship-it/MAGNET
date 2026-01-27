@@ -200,16 +200,13 @@ class TestDesignEndpoints:
         assert isinstance(data["designs"], list)
 
     def test_create_design_no_state_manager(self, client):
-        """Test creating design without state manager returns 503.
-
-        v1.2: Forward reference bug fixed - Pydantic models moved to module level.
-        Now correctly returns 503 when StateManager is unavailable.
-        """
+        """Context-less app still supports file-backed design creation."""
         response = client.post("/api/v1/designs", json={
             "name": "Test Design"
         })
-        # v1.2: Bug fixed - now correctly returns 503 for unavailable StateManager
-        assert response.status_code == 503
+        assert response.status_code == 200
+        body = response.json()
+        assert "design_id" in body
 
     def test_create_design_validation(self, client):
         """Test design creation requires name."""
@@ -217,9 +214,9 @@ class TestDesignEndpoints:
         assert response.status_code == 422  # Validation error
 
     def test_get_design_no_state_manager(self, client):
-        """Test getting design without state manager returns 503."""
+        """Context-less app returns 404 for missing designs."""
         response = client.get("/api/v1/designs/TEST-001")
-        assert response.status_code == 503
+        assert response.status_code == 404
 
     def test_update_design_invalid_path(self, client):
         """Test updating with invalid path prefix returns 422."""
@@ -232,9 +229,7 @@ class TestDesignEndpoints:
     def test_update_design_valid_path_prefixes(self, client):
         """Test that valid refinable paths pass Pydantic validation and reach StateManager check.
 
-        v1.2: Forward reference bug fixed - Pydantic models moved to module level.
-        v1.3: Module 62 added is_refinable() boundary check - only refinable paths reach StateManager.
-        Now returns 503 (StateManager unavailable) for refinable paths that pass boundary check.
+        Refinable paths pass boundary check; for missing designs, we return 404.
         """
         # Only test refinable paths (non-refinable paths are rejected at boundary)
         refinable_paths = [
@@ -249,8 +244,7 @@ class TestDesignEndpoints:
                 "path": path,
                 "value": 123
             })
-            # v1.3: Refinable paths pass boundary check, then hit StateManager unavailable
-            assert response.status_code == 503, f"Refinable path '{path}' should return 503 (StateManager unavailable)"
+            assert response.status_code == 404, f"Refinable path '{path}' should return 404 (Design not found)"
 
     def test_delete_design_no_state_manager(self, client):
         """Test deleting design without state manager returns 503."""
@@ -455,7 +449,7 @@ class TestErrorHandling:
         assert response.status_code == 503
 
     def test_state_manager_unavailable_get(self, client):
-        """Test GET endpoints when state manager is unavailable."""
+        """Context-less app returns 404/503 depending on endpoint wiring."""
         endpoints = [
             "/api/v1/designs/TEST",
             "/api/v1/designs/TEST/phases/mission",
@@ -463,7 +457,7 @@ class TestErrorHandling:
 
         for path in endpoints:
             response = client.get(path)
-            assert response.status_code == 503, f"GET {path} should return 503"
+            assert response.status_code in (404, 503), f"GET {path} should return 404 or 503"
 
     def test_state_manager_unavailable_delete(self, client):
         """Test DELETE endpoints when state manager is unavailable."""
@@ -471,14 +465,9 @@ class TestErrorHandling:
         assert response.status_code == 503
 
     def test_post_with_body_works_after_fix(self, client):
-        """Verify POST endpoints with body work correctly after v1.2 fix.
-
-        v1.2: Forward reference bug fixed - Pydantic models at module level.
-        Now correctly processes body and returns 503 for unavailable StateManager.
-        """
+        """Verify POST endpoints with body work correctly after v1.2 fix."""
         response = client.post("/api/v1/designs", json={"name": "Test"})
-        # Bug fixed: now correctly returns 503 (StateManager unavailable)
-        assert response.status_code == 503, "Should return 503 for unavailable StateManager"
+        assert response.status_code == 200
 
     def test_patch_with_body_works_after_fix(self, client):
         """Verify PATCH endpoints with body work correctly after v1.2 fix.
@@ -489,8 +478,7 @@ class TestErrorHandling:
             "path": "hull.loa",  # Use refinable path to pass boundary check
             "value": 50.0
         })
-        # Bug fixed: now correctly returns 503 (StateManager unavailable)
-        assert response.status_code == 503
+        assert response.status_code == 404
 
     def test_concurrent_requests(self, client):
         """Test handling concurrent requests."""

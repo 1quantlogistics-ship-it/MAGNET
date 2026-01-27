@@ -51,12 +51,75 @@ from .taxonomy import (
     GateRequirement,
 )
 
+# =============================================================================
+# GEOMETRY TRUTHFULNESS VALIDATORS (Engineering Truth)
+# =============================================================================
+
+GEOMETRY_VALIDATORS = [
+    ValidatorDefinition(
+        validator_id="geometry/planarity",
+        name="Panel Planarity Gate",
+        description="Hard-gate planarity for panelized hulls via normalized quad warp factor",
+        category=ValidatorCategory.CUSTOM,
+        priority=ValidatorPriority.CRITICAL,
+        phase="hull",
+        is_gate_condition=True,
+        gate_requirement=GateRequirement.REQUIRED,
+        depends_on_parameters=["resources", "geometry_intent"],
+        produces_parameters=[],
+        timeout_seconds=60,
+        resource_requirements=ResourceRequirements(cpu_cores=1, ram_gb=0.5),
+        tags=["geometry", "truthfulness", "panelized", "gate"],
+    ),
+]
+
 
 # =============================================================================
 # PHYSICS VALIDATORS (FIX #2: Normalized parameter names)
 # =============================================================================
 
 PHYSICS_VALIDATORS = [
+    # -------------------------------------------------------------------------
+    # T7.5 / §0.9.8: Hydro-Weight Convergence (Option B: fully physical loop)
+    #
+    # Opt-in via `hull.auto_converge_hydro_weight=True`.
+    # When enabled, this validator may mutate `hull.draft` to the converged
+    # equilibrium draft and will write consistent hydrostatics + weight outputs.
+    # -------------------------------------------------------------------------
+    ValidatorDefinition(
+        validator_id="physics/hydro_weight_converged",
+        name="Hydro-Weight Convergence",
+        description="Fixed-point solve for draft to break hydro↔weight circular dependency (opt-in)",
+        category=ValidatorCategory.PHYSICS,
+        priority=ValidatorPriority.HIGH,
+        phase="weight",
+        is_gate_condition=False,  # opt-in; do not silently gate existing flows
+        gate_requirement=GateRequirement.OPTIONAL,
+        depends_on_parameters=[
+            # Inputs only (do NOT depend on parameters produced by hydrostatics/weight)
+            "hull.loa", "hull.lwl", "hull.beam", "hull.depth", "hull.draft",
+            "hull.cb", "hull.cp", "hull.cm", "hull.cwp",
+            "hull.deadrise_deg",
+            "resources", "geometry_intent",
+        ],
+        produces_parameters=[
+            # Convergence control/outputs (NOTE: do NOT claim to "produce" hull.draft;
+            # doing so would create an implicit dependency from the hull phase to a
+            # weight-phase validator, blocking hull phase execution.)
+            "hull.hydro_weight_converged",
+            "hull.hydro_weight_iterations",
+            # Equilibrium diagnostics (also written)
+            "hull.equilibrium_draft_m",
+            "hull.equilibrium_converged",
+            "hull.equilibrium_iterations",
+            "hull.equilibrium_residual_mt",
+            "hull.equilibrium_target_displacement_mt",
+        ],
+        timeout_seconds=180,
+        resource_requirements=ResourceRequirements(cpu_cores=2, ram_gb=2.0),
+        tags=["physics", "weight", "convergence", "phase3c"],
+    ),
+
     ValidatorDefinition(
         validator_id="physics/hydrostatics",
         name="Hydrostatics Calculator",
@@ -70,7 +133,7 @@ PHYSICS_VALIDATORS = [
         depends_on_parameters=[
             "hull.loa", "hull.lwl", "hull.beam", "hull.depth", "hull.draft",
             "hull.cb", "hull.cp", "hull.cm", "hull.cwp",
-            "hull.hull_type", "hull.deadrise_deg"
+            "hull.deadrise_deg"
         ],
         # v1.2: Updated from 5 to 11 outputs
         produces_parameters=[
@@ -99,7 +162,7 @@ PHYSICS_VALIDATORS = [
         priority=ValidatorPriority.CRITICAL,
         phase="hull",  # Canonical name (not "hull_form")
         is_gate_condition=True,
-        gate_requirement=GateRequirement.REQUIRED,  # v1.1: MUST pass for hull phase
+        gate_requirement=GateRequirement.OPTIONAL,  # GATE_VS_GRADES: advisory grade only (hydrostatics is the only gate)
         depends_on_validators=["physics/hydrostatics"],
         depends_on_parameters=[
             "hull.loa", "hull.beam", "hull.draft",
@@ -112,6 +175,33 @@ PHYSICS_VALIDATORS = [
         timeout_seconds=180,
         resource_requirements=ResourceRequirements(cpu_cores=2, ram_gb=2.0),
         tags=["core", "hull", "propulsion"],
+    ),
+
+    ValidatorDefinition(
+        validator_id="physics/equilibrium_draft",
+        name="Equilibrium Draft Solver",
+        description="Solves draft where buoyancy equals estimated weight (Phase 3C)",
+        category=ValidatorCategory.PHYSICS,
+        priority=ValidatorPriority.HIGH,
+        phase="weight",
+        is_gate_condition=False,  # Advisory: never blocks advancement
+        gate_requirement=GateRequirement.OPTIONAL,
+        depends_on_validators=["physics/hydrostatics", "weight/estimation"],
+        depends_on_parameters=[
+            "hull.depth", "hull.draft",
+            "weight.lightship_weight_mt",  # preferred
+            "weight.lightship_mt",  # legacy alias
+        ],
+        produces_parameters=[
+            "hull.equilibrium_draft_m",
+            "hull.equilibrium_converged",
+            "hull.equilibrium_iterations",
+            "hull.equilibrium_residual_mt",
+            "hull.equilibrium_target_displacement_mt",
+        ],
+        timeout_seconds=120,
+        resource_requirements=ResourceRequirements(cpu_cores=2, ram_gb=1.0),
+        tags=["physics", "equilibrium", "draft", "phase3c"],
     ),
 
     ValidatorDefinition(
@@ -260,7 +350,7 @@ STABILITY_VALIDATORS = [
         priority=ValidatorPriority.CRITICAL,
         phase="stability",
         is_gate_condition=True,
-        gate_requirement=GateRequirement.REQUIRED,  # v1.1: MUST pass for stability phase
+        gate_requirement=GateRequirement.OPTIONAL,  # GATE_VS_GRADES: advisory grade only (hydrostatics is the only gate)
         depends_on_validators=["physics/hydrostatics"],
         # v1.2: hull.bmt → hull.bm_m
         # Note: stability.kg_m is optional - validator falls back to weight.lightship_vcg_m
@@ -821,6 +911,7 @@ PROPORTIONAL_VALIDATORS = [
 
 ALL_VALIDATORS = (
     PHYSICS_VALIDATORS +
+    GEOMETRY_VALIDATORS +
     BOUNDS_VALIDATORS +
     STABILITY_VALIDATORS +
     CLASS_VALIDATORS +

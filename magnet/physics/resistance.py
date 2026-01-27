@@ -20,8 +20,8 @@ from magnet.core.constants import (
     WATER_KINEMATIC_VISCOSITY,
     GRAVITY_M_S2,
     KNOTS_TO_MS,
-    FROUDE_DISPLACEMENT_MAX,
-    FROUDE_SEMI_DISPLACEMENT_MAX,
+    FN_HOLTROP_VALID_MAX,
+    FN_HOLTROP_USABLE_MAX,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,10 +42,6 @@ ITTC_57_CONSTANT = 0.075
 # Correlation allowance (typical roughness allowance)
 CA_ROUGHNESS = 0.0004
 
-# Froude thresholds for warnings
-FN_HIGH_WARNING = 0.50  # Planing regime begins
-FN_VERY_HIGH_WARNING = 0.70  # Fully planing
-
 
 # =============================================================================
 # INPUT/OUTPUT DEFINITIONS
@@ -62,12 +58,15 @@ RESISTANCE_INPUTS = [
 ]
 
 RESISTANCE_OUTPUTS = [
-    "resistance.total_kn",
-    "resistance.frictional_kn",
-    "resistance.residuary_kn",
+    "resistance.total_resistance_kn",
+    "resistance.frictional_resistance_kn",
+    "resistance.residuary_resistance_kn",
     "resistance.effective_power_kw",
     "resistance.froude_number",
     "resistance.reynolds_number",
+    "resistance.regime",
+    "resistance.method_valid",
+    "resistance.validity_note",
 ]
 
 
@@ -110,6 +109,11 @@ class ResistanceResults:
     speed_kts: float  # Design speed (knots)
     speed_ms: float  # Design speed (m/s)
 
+    # Regime/method validity (for UI + downstream gating)
+    regime: str = "displacement"  # "displacement" | "semi_displacement" | "planing"
+    method_valid: bool = True  # True iff method appropriate for this regime
+    validity_note: str = ""  # Human-readable explanation for display
+
     # Metadata
     calculation_time_ms: int = 0
     warnings: List[str] = field(default_factory=list)
@@ -138,6 +142,10 @@ class ResistanceResults:
             # Speed
             "speed_kts": round(self.speed_kts, 2),
             "speed_ms": round(self.speed_ms, 3),
+            # Regime / validity
+            "regime": self.regime,
+            "method_valid": self.method_valid,
+            "validity_note": self.validity_note,
             # Metadata
             "calculation_time_ms": self.calculation_time_ms,
             "warnings": self.warnings,
@@ -163,6 +171,9 @@ class ResistanceResults:
             form_factor=data.get("form_factor", 1.0),
             speed_kts=data.get("speed_kts", 0.0),
             speed_ms=data.get("speed_ms", 0.0),
+            regime=data.get("regime", "displacement"),
+            method_valid=data.get("method_valid", True),
+            validity_note=data.get("validity_note", ""),
             calculation_time_ms=data.get("calculation_time_ms", 0),
             warnings=data.get("warnings", []),
         )
@@ -264,17 +275,23 @@ class ResistanceCalculator:
         froude_number = self._calculate_froude_number(speed_ms, lwl)
         reynolds_number = self._calculate_reynolds_number(speed_ms, lwl)
 
-        # Add warnings for high Froude numbers
-        if froude_number > FN_VERY_HIGH_WARNING:
-            warnings.append(
-                f"Froude number {froude_number:.3f} > {FN_VERY_HIGH_WARNING}: "
-                "Fully planing regime. Results unreliable."
-            )
-        elif froude_number > FN_HIGH_WARNING:
-            warnings.append(
-                f"Froude number {froude_number:.3f} > {FN_HIGH_WARNING}: "
-                "Semi-planing regime. Results less accurate."
-            )
+        # Regime classification + method validity (single source of truth: core/constants.py)
+        if froude_number < FN_HOLTROP_VALID_MAX:
+            regime = "displacement"
+            method_valid = True
+            validity_note = "Holtrop-Mennen method valid for displacement regime"
+        elif froude_number < FN_HOLTROP_USABLE_MAX:
+            regime = "semi_displacement"
+            method_valid = False
+            validity_note = "Semi-displacement regime: Holtrop results approximate (±20-30%)"
+        else:
+            regime = "planing"
+            method_valid = False
+            validity_note = "Planing regime: Holtrop invalid, Savitsky method required"
+
+        # Surface regime validity as a warning for downstream consumers/UI
+        if not method_valid:
+            warnings.append(validity_note)
 
         # Calculate frictional resistance coefficient (ITTC-57)
         cf = self._calculate_cf_ittc57(reynolds_number)
@@ -348,6 +365,9 @@ class ResistanceCalculator:
             form_factor=form_factor,
             speed_kts=speed_kts,
             speed_ms=speed_ms,
+            regime=regime,
+            method_valid=method_valid,
+            validity_note=validity_note,
             calculation_time_ms=elapsed_ms,
             warnings=warnings,
         )

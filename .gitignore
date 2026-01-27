@@ -73,5 +73,6 @@ venv.bak/
 .LSOverride
 
 # Project specific
-memory/*.json
+storage/cache/
+storage/designs/
 *.log

@@ -68,8 +68,8 @@ class BaseProvider(ABC):
         timeout_seconds: int = 120,
         # Safety configuration
         fallback_to_deterministic: bool = True,
-        retry_attempts: int = 2,
-        retry_delay_ms: int = 1000,
+        retry_attempts: int = 3,  # TASK-026: Max 3 retries for rate limits
+        retry_delay_ms: int = 2000,  # TASK-026: 2s base delay
         max_requests_per_minute: int = 60,
         max_cost_per_session_usd: float = 5.0,
         cache_ttl_seconds: int = 3600,

@@ -359,3 +359,4 @@ export const selectWindowBounds = (state: ChatStore) => ({
 });
 
 export default useChatStore;
+

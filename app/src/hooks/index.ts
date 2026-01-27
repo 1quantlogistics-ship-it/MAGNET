@@ -59,3 +59,9 @@ export {
   useSpringVector,
   SPRING_PRESETS,
 } from './useSpringTransition';
+
+// Intent (Module 63.1)
+export { useIntent, type UseIntentResult } from './useIntent';
+
+// Chat with Backend Integration
+export { useChat, type UseChatResult } from './useChat';

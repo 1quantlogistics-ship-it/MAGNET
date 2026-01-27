@@ -25,6 +25,7 @@ from .schema import MeshData, SceneData, MaterialDef, BoundingBox, GeometryMode
 from .errors import ExportError
 from .contracts import MeshCategory, AttributePolicy
 from .gltf_builder import GLTFBuilder
+from magnet.core.constants import EPSILON_VECTOR
 
 if TYPE_CHECKING:
     pass
@@ -220,6 +221,100 @@ class GeometryExporter:
                 errors=[str(e)],
             )
 
+    # =========================================================================
+    # Mesh helpers
+    # =========================================================================
+
+    def _ensure_normals(self, mesh: MeshData, policy: AttributePolicy, name: str) -> None:
+        """
+        Ensure per-vertex normals exist when required by export policy.
+
+        Many callers (tests, minimal meshes, or upstream producers) may provide only
+        vertices + indices. For glTF export we require normals for shaded triangle meshes.
+        """
+        if not policy.require_normal:
+            return
+
+        # Already present and consistent
+        if mesh.normals and len(mesh.normals) == len(mesh.vertices):
+            return
+
+        # If normals are provided but inconsistent, do NOT "fix" silently.
+        # Let the contract validator fail loudly so upstream producers can be corrected.
+        if mesh.normals and len(mesh.normals) != 0 and len(mesh.normals) != len(mesh.vertices):
+            logger.warning(
+                f"Mesh '{name}' has inconsistent normals (len={len(mesh.normals)}) "
+                f"vs vertices (len={len(mesh.vertices)}); leaving as-is for contract validation."
+            )
+            return
+
+        # Can only compute normals for indexed triangles
+        if not mesh.vertices or not mesh.indices:
+            return
+        if len(mesh.vertices) % 3 != 0 or len(mesh.indices) % 3 != 0:
+            return
+
+        vcount = len(mesh.vertices) // 3
+        normals = [0.0] * (vcount * 3)
+
+        for i in range(0, len(mesh.indices), 3):
+            i0 = int(mesh.indices[i])
+            i1 = int(mesh.indices[i + 1])
+            i2 = int(mesh.indices[i + 2])
+
+            # Guard indices (contract validator will also check bounds)
+            if i0 < 0 or i1 < 0 or i2 < 0:
+                continue
+            if i0 >= vcount or i1 >= vcount or i2 >= vcount:
+                continue
+
+            ax, ay, az = (
+                mesh.vertices[i0 * 3],
+                mesh.vertices[i0 * 3 + 1],
+                mesh.vertices[i0 * 3 + 2],
+            )
+            bx, by, bz = (
+                mesh.vertices[i1 * 3],
+                mesh.vertices[i1 * 3 + 1],
+                mesh.vertices[i1 * 3 + 2],
+            )
+            cx, cy, cz = (
+                mesh.vertices[i2 * 3],
+                mesh.vertices[i2 * 3 + 1],
+                mesh.vertices[i2 * 3 + 2],
+            )
+
+            ux, uy, uz = (bx - ax, by - ay, bz - az)
+            vx, vy, vz = (cx - ax, cy - ay, cz - az)
+
+            # Face normal (unnormalized)
+            nx = uy * vz - uz * vy
+            ny = uz * vx - ux * vz
+            nz = ux * vy - uy * vx
+
+            for vidx in (i0, i1, i2):
+                normals[vidx * 3] += nx
+                normals[vidx * 3 + 1] += ny
+                normals[vidx * 3 + 2] += nz
+
+        # Normalize
+        for vi in range(vcount):
+            nx = normals[vi * 3]
+            ny = normals[vi * 3 + 1]
+            nz = normals[vi * 3 + 2]
+            length = math.sqrt(nx * nx + ny * ny + nz * nz)
+            if length > EPSILON_VECTOR:
+                normals[vi * 3] = nx / length
+                normals[vi * 3 + 1] = ny / length
+                normals[vi * 3 + 2] = nz / length
+            else:
+                # Degenerate geometry: default to Z-up
+                normals[vi * 3] = 0.0
+                normals[vi * 3 + 1] = 0.0
+                normals[vi * 3 + 2] = 1.0
+
+        mesh.normals = normals
+
     def export_scene(
         self,
         scene: SceneData,
@@ -236,7 +331,11 @@ class GeometryExporter:
         # Collect all meshes
         meshes: List[Tuple[str, MeshData]] = []
 
-        if scene.hull:
+        # v1.2: Multi-body hulls
+        if getattr(scene, "hulls", None):
+            for i, h in enumerate(scene.hulls or []):
+                meshes.append((f"hull_{i}", h))
+        elif scene.hull:
             meshes.append(("hull", scene.hull))
         if scene.deck:
             meshes.append(("deck", scene.deck))
@@ -277,6 +376,14 @@ class GeometryExporter:
             source_branch=self._source_branch,
             commit_hash=self._commit_hash,
         )
+        # Phase 3: embed diagnostic primitives into export metadata for traceability
+        try:
+            if isinstance(scene.metadata, dict):
+                prim = scene.metadata.get("primitives")
+                if prim is not None:
+                    metadata.custom.setdefault("primitives", prim)
+        except Exception:
+            pass
 
         try:
             if format in (ExportFormat.GLTF, ExportFormat.GLB):
@@ -324,6 +431,7 @@ class GeometryExporter:
 
         # Use hull policy by default for single mesh export
         policy = AttributePolicy.for_category(MeshCategory.HULL)
+        self._ensure_normals(mesh, policy, mesh.mesh_id or "hull")
         builder.write_mesh_primitive(mesh, mesh.mesh_id or "hull", policy)
 
         return builder.finalize(binary=binary)
@@ -364,6 +472,7 @@ class GeometryExporter:
                 category = MeshCategory.STRUCTURE
 
             policy = AttributePolicy.for_category(category)
+            self._ensure_normals(mesh, policy, name)
             builder.write_mesh_primitive(mesh, name, policy)
 
             # Assign material based on mesh name

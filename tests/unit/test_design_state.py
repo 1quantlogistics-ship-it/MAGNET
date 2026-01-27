@@ -185,7 +185,9 @@ class TestDesignStateDiff:
         """Test diff of identical states."""
         state1 = DesignState()
         state2 = DesignState.from_dict(state1.to_dict())
-        state2.design_id = state1.design_id  # Match IDs
+        # Match IDs (top-level writes require mutator context)
+        with state2.mutator_context():
+            state2.design_id = state1.design_id
 
         differences = state1.diff(state2)
         # Filter out timestamp differences

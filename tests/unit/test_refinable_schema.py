@@ -84,9 +84,12 @@ class TestRefinableSchema:
         """All fields have required attributes."""
         for path, field in REFINABLE_SCHEMA.items():
             assert field.path == path
-            assert field.type in ("float", "int", "bool")
+            assert field.type in ("float", "int", "bool", "enum")
             assert field.kernel_unit is not None
             assert len(field.allowed_units) > 0
+            if field.type == "enum":
+                assert field.allowed_values is not None
+                assert len(field.allowed_values) > 0
 
 
 class TestGetField:

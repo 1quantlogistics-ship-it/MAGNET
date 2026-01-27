@@ -57,6 +57,7 @@ class ActionType(str, Enum):
     EXPORT = "export"           # EXPORT(format=...)
     REQUEST_CLARIFICATION = "request_clarification"  # Ask user for more info
     NOOP = "noop"               # Query-only, no mutation
+    QUERY = "query"             # Read-only analysis/query (no mutation)
 
 
 # =============================================================================
@@ -120,6 +121,8 @@ class Action:
     phases: Optional[List[str]] = None  # For RUN_PHASES
     format: Optional[str] = None        # For EXPORT
     message: Optional[str] = None       # For REQUEST_CLARIFICATION
+    query_target: Optional[str] = None  # For QUERY (e.g., "hull.proportions")
+    query_params: Optional[Dict[str, Any]] = None  # For QUERY (optional parameters)
 
     def with_value(self, new_value: Any) -> "Action":
         """
@@ -150,6 +153,10 @@ class Action:
             result["format"] = self.format
         if self.message is not None:
             result["message"] = self.message
+        if self.query_target is not None:
+            result["query_target"] = self.query_target
+        if self.query_params is not None:
+            result["query_params"] = self.query_params
         return result
 
     @classmethod
@@ -164,6 +171,8 @@ class Action:
             phases=data.get("phases"),
             format=data.get("format"),
             message=data.get("message"),
+            query_target=data.get("query_target"),
+            query_params=data.get("query_params"),
         )
 
 

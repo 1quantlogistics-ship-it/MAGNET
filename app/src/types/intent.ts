@@ -49,6 +49,17 @@ export interface IntentPreviewResponse {
   warnings: string[];
   guidance?: string;
   apply_payload: ApplyPayload;
+
+  // Optional extended fields
+  intent_mode?: 'single' | 'compound';
+  intent_status?: 'complete' | 'partial' | 'blocked';
+  provenance?: 'deterministic' | 'llm_guess';
+  missing_required?: Array<{
+    path: string;
+    reason: string;
+    gate_name: string;
+    phase: string;
+  }>;
 }
 
 /**

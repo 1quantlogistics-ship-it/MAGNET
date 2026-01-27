@@ -1,22 +1,33 @@
 """
-MAGNET Hull Synthesis Engine
+MAGNET Hull Synthesis Engine (Enum-free)
 
-Kernel-level hull synthesis as a first-class primitive.
-Uses validators as scoring functions in a bounded propose→validate→mutate loop.
-Guaranteed termination with fallback path.
+Phase 3 (Enum Deletion): This module MUST NOT depend on any form enums.
 
-v1.0: Initial implementation
+What remains:
+- Global topological harmonization for section point-count consistency
+- Geometry-based synthesis request + simple bounded propose→score→mutate loop
+
+What is removed:
+- Any form-enum-driven branching (no type/style buckets)
+- Any “family priors” dicts or style dispatch
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
-import logging
 
-from .priors.hull_families import HullFamily, get_family_prior
-from .synthesis_lock import SynthesisLock, SynthesisLockError
-from .synthesis_fallback import create_fallback_proposal, FallbackMode
+import logging
+import math
+
+from magnet.core.constants import FN_DISPLACEMENT_MAX, FN_SEMI_DISPLACEMENT_MAX
+from magnet.hull_gen.geometry import HullSection, SectionPoint, Point3D, EdgeType
+from magnet.kernel.priors.geometry_defaults import (
+    get_defaults_from_dimensions,
+)
+from magnet.kernel.synthesis_lock import SynthesisLock
 
 if TYPE_CHECKING:
     from magnet.core.state_manager import StateManager
@@ -26,840 +37,630 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# CONTRACTS
+# Phase 1: Global Topological Harmonization (Truthfulness Foundation)
+# =============================================================================
+
+def _pchip_slopes(xs: List[float], ys: List[float]) -> List[float]:
+    """
+    Monotone cubic Hermite slopes (Fritsch-Carlson / PCHIP-like).
+
+    xs must be strictly increasing.
+    """
+    n = len(xs)
+    if n < 2:
+        return [0.0] * n
+    ds = []
+    for i in range(n - 1):
+        dx = xs[i + 1] - xs[i]
+        ds.append((ys[i + 1] - ys[i]) / dx if dx != 0 else 0.0)
+
+    m = [0.0] * n
+    if n == 2:
+        m[0] = ds[0]
+        m[1] = ds[0]
+        return m
+
+    # Interior slopes
+    for i in range(1, n - 1):
+        d0 = ds[i - 1]
+        d1 = ds[i]
+        if d0 == 0.0 or d1 == 0.0 or (d0 > 0) != (d1 > 0):
+            m[i] = 0.0
+        else:
+            w1 = 2 * (xs[i + 1] - xs[i]) + (xs[i] - xs[i - 1])
+            w2 = (xs[i + 1] - xs[i]) + 2 * (xs[i] - xs[i - 1])
+            m[i] = (w1 + w2) / (w1 / d0 + w2 / d1)
+
+    # Endpoints (one-sided, limited)
+    h0 = xs[1] - xs[0]
+    h1 = xs[2] - xs[1]
+    if h0 == 0 or h1 == 0:
+        m[0] = ds[0]
+    else:
+        m0 = ((2 * h0 + h1) * ds[0] - h0 * ds[1]) / (h0 + h1)
+        if (m0 > 0) != (ds[0] > 0):
+            m0 = 0.0
+        elif (ds[0] > 0 and m0 > 3 * ds[0]) or (ds[0] < 0 and m0 < 3 * ds[0]):
+            m0 = 3 * ds[0]
+        m[0] = m0
+
+    hn1 = xs[-1] - xs[-2]
+    hn2 = xs[-2] - xs[-3]
+    if hn1 == 0 or hn2 == 0:
+        m[-1] = ds[-1]
+    else:
+        mn = ((2 * hn1 + hn2) * ds[-1] - hn1 * ds[-2]) / (hn1 + hn2)
+        if (mn > 0) != (ds[-1] > 0):
+            mn = 0.0
+        elif (ds[-1] > 0 and mn > 3 * ds[-1]) or (ds[-1] < 0 and mn < 3 * ds[-1]):
+            mn = 3 * ds[-1]
+        m[-1] = mn
+    return m
+
+
+def _eval_cubic_hermite(
+    x0: float, x1: float, y0: float, y1: float, m0: float, m1: float, x: float
+) -> float:
+    """Evaluate cubic Hermite spline on [x0,x1] at x."""
+    h = x1 - x0
+    if h == 0:
+        return y0
+    t = (x - x0) / h
+    t2 = t * t
+    t3 = t2 * t
+    h00 = 2 * t3 - 3 * t2 + 1
+    h10 = t3 - 2 * t2 + t
+    h01 = -2 * t3 + 3 * t2
+    h11 = t3 - t2
+    return h00 * y0 + h10 * h * m0 + h01 * y1 + h11 * h * m1
+
+
+def _interp_y_of_z(
+    zs: List[float],
+    ys: List[float],
+    zq: float,
+    *,
+    mode: str,
+    slopes: Optional[List[float]] = None,
+) -> float:
+    """Interpolate y(z) at zq using linear or cubic (PCHIP-like)."""
+    n = len(zs)
+    if n == 0:
+        return 0.0
+    if n == 1:
+        return ys[0]
+    # Clamp
+    if zq <= zs[0]:
+        return ys[0]
+    if zq >= zs[-1]:
+        return ys[-1]
+
+    # Find segment
+    lo = 0
+    hi = n - 2
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if zs[mid] <= zq <= zs[mid + 1]:
+            i = mid
+            break
+        if zq < zs[mid]:
+            hi = mid - 1
+        else:
+            lo = mid + 1
+    else:
+        i = max(0, min(n - 2, lo))
+
+    z0, z1 = zs[i], zs[i + 1]
+    y0, y1 = ys[i], ys[i + 1]
+    if mode == "linear" or slopes is None:
+        t = (zq - z0) / (z1 - z0) if z1 != z0 else 0.0
+        return y0 + t * (y1 - y0)
+
+    return _eval_cubic_hermite(z0, z1, y0, y1, slopes[i], slopes[i + 1], zq)
+
+
+def harmonize_sections_global(
+    sections: List[HullSection],
+    *,
+    surface_definition: str,
+) -> List[HullSection]:
+    """
+    Global Topological Harmonization:
+    - Upsample all sections to a single vertex count (max over sections)
+    - panelized => linear interpolation
+    - smooth    => cubic interpolation
+    - Never smooth away HARD vertices: preserve them as vertices (snap to grid indices)
+    """
+    if not sections:
+        return sections
+
+    target_n = max((len(s.points or []) for s in sections), default=0)
+    if target_n <= 0:
+        return sections
+
+    mode = "linear" if surface_definition == "panelized" else "cubic"
+
+    for sec in sections:
+        pts = list(sec.points or [])
+        if len(pts) == 0:
+            continue
+        if len(pts) == target_n:
+            continue
+
+        # Panelized: preserve feature anchor indices (HARD edges) by never reordering points.
+        # Smooth: allow reordering to ensure monotone z for spline evaluation.
+        if surface_definition != "panelized":
+            pts.sort(key=lambda p: float(p.position.z))
+
+        zs = [float(p.position.z) for p in pts]
+        ys = [float(p.position.y) for p in pts]
+
+        z_min, z_max = zs[0], zs[-1]
+        if target_n == 1 or z_max == z_min:
+            continue
+
+        if surface_definition == "panelized":
+            # REQUIREMENT: Preserve HARD edge indices exactly.
+            for i in range(len(zs) - 1):
+                if zs[i + 1] < zs[i]:
+                    raise ValueError(
+                        "Panelized section points must be in monotone increasing z order "
+                        "to preserve HARD edge anchor indices."
+                    )
+
+            anchor_map: Dict[int, SectionPoint] = {}
+            anchor_map[0] = pts[0]
+            anchor_map[target_n - 1] = pts[-1]
+            for idx, p in enumerate(pts):
+                if p.edge_type == EdgeType.HARD:
+                    anchor_map[int(idx)] = p
+
+            anchors = sorted(anchor_map.items(), key=lambda kv: kv[0])
+
+            new_points: List[Optional[SectionPoint]] = [None] * target_n
+            for (i0, p0), (i1, p1) in zip(anchors[:-1], anchors[1:]):
+                if i1 <= i0:
+                    continue
+                z0, z1 = float(p0.position.z), float(p1.position.z)
+                for j in range(i0, i1 + 1):
+                    if j == i0:
+                        src = p0
+                        new_points[j] = SectionPoint(
+                            position=Point3D(x=float(sec.x_position), y=float(src.position.y), z=float(src.position.z)),
+                            normal=None,
+                            curvature=0.0,
+                            is_chine=bool(src.is_chine),
+                            is_keel=bool(src.is_keel),
+                            edge_type=src.edge_type,
+                            crease_angle_deg=float(src.crease_angle_deg),
+                            feature_id=src.feature_id,
+                        )
+                        continue
+                    if j == i1:
+                        src = p1
+                        new_points[j] = SectionPoint(
+                            position=Point3D(x=float(sec.x_position), y=float(src.position.y), z=float(src.position.z)),
+                            normal=None,
+                            curvature=0.0,
+                            is_chine=bool(src.is_chine),
+                            is_keel=bool(src.is_keel),
+                            edge_type=src.edge_type,
+                            crease_angle_deg=float(src.crease_angle_deg),
+                            feature_id=src.feature_id,
+                        )
+                        continue
+                    # Interpolate z linearly in index space and y via linear y(z)
+                    t = (j - i0) / (i1 - i0)
+                    zq = z0 + t * (z1 - z0)
+                    yq = _interp_y_of_z(zs, ys, zq, mode="linear")
+                    new_points[j] = SectionPoint(
+                        position=Point3D(x=float(sec.x_position), y=float(yq), z=float(zq)),
+                        normal=None,
+                        curvature=0.0,
+                        is_chine=False,
+                        is_keel=False,
+                        edge_type=EdgeType.SMOOTH,
+                        crease_angle_deg=0.0,
+                        feature_id=None,
+                    )
+            sec.points = [p for p in new_points if p is not None]
+            continue
+
+        # Smooth: resample to target_n uniformly in z, using PCHIP-like slopes for y(z)
+        slopes = _pchip_slopes(zs, ys) if mode == "cubic" else None
+        new_points2: List[SectionPoint] = []
+        for j in range(target_n):
+            t = j / (target_n - 1)
+            zq = z_min + t * (z_max - z_min)
+            yq = _interp_y_of_z(zs, ys, zq, mode=mode, slopes=slopes)
+            new_points2.append(
+                SectionPoint(
+                    position=Point3D(x=float(sec.x_position), y=float(yq), z=float(zq)),
+                    normal=None,
+                    curvature=0.0,
+                    is_chine=False,
+                    is_keel=False,
+                    edge_type=EdgeType.SMOOTH,
+                    crease_angle_deg=0.0,
+                    feature_id=None,
+                )
+            )
+        sec.points = new_points2
+
+    return sections
+
+
+# =============================================================================
+# Contracts (Geometry-only)
 # =============================================================================
 
 @dataclass(frozen=True)
-class SynthesisRequest:
+class GeometrySynthesisRequest:
     """
-    Immutable input contract for hull synthesis.
+    Geometry-based synthesis request (enum-free).
 
-    All inputs validated at construction time.
-    Missing optionals use family-appropriate defaults.
+    This is a minimal, engineering-first contract that encodes constraints as
+    continuous values.
     """
-    hull_family: HullFamily          # Required - determines prior
-    max_speed_kts: float             # Required - drives Froude estimation
 
-    # Optional constraints (None = use family default)
+    max_speed_kts: float
+
+    # Optional constraints
     loa_m: Optional[float] = None
-    payload_kg: Optional[float] = None
+    beam_m: Optional[float] = None
+    draft_m: Optional[float] = None
+
+    # Optional mission-like inputs (kept for conductor wiring)
     crew_count: Optional[int] = None
+    payload_kg: Optional[float] = None
     range_nm: Optional[float] = None
     gm_min_m: Optional[float] = None
 
-    # Convergence parameters (can override defaults)
     max_iterations: int = 15
-    convergence_criteria: Optional["ConvergenceCriteria"] = None
 
-    def __post_init__(self):
-        if self.max_speed_kts <= 0:
+    def __post_init__(self) -> None:
+        if float(self.max_speed_kts) <= 0:
             raise ValueError("max_speed_kts must be positive")
-        if self.max_iterations < 1:
+        if int(self.max_iterations) < 1:
             raise ValueError("max_iterations must be >= 1")
+        if self.loa_m is not None and float(self.loa_m) <= 0:
+            raise ValueError("loa_m must be positive when provided")
+
+    def get_physics_defaults(self) -> Dict[str, Any]:
+        loa = float(self.loa_m) if self.loa_m else max(10.0, min(100.0, (float(self.max_speed_kts) / 2.0) ** 2))
+        return get_defaults_from_dimensions(loa, float(self.max_speed_kts))
 
 
 @dataclass(frozen=True)
 class SynthesisProposal:
-    """
-    Complete hull candidate with confidence and lineage.
-
-    NEVER partial state - all hull parameters or none.
-    """
-    # Principal dimensions (ALL required)
     lwl_m: float
     beam_m: float
     draft_m: float
-    depth_m: float  # Moulded depth to main deck
-
-    # Form coefficients (ALL required)
+    depth_m: float
     cb: float
     cp: float
     cm: float
     cwp: float
-
-    # Derived (computed at construction)
     displacement_m3: float
-
-    # Confidence and lineage
-    confidence: float               # 0.0-1.0
-    iteration: int                  # Which iteration produced this
-    source: str                     # "prior" | "mutated" | "fallback"
+    confidence: float
+    iteration: int
+    source: str
+    created_at: datetime = field(default_factory=datetime.utcnow)
 
     @property
     def is_complete(self) -> bool:
-        """All parameters are valid positive numbers."""
-        return all(v > 0 for v in [
-            self.lwl_m, self.beam_m, self.draft_m, self.depth_m,
-            self.cb, self.cp, self.cm, self.cwp
-        ])
+        return all(v > 0 for v in [self.lwl_m, self.beam_m, self.draft_m, self.depth_m, self.cb, self.cp, self.cm, self.cwp])
 
-    def to_state_dict(self) -> Dict[str, float]:
-        """Complete hull state - never partial."""
-        if not self.is_complete:
-            raise ValueError("Cannot commit incomplete proposal")
-        return {
-            "hull.lwl": self.lwl_m,
-            "hull.beam": self.beam_m,
-            "hull.draft": self.draft_m,
-            "hull.depth": self.depth_m,
-            "hull.cb": self.cb,
-            "hull.cp": self.cp,
-            "hull.cm": self.cm,
-            "hull.cwp": self.cwp,
-            "hull.displacement_m3": self.displacement_m3,
-        }
+
+class TerminationReason(Enum):
+    CONVERGED = "converged"
+    MAX_ITERATIONS = "max_iterations"
+    FALLBACK = "fallback"
 
 
 @dataclass(frozen=True)
 class ConvergenceCriteria:
-    """
-    Hard convergence criteria - synthesis MUST stop when met.
-
-    Prevents endless refinement loops and brittle early exits.
-    """
-    # Validator-based criteria
-    min_validators_passed: int = 2      # At least N validators must pass
-    max_error_severity: str = "warning" # No findings above this level
-
-    # Score-based criteria
-    min_score: float = 85.0             # Minimum fitness score
-    score_plateau_iterations: int = 3   # Stop if score unchanged for N iterations
-    score_plateau_threshold: float = 0.5  # "Unchanged" = delta < threshold
-
-    # Margin-based criteria (naval architecture)
-    gm_margin_m: float = 0.1            # GM must exceed requirement by this margin
-    displacement_tolerance: float = 0.05  # 5% displacement convergence
-
-    def is_converged(
-        self,
-        score: float,
-        validators_passed: int,
-        max_finding_severity: str,
-        gm_actual: float,
-        gm_required: float,
-        score_history: List[float],
-    ) -> Tuple[bool, str]:
-        """
-        Check if convergence criteria are met.
-
-        Returns:
-            Tuple of (converged, reason)
-        """
-        # Check validator count
-        if validators_passed < self.min_validators_passed:
-            return False, f"Only {validators_passed}/{self.min_validators_passed} validators passed"
-
-        # Check severity ceiling
-        severity_order = {"info": 0, "warning": 1, "error": 2}
-        if severity_order.get(max_finding_severity, 2) > severity_order[self.max_error_severity]:
-            return False, f"Finding severity {max_finding_severity} exceeds {self.max_error_severity}"
-
-        # Check minimum score
-        if score < self.min_score:
-            return False, f"Score {score:.1f} below minimum {self.min_score}"
-
-        # Check GM margin
-        if gm_actual < gm_required + self.gm_margin_m:
-            return False, f"GM {gm_actual:.2f}m below required {gm_required + self.gm_margin_m:.2f}m"
-
-        # Check score plateau (early termination if not improving)
-        if len(score_history) >= self.score_plateau_iterations:
-            recent = score_history[-self.score_plateau_iterations:]
-            if max(recent) - min(recent) < self.score_plateau_threshold:
-                return True, "Score plateaued - converged"
-
-        return True, "All criteria met"
+    target_score: float = 92.0
+    stagnation_limit: int = 4
 
 
-# Default convergence criteria
 DEFAULT_CONVERGENCE = ConvergenceCriteria()
 
 
-class TerminationReason(Enum):
-    """Why synthesis stopped."""
-    CONVERGED = "converged"           # Met all criteria
-    MAX_ITERATIONS = "max_iterations" # Hit iteration cap
-    FALLBACK = "fallback"             # Used estimator-only
-    ERROR = "error"                   # Synthesis failed
-
-
-@dataclass
+@dataclass(frozen=True)
 class SynthesisResult:
-    """
-    Complete synthesis result with audit trail.
-
-    ALWAYS produces a usable hull (via fallback if necessary).
-    """
-    # The hull
     proposal: SynthesisProposal
-
-    # Termination info
     termination: TerminationReason
     termination_message: str
-
-    # Audit trail
     iterations_used: int
-    score_history: List[float]
-    validator_results: List[str]       # Validator names that passed
-
-    # Warnings and notes
+    score_history: List[float] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    # Validator pipeline results (if executed by caller/orchestrator).
+    # Geometry-only synthesis does not run validators; this is present for audit wiring.
+    validator_results: Dict[str, Any] = field(default_factory=dict)
 
     @property
-    def is_converged(self) -> bool:
-        return self.termination == TerminationReason.CONVERGED
+    def is_usable(self) -> bool:
+        return self.proposal.is_complete and self.proposal.confidence >= 0.1
+
+    @property
+    def iterations(self) -> int:
+        return int(self.iterations_used)
 
     @property
     def is_fallback(self) -> bool:
         return self.termination == TerminationReason.FALLBACK
 
-    @property
-    def is_usable(self) -> bool:
-        """Result can be committed to state (even if fallback)."""
-        return self.proposal.is_complete
-
 
 # =============================================================================
-# HULL SYNTHESIZER
+# Implementation (Geometry-only synthesizer)
 # =============================================================================
-
-def _compute_depth(draft: float, prior: Dict[str, Any]) -> float:
-    """
-    Compute moulded depth from draft using family-specific ratio.
-
-    Single source of truth for depth calculation. Never compute depth inline.
-
-    Args:
-        draft: Draft in meters
-        prior: Family prior dict containing depth_draft_ratio
-
-    Returns:
-        Depth in meters
-    """
-    depth_draft_ratio = prior.get("depth_draft_ratio", 1.6)  # Default fallback
-    return draft * depth_draft_ratio
-
-
-def _apply_coefficient_coupling(
-    cb_mutated: float,
-    prior: Dict[str, Any],
-) -> Tuple[float, float, float]:
-    """
-    Apply coefficient coupling constraints to maintain geometric consistency.
-
-    Strategy: Cp is fixed (from family prior), Cm is derived from Cb/Cp.
-    This ensures the fundamental relationship Cb = Cp × Cm is maintained.
-
-    v1.4: Implements coefficient coupling per architectural audit.
-
-    Args:
-        cb_mutated: The mutated block coefficient value
-        prior: Family prior dict containing cp and coefficient_constraints
-
-    Returns:
-        Tuple of (cb, cp, cm) with coupling constraints applied
-    """
-    # Cp is fixed from family prior
-    cp = prior["cp"]
-
-    # Get Cb bounds from family prior
-    bounds = prior.get("bounds", {})
-    cb_bounds = bounds.get("cb", (0.30, 0.70))
-    cb_min, cb_max = cb_bounds
-
-    # Get Cm constraints from family prior
-    constraints = prior.get("coefficient_constraints", {})
-    cm_min = constraints.get("cm_min", 0.70)
-    cm_max = constraints.get("cm_max", 0.98)
-
-    # First, clamp Cb to family-specific bounds
-    cb = max(cb_min, min(cb_max, cb_mutated))
-
-    # Derive Cm from the fundamental relationship: Cb = Cp × Cm → Cm = Cb / Cp
-    cm_implied = cb / cp
-
-    # Clamp Cm to physical bounds and back-adjust Cb if needed
-    if cm_implied < cm_min:
-        # Cm too low - increase Cb to meet minimum Cm
-        cb = cp * cm_min
-        cm = cm_min
-        logger.debug(f"Coefficient coupling: Cm {cm_implied:.3f} below min {cm_min}, Cb adjusted to {cb:.3f}")
-    elif cm_implied > cm_max:
-        # Cm too high - decrease Cb to meet maximum Cm
-        cb = cp * cm_max
-        cm = cm_max
-        logger.debug(f"Coefficient coupling: Cm {cm_implied:.3f} above max {cm_max}, Cb adjusted to {cb:.3f}")
-    else:
-        # Cm is valid, use implied value
-        cm = cm_implied
-
-    return cb, cp, cm
-
 
 class HullSynthesizer:
     """
-    Kernel-level hull synthesis engine.
+    Geometry-only hull synthesizer.
 
-    Uses validators as scoring functions in a bounded propose→validate→mutate loop.
-    Guaranteed termination with fallback path.
+    IMPORTANT:
+    - No validators are run here (fast, cheap bootstrap).
+    - No style/type selection; only continuous defaults + constraints.
     """
 
-    # Validators used for scoring
-    SCORING_VALIDATORS = [
-        "physics/hydrostatics",
-        "physics/resistance",
-    ]
-
-    MUTATION_DELTA = 0.05  # 5% max change per iteration
-
-    def __init__(
-        self,
-        executor: "PipelineExecutor",
-        state_manager: "StateManager",
-    ):
-        """
-        Initialize hull synthesizer.
-
-        Args:
-            executor: PipelineExecutor for running validators
-            state_manager: StateManager for state access
-        """
+    def __init__(self, executor: Optional["PipelineExecutor"], state_manager: "StateManager"):
         self.executor = executor
         self.state = state_manager
         self.lock = SynthesisLock(state_manager)
 
-    def synthesize(self, request: SynthesisRequest) -> SynthesisResult:
-        """
-        Main synthesis entry point.
+    @staticmethod
+    def _score_proposal(p: SynthesisProposal) -> Tuple[float, List[str]]:
+        warnings: List[str] = []
+        if not p.is_complete:
+            return 0.0, ["proposal_incomplete"]
 
-        Acquires exclusive hull lock.
-        Returns usable hull (via fallback if necessary).
-        Guaranteed termination.
+        score = 100.0
+        lb = p.lwl_m / p.beam_m if p.beam_m > 0 else 0.0
+        bd = p.beam_m / p.draft_m if p.draft_m > 0 else 0.0
 
-        Args:
-            request: SynthesisRequest with hull family and constraints
+        if lb < 3.0:
+            score -= 10.0
+            warnings.append("lb_low")
+        elif lb > 8.0:
+            score -= 5.0
+            warnings.append("lb_high")
 
-        Returns:
-            SynthesisResult with complete hull proposal
-        """
-        criteria = request.convergence_criteria or DEFAULT_CONVERGENCE
+        if bd < 2.0:
+            score -= 5.0
+            warnings.append("bd_low")
+        elif bd > 5.0:
+            score -= 5.0
+            warnings.append("bd_high")
+
+        if p.cb < 0.3 or p.cb > 0.8:
+            score -= 10.0
+            warnings.append("cb_out_of_range")
+
+        if p.depth_m < p.draft_m:
+            score -= 25.0
+            warnings.append("depth_lt_draft")
+
+        return max(0.0, float(score)), warnings
+
+    @staticmethod
+    def _mutate(p: SynthesisProposal, defaults: Dict[str, Any], iteration: int) -> SynthesisProposal:
+        import random
+
+        scale = 0.1 / (1.0 + iteration * 0.1)
+        new_lwl = float(p.lwl_m) * (1.0 + random.gauss(0, scale))
+        new_beam = float(p.beam_m) * (1.0 + random.gauss(0, scale))
+        new_draft = float(p.draft_m) * (1.0 + random.gauss(0, scale))
+        new_cb = max(0.3, min(0.8, float(p.cb) + random.gauss(0, scale * 0.5)))
+
+        disp = new_lwl * new_beam * new_draft * new_cb
+        depth_ratio = float(defaults.get("depth_draft_ratio", 1.5) or 1.5)
+
+        return SynthesisProposal(
+            lwl_m=new_lwl,
+            beam_m=new_beam,
+            draft_m=new_draft,
+            depth_m=new_draft * depth_ratio,
+            cb=new_cb,
+            cp=float(defaults.get("cp", new_cb + 0.15) or (new_cb + 0.15)),
+            cm=float(defaults.get("cm", 0.85) or 0.85),
+            cwp=float(defaults.get("cwp", 0.75) or 0.75),
+            displacement_m3=disp,
+            confidence=float(max(0.1, p.confidence * 0.98)),
+            iteration=int(iteration) + 1,
+            source="mutation",
+        )
+
+    def synthesize_from_geometry(self, request: GeometrySynthesisRequest) -> SynthesisResult:
+        criteria = DEFAULT_CONVERGENCE
+        defaults = request.get_physics_defaults()
 
         with self.lock.exclusive_access("hull_synthesizer"):
-            try:
-                return self._synthesis_loop(request, criteria)
-            except Exception as e:
-                logger.error(f"Synthesis failed: {e}")
-                return self._create_fallback_result(request, str(e))
+            # Initial proposal from defaults + hard constraints
+            lwl = float(defaults.get("lwl_m", 30.0))
+            if request.loa_m:
+                lwl = float(request.loa_m) * 0.95
+            beam = float(request.beam_m) if request.beam_m else float(defaults.get("beam_m", 6.0))
+            draft = float(request.draft_m) if request.draft_m else float(defaults.get("draft_m", 2.0))
+            cb = float(defaults.get("cb", 0.5))
 
-    def _synthesis_loop(
-        self,
-        request: SynthesisRequest,
-        criteria: ConvergenceCriteria,
-    ) -> SynthesisResult:
-        """
-        Bounded synthesis loop with hard convergence criteria.
-
-        v1.4: Added mutation escalation to escape local optima when stagnating.
-        """
-
-        # Initialize from family prior (with bounds clamping)
-        proposal, clamp_warnings = self._create_initial_proposal(request)
-        best_proposal = proposal
-        best_score = float('-inf')
-        score_history: List[float] = []
-        all_warnings: List[str] = list(clamp_warnings)  # Start with clamp warnings
-
-        # v1.4: Stagnation tracking for mutation escalation
-        stagnation_count = 0
-        last_best_score = float('-inf')
-
-        for iteration in range(request.max_iterations):
-            # Write proposal to state for validator evaluation
-            self._write_proposal_to_state(proposal)
-
-            # Run scoring validators
-            results = self._run_validators()
-
-            # Score results (v1.3: now returns structured adjustments)
-            score, adjustments = self._score_results(results)
-            score_history.append(score)
-
-            # Track best
-            if score > best_score:
-                best_score = score
-                best_proposal = proposal
-
-            # v1.4: Detect stagnation (score not improving and below min_score)
-            score_improvement = best_score - last_best_score
-            if score_improvement < 0.1 and best_score < criteria.min_score:
-                stagnation_count += 1
-            else:
-                stagnation_count = 0
-            last_best_score = best_score
-
-            # Extract convergence inputs
-            validators_passed = sum(1 for r in results if r.get("passed", False))
-            max_severity = self._get_max_severity(results)
-
-            # v1.4.2: Estimate GM from hydrostatics if stability not yet computed
-            # During hull synthesis, stability phase hasn't run, so we estimate:
-            # GM = KB + BM - KG, where KG ≈ 0.55 × depth (typical for small craft)
-            gm_actual = self.state.get("stability.gm_transverse_m")
-            if gm_actual is None:
-                kb = self.state.get("hull.kb_m", 0.0)
-                bm = self.state.get("hull.bmt", 0.0)
-                depth = self.state.get("hull.depth", 0.0)
-                kg_estimate = 0.55 * depth  # VCG ≈ 55% of depth for typical small craft
-                gm_actual = kb + bm - kg_estimate if (kb > 0 and bm > 0) else 0.5
-                logger.debug(f"Estimated GM: {gm_actual:.3f}m (KB={kb:.3f}, BM={bm:.3f}, KG_est={kg_estimate:.3f})")
-
-            gm_required = request.gm_min_m or 0.5
-
-            # Check convergence
-            converged, reason = criteria.is_converged(
-                score=score,
-                validators_passed=validators_passed,
-                max_finding_severity=max_severity,
-                gm_actual=gm_actual,
-                gm_required=gm_required,
-                score_history=score_history,
+            disp = lwl * beam * draft * cb
+            proposal = SynthesisProposal(
+                lwl_m=lwl,
+                beam_m=beam,
+                draft_m=draft,
+                depth_m=float(defaults.get("depth_m", draft * 1.5)),
+                cb=cb,
+                cp=float(defaults.get("cp", 0.65)),
+                cm=float(defaults.get("cm", 0.85)),
+                cwp=float(defaults.get("cwp", 0.75)),
+                displacement_m3=disp,
+                confidence=0.75,
+                iteration=0,
+                source="seed",
             )
 
-            if converged:
-                logger.info(f"Synthesis converged at iteration {iteration + 1}: {reason}")
-                return SynthesisResult(
-                    proposal=best_proposal,
-                    termination=TerminationReason.CONVERGED,
-                    termination_message=reason,
-                    iterations_used=iteration + 1,
-                    score_history=score_history,
-                    validator_results=[r.get("name", "") for r in results if r.get("passed", False)],
-                    warnings=all_warnings,
+            # Seed additional hull-form inputs (Phase 1/2 contract surface).
+            # These are physics-derived defaults, not form enums.
+            deadrise_deg = float(defaults.get("deadrise_deg", 12.0) or 12.0)
+            # Very lightweight multihull hinting: if the user asserts hull.hull_type contains
+            # "catamaran"/"trimaran", expose multi-body controls for downstream validators.
+            hull_type_str = str(self.state.get("hull.hull_type") or "")
+            is_catamaran = "catamaran" in hull_type_str.lower()
+            is_trimaran = "trimaran" in hull_type_str.lower()
+            num_hulls = 2 if is_catamaran else (3 if is_trimaran else 1)
+            hull_spacing_m = float(defaults.get("hull_spacing_m", proposal.beam_m * 1.1) or (proposal.beam_m * 1.1))
+
+            best = proposal
+            best_score = -1.0
+            history: List[float] = []
+            warnings: List[str] = []
+            stagnation = 0
+
+            for it in range(int(request.max_iterations)):
+                score, w = self._score_proposal(proposal)
+                history.append(score)
+                warnings.extend(w)
+
+                if score > best_score:
+                    best_score = score
+                    best = proposal
+                    stagnation = 0
+                else:
+                    stagnation += 1
+
+                if score >= criteria.target_score:
+                    result = SynthesisResult(
+                        proposal=best,
+                        termination=TerminationReason.CONVERGED,
+                        termination_message="score_threshold_met",
+                        iterations_used=it + 1,
+                        score_history=history,
+                        warnings=warnings,
+                    )
+                    self.lock.write_hull_params(
+                        {
+                            "hull.lwl": result.proposal.lwl_m,
+                            "hull.beam": result.proposal.beam_m,
+                            "hull.draft": result.proposal.draft_m,
+                            "hull.depth": result.proposal.depth_m,
+                            "hull.cb": result.proposal.cb,
+                            "hull.cp": result.proposal.cp,
+                            "hull.cm": result.proposal.cm,
+                            "hull.cwp": result.proposal.cwp,
+                            "hull.displacement_m3": result.proposal.displacement_m3,
+                            # Hull-form inputs (defaults)
+                            "hull.deadrise_deg": deadrise_deg,
+                            "hull.deadrise_transom_deg": deadrise_deg,
+                            "hull.bow_entrance_deg": float(defaults.get("bow_entrance_deg", 25.0) or 25.0),
+                            "hull.bow_flare_deg": float(defaults.get("bow_flare_deg", 0.0) or 0.0),
+                            "hull.stem_rake_deg": float(defaults.get("stem_rake_deg", 15.0) or 15.0),
+                            "hull.transom_beam_ratio": float(defaults.get("transom_beam_ratio", 0.85) or 0.85),
+                            "hull.freeboard_m": max(0.1, float(result.proposal.depth_m) - float(result.proposal.draft_m)),
+                            "hull.lcb_fraction": float(defaults.get("lcb_fraction", 0.52) or 0.52),
+                            "hull.draft_fwd_m": float(result.proposal.draft_m),
+                            "hull.draft_aft_m": float(result.proposal.draft_m),
+                            # Multi-body controls (only if user asserted multi-hull intent)
+                            "hull.hull_spacing_m": float(hull_spacing_m) if num_hulls > 1 else 0.0,
+                        },
+                        "hull_synthesizer",
+                    )
+                    return result
+
+                if stagnation >= criteria.stagnation_limit:
+                    break
+
+                proposal = self._mutate(proposal, defaults, it)
+
+            if best.is_complete:
+                result = SynthesisResult(
+                    proposal=best,
+                    termination=TerminationReason.MAX_ITERATIONS,
+                    termination_message="stalled_or_max_iterations",
+                    iterations_used=len(history),
+                    score_history=history,
+                    warnings=warnings,
                 )
+                self.lock.write_hull_params(
+                    {
+                        "hull.lwl": result.proposal.lwl_m,
+                        "hull.beam": result.proposal.beam_m,
+                        "hull.draft": result.proposal.draft_m,
+                        "hull.depth": result.proposal.depth_m,
+                        "hull.cb": result.proposal.cb,
+                        "hull.cp": result.proposal.cp,
+                        "hull.cm": result.proposal.cm,
+                        "hull.cwp": result.proposal.cwp,
+                        "hull.displacement_m3": result.proposal.displacement_m3,
+                        # Hull-form inputs (defaults)
+                        "hull.deadrise_deg": deadrise_deg,
+                        "hull.deadrise_transom_deg": deadrise_deg,
+                        "hull.bow_entrance_deg": float(defaults.get("bow_entrance_deg", 25.0) or 25.0),
+                        "hull.bow_flare_deg": float(defaults.get("bow_flare_deg", 0.0) or 0.0),
+                        "hull.stem_rake_deg": float(defaults.get("stem_rake_deg", 15.0) or 15.0),
+                        "hull.transom_beam_ratio": float(defaults.get("transom_beam_ratio", 0.85) or 0.85),
+                        "hull.freeboard_m": max(0.1, float(result.proposal.depth_m) - float(result.proposal.draft_m)),
+                        "hull.lcb_fraction": float(defaults.get("lcb_fraction", 0.52) or 0.52),
+                        "hull.draft_fwd_m": float(result.proposal.draft_m),
+                        "hull.draft_aft_m": float(result.proposal.draft_m),
+                        # Multi-body controls (only if user asserted multi-hull intent)
+                        "hull.hull_spacing_m": float(hull_spacing_m) if num_hulls > 1 else 0.0,
+                    },
+                    "hull_synthesizer",
+                )
+                return result
 
-            # v1.4: Calculate mutation scale (escalate when stagnating)
-            if stagnation_count >= 3:
-                # Escalate: start at 2.0x, increase by 0.5x per additional stagnant iteration
-                mutation_scale = 2.0 + (stagnation_count - 3) * 0.5
-                mutation_scale = min(mutation_scale, 4.0)  # Cap at 4x
-                logger.debug(f"Iteration {iteration + 1}: stagnation={stagnation_count}, mutation_scale={mutation_scale:.1f}x")
-            else:
-                mutation_scale = 1.0
+            # Fallback: always return something usable
+            fb = SynthesisProposal(
+                lwl_m=lwl,
+                beam_m=beam,
+                draft_m=draft,
+                depth_m=max(draft * 1.5, float(defaults.get("depth_m", draft * 1.5))),
+                cb=max(0.3, min(0.8, cb)),
+                cp=float(defaults.get("cp", 0.65)),
+                cm=float(defaults.get("cm", 0.85)),
+                cwp=float(defaults.get("cwp", 0.75)),
+                displacement_m3=lwl * beam * draft * max(0.3, min(0.8, cb)),
+                confidence=0.3,
+                iteration=0,
+                source="fallback",
+            )
+            result = SynthesisResult(
+                proposal=fb,
+                termination=TerminationReason.FALLBACK,
+                termination_message="fallback_used",
+                iterations_used=0,
+                score_history=history,
+                warnings=warnings + ["fallback_used"],
+            )
+            self.lock.write_hull_params(
+                {
+                    "hull.lwl": result.proposal.lwl_m,
+                    "hull.beam": result.proposal.beam_m,
+                    "hull.draft": result.proposal.draft_m,
+                    "hull.depth": result.proposal.depth_m,
+                    "hull.cb": result.proposal.cb,
+                    "hull.cp": result.proposal.cp,
+                    "hull.cm": result.proposal.cm,
+                    "hull.cwp": result.proposal.cwp,
+                    "hull.displacement_m3": result.proposal.displacement_m3,
+                    # Hull-form inputs (defaults)
+                    "hull.deadrise_deg": deadrise_deg,
+                    "hull.deadrise_transom_deg": deadrise_deg,
+                    "hull.bow_entrance_deg": float(defaults.get("bow_entrance_deg", 25.0) or 25.0),
+                    "hull.bow_flare_deg": float(defaults.get("bow_flare_deg", 0.0) or 0.0),
+                    "hull.stem_rake_deg": float(defaults.get("stem_rake_deg", 15.0) or 15.0),
+                    "hull.transom_beam_ratio": float(defaults.get("transom_beam_ratio", 0.85) or 0.85),
+                    "hull.freeboard_m": max(0.1, float(result.proposal.depth_m) - float(result.proposal.draft_m)),
+                    "hull.lcb_fraction": float(defaults.get("lcb_fraction", 0.52) or 0.52),
+                    "hull.draft_fwd_m": float(result.proposal.draft_m),
+                    "hull.draft_aft_m": float(result.proposal.draft_m),
+                    # Multi-body controls (only if user asserted multi-hull intent)
+                    "hull.hull_spacing_m": float(hull_spacing_m) if num_hulls > 1 else 0.0,
+                },
+                "hull_synthesizer",
+            )
+            return result
 
-            # Mutate for next iteration (v1.3: uses structured adjustments)
-            # v1.4: Pass family for per-iteration bounds clamping, scale for escalation
-            proposal = self._mutate(proposal, adjustments, iteration + 1, request.hull_family, mutation_scale)
 
-        # Max iterations reached - return best found
-        logger.warning(f"Synthesis did not converge after {request.max_iterations} iterations")
-        all_warnings.append(f"Did not converge; best score: {best_score:.1f}")
-        return SynthesisResult(
-            proposal=best_proposal,
-            termination=TerminationReason.MAX_ITERATIONS,
-            termination_message=f"Reached {request.max_iterations} iterations",
-            iterations_used=request.max_iterations,
-            score_history=score_history,
-            validator_results=[],
-            warnings=all_warnings,
-        )
-
-    def _clamp_to_bounds(
-        self,
-        proposal: SynthesisProposal,
-        family: HullFamily,
-    ) -> Tuple[SynthesisProposal, List[str]]:
-        """
-        Clamp proposal to family bounds while PRESERVING current ratios.
-
-        v1.2: Added to prevent unbounded Froude backsolve results.
-        v1.4: Fixed to preserve current L/B and B/T ratios instead of
-              snapping back to prior defaults. Only clamps if ratio is
-              outside bounds, otherwise keeps exploration intact.
-
-        Args:
-            proposal: The proposal to clamp
-            family: Hull family (determines bounds)
-
-        Returns:
-            (clamped_proposal, warnings) - warnings list any clamped values
-        """
-        prior = get_family_prior(family)
-        bounds = prior.get("bounds", {})
-        warnings: List[str] = []
-
-        if not bounds:
-            return proposal, warnings
-
-        lwl = proposal.lwl_m
-        beam = proposal.beam_m
-        draft = proposal.draft_m
-        cb = proposal.cb
-
-        # Clamp LWL to absolute bounds
-        lwl_bounds = bounds.get("lwl_m")
-        if lwl_bounds:
-            lwl_min, lwl_max = lwl_bounds
-            if lwl < lwl_min:
-                warnings.append(f"LWL {lwl:.1f}m clamped to min {lwl_min}m")
-                lwl = lwl_min
-            elif lwl > lwl_max:
-                warnings.append(f"LWL {lwl:.1f}m clamped to max {lwl_max}m")
-                lwl = lwl_max
-
-        # PRESERVE current L/B ratio, only clamp if outside bounds
-        lb_bounds = bounds.get("lwl_beam")
-        if lb_bounds:
-            lb_ratio = lwl / beam
-            lb_min, lb_max = lb_bounds
-            if lb_ratio < lb_min:
-                # L/B too low (beam too wide) - narrow beam to meet minimum L/B
-                beam = lwl / lb_min
-                warnings.append(f"L/B {lb_ratio:.2f} below min {lb_min}, beam adjusted to {beam:.2f}m")
-            elif lb_ratio > lb_max:
-                # L/B too high (beam too narrow) - widen beam to meet maximum L/B
-                beam = lwl / lb_max
-                warnings.append(f"L/B {lb_ratio:.2f} above max {lb_max}, beam adjusted to {beam:.2f}m")
-            # ELSE: keep beam as-is (valid exploration within bounds)
-
-        # PRESERVE current B/T ratio, only clamp if outside bounds
-        bt_bounds = bounds.get("beam_draft")
-        if bt_bounds:
-            bt_ratio = beam / draft
-            bt_min, bt_max = bt_bounds
-            if bt_ratio < bt_min:
-                # B/T too low (draft too deep) - reduce draft to meet minimum B/T
-                draft = beam / bt_min
-                warnings.append(f"B/T {bt_ratio:.2f} below min {bt_min}, draft adjusted to {draft:.2f}m")
-            elif bt_ratio > bt_max:
-                # B/T too high (draft too shallow) - increase draft to meet maximum B/T
-                draft = beam / bt_max
-                warnings.append(f"B/T {bt_ratio:.2f} above max {bt_max}, draft adjusted to {draft:.2f}m")
-            # ELSE: keep draft as-is (valid exploration within bounds)
-
-        # Compute depth using centralized helper (single source of truth)
-        depth = _compute_depth(draft, prior)
-
-        # Clamp coefficients
-        cb_bounds = bounds.get("cb")
-        if cb_bounds:
-            cb_min, cb_max = cb_bounds
-            if cb < cb_min:
-                cb = cb_min
-                warnings.append(f"Cb clamped to min {cb_min}")
-            elif cb > cb_max:
-                cb = cb_max
-                warnings.append(f"Cb clamped to max {cb_max}")
-
-        displacement_m3 = lwl * beam * draft * cb
-
-        # Clamp displacement
-        disp_bounds = bounds.get("displacement_m3")
-        if disp_bounds:
-            disp_min, disp_max = disp_bounds
-            if displacement_m3 < disp_min:
-                warnings.append(f"Displacement {displacement_m3:.0f}m³ below min {disp_min}m³")
-                # Scale up proportionally
-                scale = (disp_min / displacement_m3) ** (1/3)
-                lwl *= scale
-                beam *= scale
-                draft *= scale
-                depth = _compute_depth(draft, prior)  # Recompute depth after scaling
-                displacement_m3 = disp_min
-            elif displacement_m3 > disp_max:
-                warnings.append(f"Displacement {displacement_m3:.0f}m³ above max {disp_max}m³")
-                scale = (disp_max / displacement_m3) ** (1/3)
-                lwl *= scale
-                beam *= scale
-                draft *= scale
-                depth = _compute_depth(draft, prior)  # Recompute depth after scaling
-                displacement_m3 = disp_max
-
-        clamped = SynthesisProposal(
-            lwl_m=lwl,
-            beam_m=beam,
-            draft_m=draft,
-            depth_m=depth,
-            cb=cb,
-            cp=proposal.cp,
-            cm=proposal.cm,
-            cwp=proposal.cwp,
-            displacement_m3=displacement_m3,
-            confidence=proposal.confidence * (0.9 if warnings else 1.0),  # Reduce confidence if clamped
-            iteration=proposal.iteration,
-            source="clamped" if warnings else proposal.source,
-        )
-
-        return clamped, warnings
-
-    def _create_initial_proposal(self, request: SynthesisRequest) -> Tuple[SynthesisProposal, List[str]]:
-        """
-        Create initial proposal from family prior WITH bounds checking.
-
-        v1.2: Now applies bounds clamping and returns warnings.
-        v1.4: Uses centralized _compute_depth() helper.
-
-        Returns:
-            Tuple of (proposal, clamp_warnings)
-        """
-        prior = get_family_prior(request.hull_family)
-
-        # Froude-based length estimation
-        if request.loa_m:
-            lwl = request.loa_m * 0.95
-        else:
-            speed_ms = request.max_speed_kts * 0.5144
-            target_fn = prior["froude_design"]
-            lwl = (speed_ms / target_fn) ** 2 / 9.81
-
-        beam = lwl / prior["lwl_beam"]
-        draft = beam / prior["beam_draft"]
-        depth = _compute_depth(draft, prior)  # Use centralized helper
-        cb = prior["cb"]
-        displacement_m3 = lwl * beam * draft * cb
-
-        proposal = SynthesisProposal(
-            lwl_m=lwl,
-            beam_m=beam,
-            draft_m=draft,
-            depth_m=depth,
-            cb=cb,
-            cp=prior["cp"],
-            cm=prior["cm"],
-            cwp=prior["cwp"],
-            displacement_m3=displacement_m3,
-            confidence=0.7,
-            iteration=0,
-            source="prior",
-        )
-
-        # Apply bounds clamping
-        clamped, clamp_warnings = self._clamp_to_bounds(proposal, request.hull_family)
-
-        return clamped, clamp_warnings
-
-    def _write_proposal_to_state(self, proposal: SynthesisProposal) -> None:
-        """Write proposal to state for validator evaluation."""
-        params = proposal.to_state_dict()
-        self.lock.write_hull_params(params, "hull_synthesizer")
-
-    def _run_validators(self) -> List[Dict[str, Any]]:
-        """Run scoring validators and return results."""
-        results = []
-
-        # Try to run through executor if available
-        if self.executor:
-            try:
-                for validator_id in self.SCORING_VALIDATORS:
-                    result = self.executor.execute_single(validator_id, self.state)
-                    if result:
-                        results.append({
-                            "name": validator_id,
-                            "passed": result.passed,
-                            "findings": [f.to_dict() for f in result.findings] if hasattr(result, 'findings') else [],
-                        })
-            except Exception as e:
-                logger.warning(f"Validator execution failed: {e}")
-
-        # If no results, assume pass (validators may not be implemented)
-        if not results:
-            results = [{"name": v, "passed": True, "findings": []} for v in self.SCORING_VALIDATORS]
-
-        return results
-
-    def _score_results(self, results: List[Dict[str, Any]]) -> Tuple[float, List[Dict[str, Any]]]:
-        """
-        Convert validator results to score + structured adjustments.
-
-        v1.3: Now extracts structured `adjustment` hints from findings
-        instead of parsing suggestion strings.
-        v1.4: Added support for "preference" severity level.
-        v1.4.1: Cap preference penalty at -2.0 to prevent convergence interference.
-
-        Returns:
-            Tuple of (score, adjustments) where adjustments is a list of
-            {"path": str, "direction": str, "magnitude": float} dicts.
-        """
-        score = 100.0
-        adjustments: List[Dict[str, Any]] = []
-        preference_penalty = 0.0  # v1.4.1: Track separately to cap
-
-        for result in results:
-            if not result.get("passed", True):
-                score -= 20.0
-
-            for finding in result.get("findings", []):
-                severity = finding.get("severity", "info")
-                if severity == "error":
-                    score -= 10.0
-                elif severity == "warning":
-                    score -= 2.0
-                elif severity == "preference":
-                    # v1.4.1: Accumulate preference penalty (capped below)
-                    preference_penalty += 0.5
-
-                # v1.3: Extract structured adjustment if present
-                adjustment = finding.get("adjustment")
-                if adjustment and isinstance(adjustment, dict):
-                    # Validate adjustment has required fields
-                    if "path" in adjustment and "direction" in adjustment:
-                        adjustments.append(adjustment)
-
-        # v1.4.1: Cap preference penalty at -2.0 to prevent convergence interference
-        # Without cap, 20 preference findings = -10 points, blocking min_score
-        score -= min(preference_penalty, 2.0)
-
-        return score, adjustments
-
-    def _get_max_severity(self, results: List[Dict[str, Any]]) -> str:
-        """
-        Get highest severity from all findings.
-
-        v1.4: Updated to include "preference" severity level.
-        Uses centralized SEVERITY_ORDER from taxonomy.
-        """
-        max_sev = "info"
-        # v1.4: Severity order (higher = more severe)
-        # Matches SEVERITY_ORDER in taxonomy.py
-        order = {"passed": 0, "info": 1, "preference": 2, "warning": 3, "error": 4}
-
-        for result in results:
-            for finding in result.get("findings", []):
-                sev = finding.get("severity", "info")
-                if order.get(sev, 0) > order.get(max_sev, 0):
-                    max_sev = sev
-
-        return max_sev
-
-    def _mutate(
-        self,
-        proposal: SynthesisProposal,
-        adjustments: List[Dict[str, Any]],
-        iteration: int,
-        family: HullFamily,
-        scale: float = 1.0,
-    ) -> SynthesisProposal:
-        """
-        Apply bounded mutations based on structured adjustments.
-
-        v1.3: Now consumes structured adjustments from validators
-        instead of parsing suggestion strings.
-        v1.4: Added family parameter for per-iteration bounds clamping.
-              Added scale parameter for mutation escalation.
-
-        Args:
-            proposal: Current proposal to mutate
-            adjustments: List of {"path": str, "direction": str, "magnitude": float} dicts
-            iteration: Current iteration number
-            family: Hull family (required for bounds clamping)
-            scale: Mutation scale multiplier (default 1.0, increased during escalation)
-
-        Returns:
-            Mutated SynthesisProposal (clamped to bounds)
-        """
-        prior = get_family_prior(family)
-        delta_lwl = delta_beam = delta_draft = delta_cb = 0.0
-
-        for adj in adjustments:
-            path = adj.get("path", "")
-            direction = adj.get("direction", "")
-            magnitude = adj.get("magnitude", self.MUTATION_DELTA)
-
-            # Clamp magnitude to prevent extreme changes (before scaling)
-            magnitude = min(magnitude, 0.10)  # Max 10% change per adjustment
-
-            # Apply scale multiplier for escalation
-            magnitude *= scale
-
-            # Determine sign based on direction
-            sign = 1.0 if direction == "increase" else -1.0 if direction == "decrease" else 0.0
-
-            # Map path to dimension delta
-            if "lwl" in path or "length" in path:
-                delta_lwl += sign * magnitude
-            elif "beam" in path or "width" in path:
-                delta_beam += sign * magnitude
-            elif "draft" in path:
-                delta_draft += sign * magnitude
-            elif "cb" in path:
-                delta_cb += sign * magnitude
-
-        # Clamp total deltas to prevent runaway mutations (scaled limits)
-        max_delta = 0.15 * scale
-        max_cb_delta = 0.10 * scale
-        delta_lwl = max(-max_delta, min(max_delta, delta_lwl))
-        delta_beam = max(-max_delta, min(max_delta, delta_beam))
-        delta_draft = max(-max_delta, min(max_delta, delta_draft))
-        delta_cb = max(-max_cb_delta, min(max_cb_delta, delta_cb))
-
-        lwl = proposal.lwl_m * (1 + delta_lwl)
-        beam = proposal.beam_m * (1 + delta_beam)
-        draft = proposal.draft_m * (1 + delta_draft)
-        depth = _compute_depth(draft, prior)  # Use centralized helper
-        cb_raw = proposal.cb * (1 + delta_cb)
-
-        # Apply coefficient coupling (v1.4): Cp fixed, Cm derived from Cb
-        # This ensures Cb = Cp × Cm relationship is maintained
-        cb, cp, cm = _apply_coefficient_coupling(cb_raw, prior)
-
-        displacement_m3 = lwl * beam * draft * cb
-
-        # Create unclamped proposal
-        unclamped = SynthesisProposal(
-            lwl_m=lwl,
-            beam_m=beam,
-            draft_m=draft,
-            depth_m=depth,
-            cb=cb,
-            cp=cp,   # Now uses coupled value (fixed from prior)
-            cm=cm,   # Now uses coupled value (derived from Cb/Cp)
-            cwp=proposal.cwp,  # Cwp unchanged for v1.4
-            displacement_m3=displacement_m3,
-            confidence=proposal.confidence * 0.95,  # Slightly decrease with each mutation
-            iteration=iteration,
-            source="mutated",
-        )
-
-        # Apply per-iteration bounds clamping (v1.4)
-        clamped, clamp_warnings = self._clamp_to_bounds(unclamped, family)
-        if clamp_warnings:
-            logger.debug(f"Iteration {iteration} clamping: {clamp_warnings}")
-
-        return clamped
-
-    def _create_fallback_result(
-        self,
-        request: SynthesisRequest,
-        error: str,
-    ) -> SynthesisResult:
-        """Create fallback result when synthesis fails."""
-        fallback = create_fallback_proposal(
-            hull_family=request.hull_family,
-            max_speed_kts=request.max_speed_kts,
-            loa_m=request.loa_m,
-            reason=error,
-        )
-
-        proposal = SynthesisProposal(
-            lwl_m=fallback.lwl_m,
-            beam_m=fallback.beam_m,
-            draft_m=fallback.draft_m,
-            depth_m=fallback.depth_m,
-            cb=fallback.cb,
-            cp=fallback.cp,
-            cm=fallback.cm,
-            cwp=fallback.cwp,
-            displacement_m3=fallback.displacement_m3,
-            confidence=fallback.confidence,
-            iteration=0,
-            source="fallback",
-        )
-
-        return SynthesisResult(
-            proposal=proposal,
-            termination=TerminationReason.FALLBACK,
-            termination_message=f"Fallback due to: {error}",
-            iterations_used=0,
-            score_history=[],
-            validator_results=[],
-            warnings=[f"Used estimator-only fallback: {error}"],
-        )

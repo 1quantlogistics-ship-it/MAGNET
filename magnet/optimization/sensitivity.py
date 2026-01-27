@@ -16,6 +16,15 @@ if TYPE_CHECKING:
     from ..core.state_manager import StateManager
 
 
+class UnsafeStateEvaluationError(RuntimeError):
+    """
+    Raised when sensitivity analysis cannot obtain an isolated evaluation state.
+
+    This is intentionally loud: sensitivity analysis must NEVER mutate the
+    canonical state during "what-if" evaluation.
+    """
+
+
 @dataclass
 class VariableSensitivity:
     """Sensitivity of objectives to a design variable."""
@@ -144,11 +153,7 @@ class SensitivityAnalyzer:
     ) -> Optional[List[float]]:
         """Evaluate objectives for given variable values."""
         try:
-            # Create state copy
-            if hasattr(self.base_state, 'clone'):
-                state = self.base_state.clone()
-            else:
-                state = self.base_state
+            state = self._get_evaluation_state()
 
             # Apply variables - Hole #7 Fix: Use .set() with proper source
             source = "optimization/sensitivity"
@@ -170,8 +175,32 @@ class SensitivityAnalyzer:
 
             return objectives
 
+        except UnsafeStateEvaluationError:
+            # Fail fast: do not silently proceed with unsafe evaluation.
+            raise
         except Exception:
             return None
+
+    def _get_evaluation_state(self) -> "StateManager":
+        """
+        Get an isolated state for evaluation.
+
+        SAFETY: This MUST NOT be the live canonical state. If we cannot obtain
+        isolation, we fail fast.
+        """
+        clone_fn = getattr(self.base_state, "clone", None)
+        if clone_fn is None or not callable(clone_fn):
+            raise UnsafeStateEvaluationError(
+                "SensitivityAnalyzer requires StateManager.clone() for safe evaluation; "
+                "refusing to evaluate against live state."
+            )
+
+        state = clone_fn()
+        if state is self.base_state:
+            raise UnsafeStateEvaluationError(
+                "StateManager.clone() returned self (no isolation). Refusing unsafe evaluation."
+            )
+        return state
 
     def _compute_importance(self, result: SensitivityResult) -> None:
         """Compute relative importance of each variable."""

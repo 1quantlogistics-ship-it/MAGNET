@@ -1,0 +1,741 @@
+# MAGNETV1 Documentation Manifest
+# Machine-readable index for AI agent discovery
+# Generated: 2026-01-15
+#
+# USAGE FOR AGENTS:
+#   1. Load this file first for O(1) doc lookup
+#   2. Use keyword_index for topic-based search
+#   3. Follow authority_chain for onboarding
+#   4. Skip files with status: deprecated
+
+version: "1.0"
+generated: "2026-01-15"
+total_docs: 87
+
+# =============================================================================
+# AUTHORITY CHAIN - Reading order for new agents
+# =============================================================================
+authority_chain:
+  - path: "0-architecture/core/NORTH_STAR.md"
+    why: "Mission and vision - read first"
+  - path: "0-architecture/core/CONSTITUTION.md"
+    why: "Inviolable laws and constraints"
+  - path: "0-architecture/core/PHASE_MACHINE.md"
+    why: "Design phase progression"
+  - path: "0-architecture/geometry/GEOMETRY_CONVENTIONS.md"
+    why: "Coordinate system standards"
+  - path: "1-theory/physics/MAGNET_UNIFIED_PHYSICS_THEORY.md"
+    why: "Physics computation foundation"
+
+# =============================================================================
+# CATEGORIES
+# =============================================================================
+categories:
+
+  # ---------------------------------------------------------------------------
+  # 0-ARCHITECTURE: Core system philosophy
+  # ---------------------------------------------------------------------------
+  architecture:
+    path: "0-architecture/"
+    description: "Foundational principles, laws, and system design"
+    authoritative: true
+    docs:
+      # Core
+      - path: "0-architecture/core/NORTH_STAR.md"
+        purpose: "Mission statement and core equation"
+        keywords: [north-star, mission, vision, equation, chatgpt-with-boat]
+        status: current
+        authoritative: true
+
+      - path: "0-architecture/core/CONSTITUTION.md"
+        purpose: "Inviolable system laws and constraints"
+        keywords: [constitution, laws, firewall, enumeration-ban, constraints]
+        status: current
+        authoritative: true
+
+      - path: "0-architecture/core/PHASE_MACHINE.md"
+        purpose: "Design phase state machine"
+        keywords: [phases, gates, state-machine, progression, validation]
+        status: current
+        authoritative: true
+
+      # Geometry
+      - path: "0-architecture/geometry/GEOMETRY_CONVENTIONS.md"
+        purpose: "Coordinate system and geometry standards"
+        keywords: [coordinates, y-axis, port, starboard, baseline, geometry]
+        status: current
+        authoritative: true
+
+      # System
+      - path: "0-architecture/system/ARCHITECTURE_CORE.md"
+        purpose: "Core data flow architecture"
+        keywords: [architecture, data-flow, modules, dependencies]
+        status: current
+
+      - path: "0-architecture/system/ARCHITECTURE_SIMPLE.md"
+        purpose: "Simplified architecture overview"
+        keywords: [architecture, overview, simple]
+        status: current
+
+      - path: "0-architecture/system/SYSTEM_ARCHITECTURE.md"
+        purpose: "Full system architecture diagram"
+        keywords: [architecture, diagram, system]
+        status: current
+
+      - path: "0-architecture/system/CLI_V1_ARCHITECTURE.md"
+        purpose: "CLI architecture design"
+        keywords: [cli, terminal, commands]
+        status: current
+
+      - path: "0-architecture/system/MAGNET_FULL_DESIGN_FLOW.md"
+        purpose: "End-to-end design flow"
+        keywords: [design-flow, pipeline, end-to-end]
+        status: current
+
+      - path: "0-architecture/system/MAGNET_PHYSICS_RIGOR_PLAN copy.md"
+        purpose: "Duplicate - see 3-implementation"
+        keywords: []
+        status: deprecated
+        redirect: "3-implementation/physics/MAGNET_PHYSICS_RIGOR_PLAN.md"
+
+      - path: "0-architecture/README.md"
+        purpose: "Architecture folder index"
+        keywords: [index]
+        status: current
+
+  # ---------------------------------------------------------------------------
+  # 1-THEORY: Physics and design theory
+  # ---------------------------------------------------------------------------
+  theory:
+    path: "1-theory/"
+    description: "Theoretical foundations for physics and geometry"
+    authoritative: true
+    docs:
+      # Physics
+      - path: "1-theory/physics/MAGNET_UNIFIED_PHYSICS_THEORY.md"
+        purpose: "Unified physics computation theory"
+        keywords: [physics, hydrostatics, resistance, stability, theory, unified]
+        status: current
+        authoritative: true
+
+      - path: "1-theory/physics/MAGNET_North_Star.md"
+        purpose: "Physics-specific north star"
+        keywords: [physics, north-star, validation]
+        status: current
+        note: "May overlap with UNIFIED_PHYSICS_THEORY"
+
+      - path: "1-theory/physics/MAGNET_Physics_Gaps_And_Solutions.md"
+        purpose: "Known physics gaps and solutions"
+        keywords: [physics, gaps, solutions, issues]
+        status: current
+
+      - path: "1-theory/physics/README.md"
+        purpose: "Physics theory folder index"
+        keywords: [index]
+        status: current
+
+      # Geometry
+      - path: "1-theory/geometry/hull_generation_deep_dive.md"
+        purpose: "Hull generation technical deep dive"
+        keywords: [hull, generation, geometry, sections, nurbs]
+        status: current
+
+      - path: "1-theory/geometry/geometry-expansion-design.md"
+        purpose: "Geometry expansion design"
+        keywords: [geometry, expansion, primitives]
+        status: current
+
+      - path: "1-theory/geometry/MAGNET_v1.2_Implementation_Theory_LensPack.md"
+        purpose: "LensPack implementation theory"
+        keywords: [lenspack, implementation, theory]
+        status: current
+
+      - path: "1-theory/geometry/README.md"
+        purpose: "Geometry theory folder index"
+        keywords: [index]
+        status: current
+
+      - path: "1-theory/README.md"
+        purpose: "Theory folder index"
+        keywords: [index]
+        status: current
+
+  # ---------------------------------------------------------------------------
+  # 2-PROTOCOLS: Communication and interaction patterns
+  # ---------------------------------------------------------------------------
+  protocols:
+    path: "2-protocols/"
+    description: "Intent resolution and communication protocols"
+    authoritative: true
+    docs:
+      - path: "2-protocols/INTENT_ACTION_PROTOCOL.md"
+        purpose: "Intent to action transformation protocol"
+        keywords: [intent, action, protocol, firewall, llm]
+        status: current
+        authoritative: true
+
+      - path: "2-protocols/MODULE_65.1_COMPOUND_INTENT.md"
+        purpose: "Compound intent resolution"
+        keywords: [intent, compound, resolution, parsing]
+        status: current
+        authoritative: true
+
+      - path: "2-protocols/MODULE_67X_BROAD_CHAT_COMMANDS.md"
+        purpose: "Chat command specification"
+        keywords: [chat, commands, slash-commands]
+        status: current
+
+      - path: "2-protocols/README.md"
+        purpose: "Protocols folder index"
+        keywords: [index]
+        status: current
+
+  # ---------------------------------------------------------------------------
+  # 3-IMPLEMENTATION: Active execution plans
+  # ---------------------------------------------------------------------------
+  implementation:
+    path: "3-implementation/"
+    description: "Implementation guides, specs, and roadmaps"
+    authoritative: false
+    docs:
+      # Golden Path
+      - path: "3-implementation/golden-path/GOLDEN_PATH_IMPLEMENTATION_GUIDE.md"
+        purpose: "Step-by-step Golden Path execution guide"
+        keywords: [golden-path, implementation, tasks, guide]
+        status: current
+
+      - path: "3-implementation/golden-path/GOLDEN_PATH_TECHNICAL_SPEC.md"
+        purpose: "Golden Path technical specification"
+        keywords: [golden-path, spec, technical]
+        status: current
+
+      - path: "3-implementation/golden-path/README.md"
+        purpose: "Golden Path folder index"
+        keywords: [index]
+        status: current
+
+      # General
+      - path: "3-implementation/general/MAGNET_Implementation_Guide.md"
+        purpose: "General implementation guide"
+        keywords: [implementation, guide, general]
+        status: current
+
+      - path: "3-implementation/general/MAGNET_Implementation_Spec.md"
+        purpose: "Implementation specification"
+        keywords: [implementation, spec]
+        status: current
+
+      - path: "3-implementation/general/MAGNET_Unified_Implementation_Plan.md"
+        purpose: "Unified implementation plan"
+        keywords: [implementation, plan, unified]
+        status: current
+
+      - path: "3-implementation/general/PRODUCTION_GRADE_IMPLEMENTATION_GUIDE.md"
+        purpose: "Production-grade UI v2 and backend architecture implementation guide"
+        keywords: [implementation, production, ui, backend, architecture]
+        status: current
+
+      - path: "3-implementation/general/MAGNET_GEOMETRY_TRUTHFULNESS_IMPLEMENTATION_FIX_GUIDE.md"
+        purpose: "Geometry truthfulness implementation fix guide"
+        keywords: [implementation, geometry, truthfulness, fix, guide]
+        status: current
+
+      - path: "3-implementation/general/TURN_CONTRACT_VAULT_IMPLEMENTATION_PLAN.md"
+        purpose: "Turn contract vault implementation plan"
+        keywords: [implementation, turn, contract, vault, plan]
+        status: current
+
+      - path: "3-implementation/general/DESKTOP_VAULT_ENRICHMENT_PLAN.md"
+        purpose: "Desktop vault enrichment plan"
+        keywords: [implementation, desktop, vault, enrichment, plan]
+        status: current
+
+      - path: "3-implementation/general/VIKING_HULL_DETAIL_DIAGNOSIS_AND_FIX_PLAN.md"
+        purpose: "Viking hull detail diagnosis and fix plan"
+        keywords: [implementation, hull, viking, diagnosis, fix, plan]
+        status: current
+
+      - path: "3-implementation/general/V04_PROFILE_TOPSIDE_OBSERVABLES_PLAN.md"
+        purpose: "V04 profile topside observables plan"
+        keywords: [implementation, profile, topside, observables, plan, v04]
+        status: current
+
+      - path: "3-implementation/general/VIKING_V2_V3_EDIT_REWRITE_AUDIT_AND_FIX_PLAN.md"
+        purpose: "Viking V2/V3 edit rewrite audit and fix plan"
+        keywords: [implementation, viking, edit, rewrite, audit, fix, plan, v2, v3]
+        status: current
+
+      - path: "3-implementation/general/BIDIRECTIONAL_OBSERVABLE_ADJUST_TARGET_PLAN.md"
+        purpose: "Bidirectional observable adjust target plan"
+        keywords: [implementation, bidirectional, observable, adjust, target, plan]
+        status: current
+
+      # Integration
+      - path: "3-implementation/integration/INTEGRATION_PLAN.md"
+        purpose: "V1 integration plan"
+        keywords: [integration, plan, v1]
+        status: deprecated
+        redirect: "3-implementation/integration/INTEGRATION_PLAN_V2.md"
+
+      - path: "3-implementation/integration/INTEGRATION_PLAN_V2.md"
+        purpose: "V2 integration plan (current)"
+        keywords: [integration, plan, v2]
+        status: current
+
+      - path: "3-implementation/integration/MAGNET_Merge_Implementation_Plan.md"
+        purpose: "Merge implementation plan"
+        keywords: [merge, integration, plan]
+        status: current
+
+      # Physics
+      - path: "3-implementation/physics/MAGNET_PHYSICS_RIGOR_PLAN.md"
+        purpose: "Physics rigor implementation plan"
+        keywords: [physics, rigor, plan, validation]
+        status: current
+
+      - path: "3-implementation/physics/MAGNET_UNIFIED_PHYSICS_THEORY_EXECUTION_PLAN.md"
+        purpose: "Physics theory execution plan"
+        keywords: [physics, execution, plan]
+        status: current
+
+      - path: "3-implementation/physics/KERNEL_VALIDATION_PERSISTENCE_IMPLEMENTATION_GUIDE.md"
+        purpose: "Kernel validation and persistence implementation guide"
+        keywords: [kernel, validation, persistence, implementation, conductor]
+        status: current
+
+      - path: "3-implementation/README.md"
+        purpose: "Implementation folder index"
+        keywords: [index]
+        status: current
+
+  # ---------------------------------------------------------------------------
+  # 4-SPECS: Feature specifications
+  # ---------------------------------------------------------------------------
+  specs:
+    path: "4-specs/"
+    description: "Technical specifications for features and systems"
+    authoritative: false
+    docs:
+      # Agents
+      - path: "4-specs/agents/MAGNET_Agent_Enhancement_Plan.md"
+        purpose: "Agent enhancement specification"
+        keywords: [agents, enhancement, llm, plan]
+        status: current
+
+      - path: "4-specs/agents/MAGNET_Prompt_Architecture_Plan_v2.md"
+        purpose: "Prompt architecture design"
+        keywords: [prompts, architecture, llm, agents]
+        status: current
+
+      - path: "4-specs/agents/Agent_Robustness_Tests_Plan.md"
+        purpose: "Agent robustness testing plan"
+        keywords: [agents, testing, robustness]
+        status: current
+
+      - path: "4-specs/agents/PROMPT_ARCHITECTURE_IMPLEMENTATION_GUIDE.md"
+        purpose: "Prompt architecture implementation guide for agents"
+        keywords: [prompts, architecture, implementation, agents, llm]
+        status: current
+
+      - path: "4-specs/agents/TRUTHFULNESS_TORTURE_TEST_PLAN.md"
+        purpose: "Truthfulness torture test plan for agent geometry proposals"
+        keywords: [testing, truthfulness, agents, geometry, torture-test]
+        status: current
+
+      - path: "4-specs/agents/PROMPT_IMPROVEMENTS_SCHEDULED_HULL_FORMS.md"
+        purpose: "Scheduled prompt improvements for hull forms"
+        keywords: [prompts, improvements, hull, forms, agents, scheduled]
+        status: current
+
+      - path: "4-specs/agents/README.md"
+        purpose: "Agents specs folder index"
+        keywords: [index]
+        status: current
+
+      # Language
+      - path: "4-specs/language/MAGNET_Design_Language_Spec_v1.0.md"
+        purpose: "MAGNET design language specification"
+        keywords: [language, dsl, specification, syntax]
+        status: current
+        authoritative: true
+
+      # Failure Modes
+      - path: "4-specs/failure-modes/MAGNET_Failure_Modes_And_Mitigations.md"
+        purpose: "Failure mode analysis and mitigations"
+        keywords: [failure, modes, mitigations, errors]
+        status: current
+
+      - path: "4-specs/failure-modes/MAGNET_Hard_Questions_Answers.md"
+        purpose: "Hard questions and answers"
+        keywords: [questions, answers, faq]
+        status: current
+
+      # Rendering
+      - path: "4-specs/rendering/MAGNET_Rendering_Quality_And_Performance.md"
+        purpose: "Rendering quality and performance spec"
+        keywords: [rendering, webgl, quality, performance]
+        status: current
+
+      - path: "4-specs/README.md"
+        purpose: "Specs folder index"
+        keywords: [index]
+        status: current
+
+  # ---------------------------------------------------------------------------
+  # 5-AUDITS: System analysis and health checks
+  # ---------------------------------------------------------------------------
+  audits:
+    path: "5-audits/"
+    description: "System audits, analysis, and health checks"
+    authoritative: false
+    docs:
+      # System
+      - path: "5-audits/system/MAGNET_System_State_Analysis.md"
+        purpose: "System state analysis"
+        keywords: [audit, system, state, analysis]
+        status: current
+
+      - path: "5-audits/system/MAGNET_Orphaned_Components_Audit.md"
+        purpose: "Orphaned components audit"
+        keywords: [audit, orphaned, components, cleanup]
+        status: current
+
+      - path: "5-audits/system/MAGNET_Critical_Corrections.md"
+        purpose: "Critical corrections tracking"
+        keywords: [corrections, critical, fixes]
+        status: current
+
+      - path: "5-audits/system/MAGNET_GEOMETRY_CAPABILITY_AUDIT.md"
+        purpose: "Geometry capability audit - what geometry features are supported"
+        keywords: [audit, geometry, capability, features, hull]
+        status: current
+
+      - path: "5-audits/system/VESSEL_THINKING_PASS_DOF_AUDIT.md"
+        purpose: "Vessel thinking pass DOF audit"
+        keywords: [audit, vessel, thinking, dof, system]
+        status: current
+
+      - path: "5-audits/system/VIKING_HULL_FORM_AUDIT.md"
+        purpose: "Viking hull form audit"
+        keywords: [audit, hull, viking, form, geometry]
+        status: current
+
+      - path: "5-audits/system/VIKING_ESSENCE_AUDIT.md"
+        purpose: "Viking essence audit"
+        keywords: [audit, viking, essence, system]
+        status: current
+
+      - path: "5-audits/system/GEOMETRY_VISUALIZATION_BREAKAGE_DIAGNOSIS.md"
+        purpose: "Geometry visualization breakage diagnosis"
+        keywords: [audit, geometry, visualization, breakage, diagnosis]
+        status: current
+
+      - path: "5-audits/system/V04_BOTTOM_CHARACTER_REGRESSION_AUDIT.md"
+        purpose: "V04 bottom character regression audit"
+        keywords: [audit, v04, bottom, character, regression, geometry]
+        status: current
+
+      - path: "5-audits/system/README.md"
+        purpose: "System audits folder index"
+        keywords: [index]
+        status: current
+
+      # UI
+      - path: "5-audits/ui/MAGNET_UIv2_Integration_Audit.md"
+        purpose: "UI v2 integration audit"
+        keywords: [audit, ui, integration, uiv2]
+        status: current
+
+      # Golden Path
+      - path: "5-audits/golden-path/Golden_Path_AUDIT_1.md"
+        purpose: "Golden Path audit #1"
+        keywords: [audit, golden-path]
+        status: current
+
+      # Modules
+      - path: "5-audits/modules/AUDIT_WHY_ROUTER.md"
+        purpose: "WHY router audit"
+        keywords: [audit, router, why-system]
+        status: current
+
+      # Prompts
+      - path: "5-audits/prompts/MAGNET_Audit_Prompts.md"
+        purpose: "Audit prompt templates"
+        keywords: [audit, prompts, templates]
+        status: current
+
+      - path: "5-audits/prompts/PROMPT_ARCHITECTURE_AUDIT.md"
+        purpose: "Prompt architecture audit - active vs dormant prompts analysis"
+        keywords: [audit, prompts, architecture, llm, active, dormant]
+        status: current
+
+      - path: "5-audits/README.md"
+        purpose: "Audits folder index"
+        keywords: [index]
+        status: current
+
+  # ---------------------------------------------------------------------------
+  # 6-GUIDES: Operational runbooks
+  # ---------------------------------------------------------------------------
+  guides:
+    path: "6-guides/"
+    description: "Operational guides and runbooks"
+    authoritative: false
+    docs:
+      - path: "6-guides/MAGNET_Local_Startup_Runbook.md"
+        purpose: "Local development startup guide"
+        keywords: [startup, local, development, runbook]
+        status: current
+
+      - path: "6-guides/SCHEMA_DIFF_NOTES.md"
+        purpose: "Schema diff notes"
+        keywords: [schema, diff, notes]
+        status: current
+
+      - path: "6-guides/README.md"
+        purpose: "Guides folder index"
+        keywords: [index]
+        status: current
+
+  # ---------------------------------------------------------------------------
+  # ARCHIVE: Historical documentation
+  # ---------------------------------------------------------------------------
+  archive:
+    path: "archive/"
+    description: "Historical documentation - DO NOT USE for current work"
+    authoritative: false
+    docs:
+      - path: "archive/walking-trail-plan_provenance-contracts.md"
+        purpose: "ARCHIVED: Walking trail provenance contracts"
+        keywords: [archive, walking-trail, provenance]
+        status: archived
+
+      - path: "archive/zenflow-alignment_write-barrier-audit.md"
+        purpose: "ARCHIVED: Zenflow alignment audit"
+        keywords: [archive, zenflow, alignment]
+        status: archived
+
+      - path: "archive/README.md"
+        purpose: "Archive folder index"
+        keywords: [index, archive]
+        status: current
+
+  # ---------------------------------------------------------------------------
+  # ROOT: Top-level documentation
+  # ---------------------------------------------------------------------------
+  root:
+    path: ""
+    description: "Top-level documentation files"
+    authoritative: false
+    docs:
+      - path: "README.md"
+        purpose: "Documentation hub and navigation"
+        keywords: [index, hub, navigation]
+        status: current
+
+      - path: "RIVER_FIX.md"
+        purpose: "River fix documentation"
+        keywords: [river, fix, recent]
+        status: current
+
+  # ---------------------------------------------------------------------------
+  # INDEX: Topic-based indexes
+  # ---------------------------------------------------------------------------
+  index:
+    path: "_index/"
+    description: "Cross-cutting topic indexes"
+    authoritative: false
+    docs:
+      - path: "_index/PHYSICS_INDEX.md"
+        purpose: "Physics documentation index"
+        keywords: [index, physics]
+        status: current
+
+      - path: "_index/AGENTS_INDEX.md"
+        purpose: "Agents documentation index"
+        keywords: [index, agents]
+        status: current
+
+      - path: "_index/GOLDEN_PATH_INDEX.md"
+        purpose: "Golden Path documentation index"
+        keywords: [index, golden-path]
+        status: current
+
+      - path: "_index/UI_INDEX.md"
+        purpose: "UI documentation index"
+        keywords: [index, ui]
+        status: current
+
+      - path: "_index/STATUS_INDEX.md"
+        purpose: "Status-based documentation index"
+        keywords: [index, status]
+        status: current
+
+      - path: "_index/README.md"
+        purpose: "Index folder overview"
+        keywords: [index]
+        status: current
+
+# =============================================================================
+# KEYWORD INDEX - Fast topic-based lookup
+# =============================================================================
+keyword_index:
+  # Physics
+  physics:
+    - "1-theory/physics/MAGNET_UNIFIED_PHYSICS_THEORY.md"
+    - "1-theory/physics/MAGNET_North_Star.md"
+    - "1-theory/physics/MAGNET_Physics_Gaps_And_Solutions.md"
+    - "3-implementation/physics/MAGNET_PHYSICS_RIGOR_PLAN.md"
+    - "3-implementation/physics/MAGNET_UNIFIED_PHYSICS_THEORY_EXECUTION_PLAN.md"
+    - "_index/PHYSICS_INDEX.md"
+
+  hydrostatics:
+    - "1-theory/physics/MAGNET_UNIFIED_PHYSICS_THEORY.md"
+    - "3-implementation/physics/MAGNET_PHYSICS_RIGOR_PLAN.md"
+
+  stability:
+    - "1-theory/physics/MAGNET_UNIFIED_PHYSICS_THEORY.md"
+    - "1-theory/physics/MAGNET_Physics_Gaps_And_Solutions.md"
+
+  resistance:
+    - "1-theory/physics/MAGNET_UNIFIED_PHYSICS_THEORY.md"
+
+  # Geometry
+  geometry:
+    - "0-architecture/geometry/GEOMETRY_CONVENTIONS.md"
+    - "1-theory/geometry/hull_generation_deep_dive.md"
+    - "1-theory/geometry/geometry-expansion-design.md"
+    - "3-implementation/general/MAGNET_GEOMETRY_TRUTHFULNESS_IMPLEMENTATION_FIX_GUIDE.md"
+    - "5-audits/system/MAGNET_GEOMETRY_CAPABILITY_AUDIT.md"
+    - "4-specs/agents/TRUTHFULNESS_TORTURE_TEST_PLAN.md"
+
+  truthfulness:
+    - "3-implementation/general/MAGNET_GEOMETRY_TRUTHFULNESS_IMPLEMENTATION_FIX_GUIDE.md"
+    - "4-specs/agents/TRUTHFULNESS_TORTURE_TEST_PLAN.md"
+
+  coordinates:
+    - "0-architecture/geometry/GEOMETRY_CONVENTIONS.md"
+
+  hull:
+    - "1-theory/geometry/hull_generation_deep_dive.md"
+    - "1-theory/geometry/geometry-expansion-design.md"
+
+  # Agents/LLM
+  agents:
+    - "4-specs/agents/MAGNET_Agent_Enhancement_Plan.md"
+    - "4-specs/agents/MAGNET_Prompt_Architecture_Plan_v2.md"
+    - "4-specs/agents/Agent_Robustness_Tests_Plan.md"
+    - "_index/AGENTS_INDEX.md"
+
+  prompts:
+    - "4-specs/agents/MAGNET_Prompt_Architecture_Plan_v2.md"
+    - "4-specs/agents/PROMPT_ARCHITECTURE_IMPLEMENTATION_GUIDE.md"
+    - "4-specs/agents/PROMPT_IMPROVEMENTS_SCHEDULED_HULL_FORMS.md"
+    - "5-audits/prompts/MAGNET_Audit_Prompts.md"
+    - "5-audits/prompts/PROMPT_ARCHITECTURE_AUDIT.md"
+
+  llm:
+    - "4-specs/agents/MAGNET_Agent_Enhancement_Plan.md"
+    - "4-specs/agents/MAGNET_Prompt_Architecture_Plan_v2.md"
+    - "2-protocols/INTENT_ACTION_PROTOCOL.md"
+
+  # Intent/Action
+  intent:
+    - "2-protocols/INTENT_ACTION_PROTOCOL.md"
+    - "2-protocols/MODULE_65.1_COMPOUND_INTENT.md"
+
+  firewall:
+    - "0-architecture/core/CONSTITUTION.md"
+    - "2-protocols/INTENT_ACTION_PROTOCOL.md"
+
+  # Golden Path
+  golden-path:
+    - "3-implementation/golden-path/GOLDEN_PATH_IMPLEMENTATION_GUIDE.md"
+    - "3-implementation/golden-path/GOLDEN_PATH_TECHNICAL_SPEC.md"
+    - "5-audits/golden-path/Golden_Path_AUDIT_1.md"
+    - "_index/GOLDEN_PATH_INDEX.md"
+
+  # Architecture
+  architecture:
+    - "0-architecture/system/ARCHITECTURE_CORE.md"
+    - "0-architecture/system/ARCHITECTURE_SIMPLE.md"
+    - "0-architecture/system/SYSTEM_ARCHITECTURE.md"
+
+  constitution:
+    - "0-architecture/core/CONSTITUTION.md"
+
+  north-star:
+    - "0-architecture/core/NORTH_STAR.md"
+    - "1-theory/physics/MAGNET_North_Star.md"
+
+  phases:
+    - "0-architecture/core/PHASE_MACHINE.md"
+
+  # UI
+  ui:
+    - "5-audits/ui/MAGNET_UIv2_Integration_Audit.md"
+    - "_index/UI_INDEX.md"
+
+  rendering:
+    - "4-specs/rendering/MAGNET_Rendering_Quality_And_Performance.md"
+
+  webgl:
+    - "4-specs/rendering/MAGNET_Rendering_Quality_And_Performance.md"
+
+  # Integration
+  integration:
+    - "3-implementation/integration/INTEGRATION_PLAN_V2.md"
+    - "3-implementation/integration/MAGNET_Merge_Implementation_Plan.md"
+
+  # Startup/Development
+  startup:
+    - "6-guides/MAGNET_Local_Startup_Runbook.md"
+
+  development:
+    - "6-guides/MAGNET_Local_Startup_Runbook.md"
+
+  # Audits
+  audit:
+    - "5-audits/system/MAGNET_System_State_Analysis.md"
+    - "5-audits/system/MAGNET_Orphaned_Components_Audit.md"
+    - "5-audits/system/VESSEL_THINKING_PASS_DOF_AUDIT.md"
+    - "5-audits/system/VIKING_HULL_FORM_AUDIT.md"
+    - "5-audits/ui/MAGNET_UIv2_Integration_Audit.md"
+    - "5-audits/golden-path/Golden_Path_AUDIT_1.md"
+    - "5-audits/prompts/PROMPT_ARCHITECTURE_AUDIT.md"
+
+  kernel:
+    - "3-implementation/physics/KERNEL_VALIDATION_PERSISTENCE_IMPLEMENTATION_GUIDE.md"
+
+  validation:
+    - "3-implementation/physics/KERNEL_VALIDATION_PERSISTENCE_IMPLEMENTATION_GUIDE.md"
+    - "3-implementation/physics/MAGNET_PHYSICS_RIGOR_PLAN.md"
+
+  persistence:
+    - "3-implementation/physics/KERNEL_VALIDATION_PERSISTENCE_IMPLEMENTATION_GUIDE.md"
+
+  vault:
+    - "3-implementation/general/TURN_CONTRACT_VAULT_IMPLEMENTATION_PLAN.md"
+    - "3-implementation/general/DESKTOP_VAULT_ENRICHMENT_PLAN.md"
+
+  production:
+    - "3-implementation/general/PRODUCTION_GRADE_IMPLEMENTATION_GUIDE.md"
+
+  # Language
+  language:
+    - "4-specs/language/MAGNET_Design_Language_Spec_v1.0.md"
+
+  dsl:
+    - "4-specs/language/MAGNET_Design_Language_Spec_v1.0.md"
+
+# =============================================================================
+# DEPRECATED FILES - Skip these, use redirects instead
+# =============================================================================
+deprecated:
+  - path: "3-implementation/integration/INTEGRATION_PLAN.md"
+    redirect: "3-implementation/integration/INTEGRATION_PLAN_V2.md"
+    reason: "Superseded by V2"
+
+  - path: "0-architecture/system/MAGNET_PHYSICS_RIGOR_PLAN copy.md"
+    redirect: "3-implementation/physics/MAGNET_PHYSICS_RIGOR_PLAN.md"
+    reason: "Duplicate file"

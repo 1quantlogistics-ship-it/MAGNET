@@ -92,21 +92,27 @@ class TestIntactGMValidator:
         expected_gm = 1.5 + 2.0 - 2.8  # = 0.7
         assert abs(gm - expected_gm) < 0.01
 
-    def test_kg_estimation_from_depth(self):
-        """Test KG estimation when neither source available."""
+    def test_kg_missing_fails_v13(self):
+        """Test FAILED when KG not available from explicit sources (v1.3 behavior).
+
+        v1.3 (Silence #1 CUT): The validator no longer silently estimates KG
+        from 0.55*depth. If KG is not provided via stability.kg_m or
+        weight.lightship_vcg_m, the validator FAILS.
+        """
         state_manager = MockStateManager({
             "hull.kb_m": 1.5,
             "hull.bm_m": 2.0,
-            "hull.depth": 4.0,  # KG estimated as 0.55 * depth = 2.2
+            "hull.depth": 4.0,  # v1.2 would estimate KG = 0.55*4.0 = 2.2
+            # But v1.3 REQUIRES explicit KG source
         })
 
         validator = IntactGMValidator()
         result = validator.validate(state_manager, {})
 
-        # Result is PASSED but with a warning finding about estimation
-        assert result.passed  # Still passes since GM is calculated
-        assert result.warning_count > 0  # But has warning about estimated KG
-        assert "stability.gm_transverse_m" in state_manager._values
+        # v1.3: Should FAIL because KG is not explicitly provided
+        assert result.state == ValidatorState.FAILED
+        # Should NOT have computed GM
+        assert "stability.gm_transverse_m" not in state_manager._values or state_manager._values.get("stability.gm_transverse_m") is None
 
     def test_failed_missing_inputs(self):
         """Test FAILED when required inputs missing."""
@@ -202,11 +208,14 @@ class TestGZCurveValidator:
         expected_outputs = [
             "stability.gz_curve",
             "stability.gz_max_m",
-            "stability.angle_of_max_gz_deg",
+            "stability.gz_30_m",
+            "stability.angle_gz_max_deg",
             "stability.area_0_30_m_rad",
             "stability.area_0_40_m_rad",
             "stability.area_30_40_m_rad",
-            "stability.imo_intact_passed",
+            "stability.angle_vanishing_deg",
+            "stability.range_deg",
+            "stability.passes_gz_criteria",
         ]
         for output in expected_outputs:
             assert output in state_manager._values
@@ -260,9 +269,10 @@ class TestDamageStabilityValidator:
         validator = DamageStabilityValidator()
         validator.validate(state_manager, {})
 
-        assert "stability.damage_cases" in state_manager._values
-        assert "stability.damage_gm_min_m" in state_manager._values
-        assert "stability.imo_damage_passed" in state_manager._values
+        assert "stability.damage_cases_evaluated" in state_manager._values
+        assert "stability.damage_all_pass" in state_manager._values
+        assert "stability.damage_worst_case" in state_manager._values
+        assert "stability.damage_results" in state_manager._values
 
 
 class TestWeatherCriterionValidator:
@@ -295,6 +305,8 @@ class TestWeatherCriterionValidator:
         result = validator.validate(state_manager, {})
 
         assert result.state in (ValidatorState.PASSED, ValidatorState.WARNING)
+        assert "stability.weather_ratio" in state_manager._values
+        assert "stability.weather_passes" in state_manager._values
 
     def test_failed_missing_gz_curve(self):
         """Test FAILED when GZ curve missing."""

@@ -340,8 +340,9 @@ class TestDeltaActionValidation:
             actions=[
                 Action(
                     action_type=ActionType.INCREASE,
-                    path="hull.cb",
-                    amount=0.05,
+                    path="propulsion.propeller_diameter_m",
+                    amount=0.2,
+                    unit="m",
                 ),
             ],
             design_version_before=5,
@@ -402,7 +403,7 @@ class TestDeltaActionValidation:
 
     def test_bucket_delta_unknown_path_rejects(self, validator, mock_state_manager):
         """Bucket delta on a path without policy is rejected."""
-        mock_state_manager.get = Mock(return_value=0.5)
+        mock_state_manager.get = Mock(return_value=1.0)
 
         plan = ActionPlan(
             plan_id="p1",
@@ -411,7 +412,7 @@ class TestDeltaActionValidation:
             actions=[
                 Action(
                     action_type=ActionType.INCREASE,
-                    path="hull.cb",
+                    path="propulsion.propeller_diameter_m",
                     amount=None,
                     unit="bucket:normal",
                 ),

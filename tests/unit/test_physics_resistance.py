@@ -168,12 +168,13 @@ class TestResistanceCalculator:
         assert abs(results.effective_power_hp - expected_hp) < 0.1
 
     def test_high_froude_warning(self):
-        """Test warning for high Froude number (Fn > 0.5)."""
+        """Test warning for regimes where Holtrop is not considered valid (Fn >= 0.4)."""
         params = self.params.copy()
         params["speed_kts"] = 30.0  # High speed
         results = self.calculator.calculate(**params)
-        if results.froude_number > 0.5:
-            assert any("froude" in w.lower() for w in results.warnings)
+        if results.froude_number >= 0.4:
+            # P1: warnings should surface regime/method validity note
+            assert any(("holtrop" in w.lower()) or ("savitsky" in w.lower()) for w in results.warnings)
 
     def test_very_high_froude_warning(self):
         """Test warning for very high Froude number (Fn > 0.7)."""
@@ -288,7 +289,7 @@ class TestResistanceConstants:
     def test_outputs_defined(self):
         """Test RESISTANCE_OUTPUTS is defined."""
         assert len(RESISTANCE_OUTPUTS) > 0
-        assert "resistance.total_kn" in RESISTANCE_OUTPUTS
+        assert "resistance.total_resistance_kn" in RESISTANCE_OUTPUTS
 
     def test_physical_constants(self):
         """Test physical constants."""

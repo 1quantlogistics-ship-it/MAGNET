@@ -9,7 +9,7 @@
  * 4. Unknown message logging
  * 5. Validated API routes from api.py
  * 6. RunPod proxy URL format (no explicit port)
- * 7. Phase ID mapping (UI 'hull' ↔ backend 'hull_form')
+ * 7. Phase ID mapping (UI → kernel canonical phases)
  * 8. Validation response normalization
  */
 
@@ -20,35 +20,40 @@
 const PhaseIdMapper = {
     // UI → Backend
     toBackend: {
-        'mission': 'mission_requirements',
-        'hull': 'hull_form',
-        'hydrostatics': 'hydrostatics',
-        'resistance': 'resistance_propulsion',
-        'structure': 'structural_scantlings',
-        'arrangement': 'general_arrangement',
-        // Module 64: Add missing phases (verified from PHASE_DEPENDENCIES)
+        // Canonical kernel phases (single-authority):
+        // UI may expose sub-tabs (hydrostatics/resistance) but backend run/validate is phase-based.
+        'mission': 'mission',
+        'hull': 'hull',
+        'hydrostatics': 'hull',
+        'resistance': 'hull',
+        'structure': 'structure',
+        'arrangement': 'arrangement',
         'propulsion': 'propulsion',
-        'systems': 'systems',
-        'weight': 'weight_stability',
-        'stability': 'weight_stability',
-        'weight_stability': 'weight_stability',
+        'weight': 'weight',
+        'stability': 'stability',
         'compliance': 'compliance',
         'production': 'production'
     },
     // Backend → UI
     toUI: {
+        // Canonical phases
+        'mission': 'mission',
+        'hull': 'hull',
+        'structure': 'structure',
+        'arrangement': 'arrangement',
+        'propulsion': 'propulsion',
+        'weight': 'weight',
+        'stability': 'stability',
+        'compliance': 'compliance',
+        'production': 'production',
+
+        // Legacy compatibility (may appear in WS payloads or older routes)
         'mission_requirements': 'mission',
         'hull_form': 'hull',
-        'hydrostatics': 'hydrostatics',
-        'resistance_propulsion': 'resistance',
+        'weight_stability': 'weight_stability',
         'structural_scantlings': 'structure',
         'general_arrangement': 'arrangement',
-        // Module 64: Add missing phases
-        'propulsion': 'propulsion',
-        'systems': 'systems',
-        'weight_stability': 'weight_stability',
-        'compliance': 'compliance',
-        'production': 'production'
+        'resistance_propulsion': 'resistance'
     },
     // Convert UI phase ID to backend phase ID
     uiToBackend(uiPhase) {
@@ -119,6 +124,9 @@ class MAGNETBackendAdapter {
         // Auth token (API key or Bearer token)
         this.authToken = config.authToken || localStorage.getItem('magnet-auth-token') || null;
 
+        // Cached design state for panel rendering
+        this.designState = null;
+
         // Guard against duplicate event bindings
         this._eventsBound = false;
 
@@ -185,6 +193,24 @@ class MAGNETBackendAdapter {
             this._eventsBound = true;
         }
 
+        // Ensure 3D scene manager exists (do not silently skip geometry loads).
+        // This is defensive against cases where Three.js/GLTF loader scripts were cached incorrectly
+        // or the scene manager failed to initialize during DOMContentLoaded.
+        if (!window.magnetThreeScene) {
+            try {
+                const SceneClass = window.MAGNETSceneManager || null;
+                const canvas = (typeof MagnetStudio !== 'undefined' && MagnetStudio.getCanvasMount)
+                    ? MagnetStudio.getCanvasMount()
+                    : null;
+                if (SceneClass && canvas) {
+                    window.magnetThreeScene = new SceneClass(canvas);
+                    console.log('[MAGNET] Scene manager initialized (late)');
+                }
+            } catch (e) {
+                console.warn('[MAGNET] Failed to init scene manager (late):', e);
+            }
+        }
+
         // Module 64: Configure scene manager with design context for updateGeometry
         if (window.magnetThreeScene?.setDesignContext) {
             window.magnetThreeScene.setDesignContext(this.baseUrl, designId);
@@ -192,6 +218,28 @@ class MAGNETBackendAdapter {
 
         // Load initial state
         await this.loadDesignState();
+
+        // ============================================================
+        // Spiral UI wiring (new authority path)
+        // - Uses /api/v1/designs/{id}/spiral/* for chat + sketch
+        // - Keeps existing WebSocket + phase panel plumbing from MAGNETBackendAdapter
+        // ============================================================
+        this._ensureSpiralAdapter();
+    }
+
+    _ensureSpiralAdapter() {
+        try {
+            if (typeof window.SpiralAdapter !== 'function') return;
+            // Recreate per design so it always has the current designId/baseUrl.
+            window.magnetSpiral = new window.SpiralAdapter({
+                designId: this.designId,
+                baseUrl: this.baseUrl,
+                sceneManager: window.magnetThreeScene,
+                panels: {} // UIv2 uses PanelRenderer + cached state; panels are optional.
+            });
+        } catch (e) {
+            console.warn('[MAGNET] Failed to init SpiralAdapter:', e);
+        }
     }
 
     handleBackendMessage(msg) {
@@ -205,27 +253,30 @@ class MAGNETBackendAdapter {
             // Phase events (from websocket.py MessageType enum)
             // Use PhaseIdMapper to translate backend phase IDs to UI phase IDs
             case 'phase_started': {
-                const uiPhase = PhaseIdMapper.backendToUI(payload.phase);
+                const backendPhase = payload.kernel_phase || payload.phase;
+                const uiPhase = PhaseIdMapper.backendToUI(backendPhase);
                 MagnetStudio.setPhaseState(uiPhase, 'active', 'Running...');
                 MagnetStudio.setStatus('Processing', 'processing');
                 break;
             }
 
             case 'phase_completed': {
-                const uiPhase = PhaseIdMapper.backendToUI(payload.phase);
+                const backendPhase = payload.kernel_phase || payload.phase;
+                const uiPhase = PhaseIdMapper.backendToUI(backendPhase);
                 MagnetStudio.setPhaseState(uiPhase, 'complete');
                 MagnetStudio.terminal.success(`Phase ${uiPhase} completed`);
                 MagnetStudio.setStatus('Ready');
 
                 // Module 63.2: Load GLB after hull phase
-                if ((uiPhase === 'hull' || payload.phase === 'hull_form') && window.magnetThreeScene) {
+                if ((uiPhase === 'hull' || backendPhase === 'hull') && window.magnetThreeScene) {
                     this._loadHullGeometry();
                 }
                 break;
             }
 
             case 'phase_failed': {
-                const uiPhase = PhaseIdMapper.backendToUI(payload.phase);
+                const backendPhase = payload.kernel_phase || payload.phase;
+                const uiPhase = PhaseIdMapper.backendToUI(backendPhase);
                 MagnetStudio.setPhaseState(uiPhase, 'error', payload.error || payload.message);
                 MagnetStudio.terminal.error(`Phase ${uiPhase} failed: ${payload.error || payload.message}`);
                 MagnetStudio.setStatus('Error', 'error');
@@ -233,7 +284,8 @@ class MAGNETBackendAdapter {
             }
 
             case 'phase_approved': {
-                const uiPhase = PhaseIdMapper.backendToUI(payload.phase);
+                const backendPhase = payload.kernel_phase || payload.phase;
+                const uiPhase = PhaseIdMapper.backendToUI(backendPhase);
                 MagnetStudio.setPhaseState(uiPhase, 'complete', 'Approved');
                 MagnetStudio.toast(`Phase ${uiPhase} approved`, 'success');
                 break;
@@ -243,13 +295,15 @@ class MAGNETBackendAdapter {
             // Backend returns: { validators_run: [...], results: {...}, contract_satisfied: bool }
             // UI expects: pass/fail state with detail string
             case 'validation_started': {
-                const uiPhase = PhaseIdMapper.backendToUI(payload.phase || payload.validator_id);
+                const backendPhase = payload.kernel_phase || payload.phase || payload.validator_id;
+                const uiPhase = PhaseIdMapper.backendToUI(backendPhase);
                 MagnetStudio.setValidatorState(uiPhase, 'running');
                 break;
             }
 
             case 'validation_completed': {
-                const uiPhase = PhaseIdMapper.backendToUI(payload.phase || payload.validator_id);
+                const backendPhase = payload.kernel_phase || payload.phase || payload.validator_id;
+                const uiPhase = PhaseIdMapper.backendToUI(backendPhase);
                 // Normalize validation response - handle both simple and structured formats
                 let valState, detail;
                 if (payload.contract_satisfied !== undefined) {
@@ -344,26 +398,160 @@ class MAGNETBackendAdapter {
 
     bindUIEvents() {
         console.log('[MAGNET] bindUIEvents() called');
-        // Module 63.2: Intent preview/apply flow
-        this._pendingPreview = null;
-
-        MagnetStudio.on('command', async ({ command }) => {
+        console.log('[MAGNET] MagnetStudio available:', typeof MagnetStudio !== 'undefined');
+        console.log('[MAGNET] MagnetStudio.on available:', typeof MagnetStudio?.on === 'function');
+        
+        MagnetStudio.on('command', async (data) => {
+            const command = data?.command || data;
+            try {
             console.log('[MAGNET] Command handler triggered:', command);
             MagnetStudio.setStatus('Processing', 'processing');
-            MagnetStudio.terminal.print(`> ${command}`);
 
+            // Auto-create design if none exists
             if (!this.designId) {
-                MagnetStudio.terminal.error('No design selected. Add ?design= or pick a design first.');
+                MagnetStudio.terminal.info('No design loaded. Creating new design...');
+                try {
+                    const newDesign = await this.post('/api/v1/designs', {
+                        name: 'New Design',
+                        type: 'monohull'
+                    });
+                    if (newDesign.design_id) {
+                        this.designId = newDesign.design_id;
+                        const v = newDesign.design_version || 1;
+                        MagnetStudio.terminal.success(`══ NEW DESIGN ══`);
+                        MagnetStudio.terminal.success(`ID: ${this.designId} (v${v})`);
+                        // Update URL immediately (single authority)
+                        try {
+                            const url = new URL(window.location.href);
+                            url.searchParams.set('design', this.designId);
+                            window.history.replaceState({}, '', url.toString());
+                            MagnetStudio.terminal.info(`URL updated: ?design=${this.designId}`);
+                        } catch (e) { /* ignore */ }
+                        // Load initial state
+                        await this.loadDesignState();
+                    } else {
+                        MagnetStudio.terminal.error('Failed to create design');
                 MagnetStudio.setStatus('Error', 'error');
                 MagnetStudio.terminal.cursor();
                 return;
+                    }
+                } catch (e) {
+                    MagnetStudio.terminal.error(`Failed to create design: ${e.message}`);
+                    MagnetStudio.setStatus('Error', 'error');
+                    MagnetStudio.terminal.cursor();
+                    return;
+                }
             }
 
             const cmd = command.trim().toLowerCase();
 
+            // ============================================================
+            // NON-LLM UI COMMANDS (must NOT go to spiral chat)
+            // ============================================================
+            if (cmd === 'show hydrostatics' || cmd === 'hydrostatics') {
+                try {
+                    if (!this.designId) throw new Error('No design loaded');
+                    MagnetStudio.terminal.info('Running hydrostatics (hull phase)…');
+                    await this.post(`/api/v1/designs/${this.designId}/phases/hull/run`, {});
+                    await this.loadDesignState();
+                    this._printHydrostaticsSummary();
+                } catch (e) {
+                    MagnetStudio.terminal.error(`Hydrostatics failed: ${e.message || e}`);
+                } finally {
+                    MagnetStudio.setStatus('Ready');
+                    MagnetStudio.terminal.cursor();
+                }
+                return;
+            }
+
+            // Create new design command
+            if (cmd === 'new' || cmd === 'new design' || cmd.startsWith('create new design')) {
+                MagnetStudio.terminal.info('Creating new design...');
+                try {
+                    const newDesign = await this.post('/api/v1/designs', {
+                        name: 'New Design',
+                        type: 'monohull'
+                    });
+                    if (newDesign.design_id) {
+                        this.designId = newDesign.design_id;
+                        MagnetStudio.terminal.success(`Created design: ${this.designId}`);
+                        // Defensive: ensure 3D scene rebinds to the new design immediately (fixes "rebind to old ID").
+                        try {
+                            window.magnetThreeScene?.setDesignContext?.(this.baseUrl, this.designId);
+                            window.magnetThreeScene?.clear?.();
+                            MagnetStudio?.setTruthBadge?.('DECOUPLED', 'design_context_changed');
+                        } catch (e) {}
+                        // Update URL
+                        try {
+                            const url = new URL(window.location.href);
+                            url.searchParams.set('design', this.designId);
+                            window.history.replaceState({}, '', url.toString());
+                        } catch (e) { /* ignore */ }
+                        await this.loadDesignState();
+                    }
+                } catch (e) {
+                    MagnetStudio.terminal.error(`Failed: ${e.message}`);
+                }
+                MagnetStudio.setStatus('Ready');
+                MagnetStudio.terminal.cursor();
+                return;
+            }
+
+            // Reset to brand-new blank design (explicitly requested for clean testing)
+            if (cmd === 'reset' || cmd === 'reset design' || cmd === 'new blank') {
+                MagnetStudio.terminal.info('Resetting to a brand-new blank design...');
+                try {
+                    const newDesign = await this.post('/api/v1/designs', {
+                        name: 'Blank Design',
+                        type: 'monohull'
+                    });
+                    if (newDesign.design_id) {
+                        this.designId = newDesign.design_id;
+                        MagnetStudio.terminal.success(`══ BLANK DESIGN ══`);
+                        MagnetStudio.terminal.success(`ID: ${this.designId} (v${newDesign.design_version || 1})`);
+                        // Defensive: rebind 3D scene to the new design immediately and reset truth badge.
+                        try {
+                            window.magnetThreeScene?.setDesignContext?.(this.baseUrl, this.designId);
+                            window.magnetThreeScene?.clear?.();
+                            MagnetStudio?.setTruthBadge?.('DECOUPLED', 'design_reset');
+                        } catch (e) {}
+                        try {
+                            const url = new URL(window.location.href);
+                            url.searchParams.set('design', this.designId);
+                            window.history.replaceState({}, '', url.toString());
+                        } catch (e) { /* ignore */ }
+                        await this.loadDesignState();
+                        await this._loadHullGeometry();
+                    } else {
+                        MagnetStudio.terminal.error('Failed to create blank design');
+                    }
+                } catch (e) {
+                    MagnetStudio.terminal.error(`Reset failed: ${e.message}`);
+                }
+                MagnetStudio.setStatus('Ready');
+                MagnetStudio.terminal.cursor();
+                return;
+            }
+
             // Module 64: Reload geometry command
             if (cmd === 'reload' || cmd === 'reload geometry') {
                 await this._loadHullGeometry();
+                MagnetStudio.setStatus('Ready');
+                MagnetStudio.terminal.cursor();
+                return;
+            }
+
+            // Force server-side geometry regeneration (clears in-memory mesh cache)
+            // This avoids "looks the same" confusion due to per-process caching + browser caching.
+            if (cmd === 'clear geometry cache' || cmd === 'clear geo cache' || cmd === 'clear cache') {
+                try {
+                    if (!this.designId) throw new Error('No design loaded');
+                    await this.delete(`/api/v1/designs/${this.designId}/3d/cache`);
+                    MagnetStudio.terminal.success('Geometry cache cleared (server). Reloading geometry...');
+                    await this._loadHullGeometry();
+                } catch (e) {
+                    MagnetStudio.terminal.error(`Cache clear failed: ${e.message || e}`);
+                }
                 MagnetStudio.setStatus('Ready');
                 MagnetStudio.terminal.cursor();
                 return;
@@ -412,122 +600,79 @@ class MAGNETBackendAdapter {
                 return;
             }
 
-            // Natural language → validate then auto-apply (compound mode)
+            // Control Plane v1.1: "Why" query routing
+            if (this._isWhyQuery(cmd)) {
+                await this._handleWhyQuery(command);
+                MagnetStudio.setStatus('Ready');
+                MagnetStudio.terminal.cursor();
+                return;
+            }
+
+            // ============================================================
+            // NEW AUTHORITY: design spiral (chat → propose → compile → validate → GLB)
+            // ============================================================
             try {
-                console.log('[MAGNET] Sending command to API:', command);
-                const preview = await this.post(
-                    `/api/v1/designs/${this.designId}/intent/preview`,
-                    { text: command, mode: 'compound' }
-                );
-                console.log('[MAGNET] API Response:', preview);
-
-                const approved = preview.approved || [];
-                const proposed = preview.proposed_actions || [];
-                const actions = preview.actions || [];
-                const hasActions = approved.length || proposed.length || actions.length;
-
-                if (!hasActions) {
-                    MagnetStudio.terminal.info(preview.guidance || 'No actions recognized');
-                    MagnetStudio.terminal.info('Try: "60m aluminum catamaran ferry"');
-                    MagnetStudio.setStatus('Ready');
-                    MagnetStudio.terminal.cursor();
-                    return;
-                }
-
-                // Show understanding
-                if (approved.length) {
-                    MagnetStudio.terminal.info('MAGNET understood:');
-                    approved.forEach(a => {
-                        MagnetStudio.terminal.data([
-                            { key: a.path, value: `${a.value}${a.unit ? ' ' + a.unit : ''}` }
-                        ]);
-                    });
-                } else if (actions.length) {
-                    MagnetStudio.terminal.info('MAGNET understood (proposed):');
-                    actions.forEach(a => {
-                        MagnetStudio.terminal.data([
-                            { key: a.path, value: `${a.value}${a.unit ? ' ' + a.unit : ''}` }
-                        ]);
-                    });
-                }
-
-                if (preview.rejected?.length) {
-                    MagnetStudio.terminal.info('');
-                    preview.rejected.forEach(r => {
-                        MagnetStudio.terminal.error(`${r.action?.path || 'unknown'}: ${r.reason}`);
-                    });
-                }
-
-                if (preview.missing_required?.length) {
-                    MagnetStudio.terminal.info('');
-                    MagnetStudio.terminal.info('MAGNET needs:');
-                    preview.missing_required.forEach(m => {
-                        MagnetStudio.terminal.info(`  ○ ${m.path}: ${m.reason}`);
-                    });
-                }
-
-                if (preview.unsupported_mentions?.length) {
-                    MagnetStudio.terminal.info('');
-                    MagnetStudio.terminal.info("MAGNET can't yet model:");
-                    preview.unsupported_mentions.forEach(u => {
-                        MagnetStudio.terminal.info(`  "${u.text}" → ${u.future || 'future support'}`);
-                    });
-                }
-
-                if (preview.warnings?.length) {
-                    preview.warnings.forEach(w => MagnetStudio.terminal.info(`⚠ ${w}`));
-                }
-
-                const provenance = preview.provenance || 'deterministic';
-                const applyPayload = preview.apply_payload;
-
-                if (provenance === 'llm_guess') {
-                    if (!applyPayload) {
-                        MagnetStudio.terminal.info('MAGNET guessed (not applied — server policy):');
-                        approved.forEach(a => {
-                            MagnetStudio.terminal.data([{ key: a.path, value: `${a.value}${a.unit ? ' ' + a.unit : ''}` }]);
-                        });
-                        MagnetStudio.terminal.info('Ask with explicit numbers for deterministic apply, or enable server guessing with MAGNET_CHAT_GUESS_APPLY=true (server) and `auto-apply guesses on` (session).');
-                        MagnetStudio.terminal.info('Undo is always available for any applied change: type `undo`.');
-                        MagnetStudio.setStatus('Ready');
-                        MagnetStudio.terminal.cursor();
-                        return;
-                    }
-
-                    if (this._autoApplyGuesses) {
-                        MagnetStudio.terminal.info('MAGNET guessed and will auto-apply (undo if wrong).');
-                        await this._applyPreview(preview);
-                    } else {
-                        MagnetStudio.terminal.info('MAGNET guessed (not applied — session policy):');
-                        approved.forEach(a => {
-                            MagnetStudio.terminal.data([{ key: a.path, value: `${a.value}${a.unit ? ' ' + a.unit : ''}` }]);
-                        });
-                        MagnetStudio.terminal.info('Type "auto-apply guesses on" to enable auto-apply for guesses in this session.');
-                    }
+                if (window.magnetSpiral && typeof window.magnetSpiral.sendChat === 'function') {
+                    await window.magnetSpiral.sendChat(command);
                 } else {
-                    if (!applyPayload) {
-                        MagnetStudio.terminal.error('No apply payload returned; nothing applied');
-                        MagnetStudio.setStatus('Ready');
-                        MagnetStudio.terminal.cursor();
-                        return;
+                    // Fallback if spiral-adapter.js isn't loaded for some reason:
+                    const resp = await this.post(`/api/v1/designs/${this.designId}/spiral/chat`, {
+                        message: command,
+                        expected_version: this._lastDesignVersion ?? null,
+                        request_id: (crypto?.randomUUID?.() ?? String(Date.now())),
+                        force_apply: true,
+                    });
+                    // Best-effort: update version + trigger geometry load
+                    if (resp?.design_version_after !== undefined) {
+                        this._lastDesignVersion = resp.design_version_after;
+                        window.magnetThreeScene?.setDesignVersion?.(resp.design_version_after);
                     }
-                    await this._applyPreview(preview);
+                    await this._loadHullGeometry();
                 }
-
             } catch (error) {
-                MagnetStudio.terminal.error(error.message);
+                MagnetStudio.terminal.error(error.message || String(error));
             }
 
             MagnetStudio.setStatus('Ready');
             MagnetStudio.terminal.cursor();
+            } catch (outerError) {
+                console.error('[MAGNET] Unhandled error in command handler:', outerError);
+                MagnetStudio.terminal.error(`Error: ${outerError.message || outerError}`);
+                MagnetStudio.setStatus('Error', 'error');
+                MagnetStudio.terminal.cursor();
+            }
+        });
+
+        // Spiral sketch upload wiring (emitted by index.html §SKELETON:UIWiring)
+        MagnetStudio.on('sketchUpload', async ({ file, annotations }) => {
+            try {
+                if (!file) return;
+                MagnetStudio.setStatus('Processing', 'processing');
+                if (window.magnetSpiral && typeof window.magnetSpiral.sendSketch === 'function') {
+                    await window.magnetSpiral.sendSketch(file, annotations || '');
+                } else {
+                    MagnetStudio.terminal.error('Sketch upload unavailable (SpiralAdapter not loaded)');
+                }
+            } catch (e) {
+                MagnetStudio.terminal.error(e.message || String(e));
+            } finally {
+                MagnetStudio.setStatus('Ready');
+                MagnetStudio.terminal.cursor();
+            }
         });
 
         // Phase navigation - VALIDATED: POST /api/v1/designs/{id}/phases/{phase}/run exists
         // Use PhaseIdMapper to translate UI phase to backend phase
         MagnetStudio.on('phaseChange', async ({ phase }) => {
+            // === NEW: Render panel for the selected phase ===
+            this._renderCurrentPhasePanel();
+            
             try {
                 const backendPhase = PhaseIdMapper.uiToBackend(phase);
                 await this.post(`/api/v1/designs/${this.designId}/phases/${backendPhase}/run`, {});
+                
+                // === NEW: Refresh design state and re-render panel after phase run ===
+                await this.loadDesignState();
             } catch (error) {
                 MagnetStudio.terminal.error(`Failed to run phase: ${error.message}`);
             }
@@ -537,11 +682,21 @@ class MAGNETBackendAdapter {
         // Use PhaseIdMapper to translate UI phase to backend phase
         MagnetStudio.on('validatorClick', async ({ validator }) => {
             try {
-                // Get current phase from UI state and translate to backend phase
-                const state = MagnetStudio.getState();
-                const uiPhase = state.currentPhase || 'hull';
-                const backendPhase = PhaseIdMapper.uiToBackend(uiPhase);
-                await this.post(`/api/v1/designs/${this.designId}/phases/${backendPhase}/validate`, {});
+                // Validators are NOT phases. Route validator clicks to the corresponding
+                // kernel phase validation regardless of current UI tab.
+                //
+                // Option A (phase-scoped): map validator widgets → kernel phase validate.
+                const v = String(validator || '').toLowerCase();
+                const validatorToKernelPhase = {
+                    // IMO intact stability criteria live in the stability phase outputs
+                    'stability': 'stability',
+                    // Class/regulatory checks are represented as compliance in kernel
+                    'lloyds': 'compliance',
+                    'abs_hsnc': 'compliance',
+                    'dnv_gl': 'compliance',
+                };
+                const kernelPhase = validatorToKernelPhase[v] || 'compliance';
+                await this.post(`/api/v1/designs/${this.designId}/phases/${kernelPhase}/validate`, {});
             } catch (error) {
                 MagnetStudio.terminal.error(`Validation failed: ${error.message}`);
             }
@@ -568,6 +723,63 @@ class MAGNETBackendAdapter {
                 MagnetStudio.toast('Design state confirmed', 'success');
             } catch (error) {
                 MagnetStudio.toast(`Save failed: ${error.message}`, 'error');
+            }
+        });
+
+        // Advisor action: apply equilibrium draft to hull.draft (explicit user action)
+        MagnetStudio.on('applyEquilibriumDraft', async ({ draft_m }) => {
+            try {
+                if (!this.designId) throw new Error('No design loaded');
+                const nextDraft = Number(draft_m);
+                if (!isFinite(nextDraft)) throw new Error('Invalid equilibrium draft');
+
+                MagnetStudio.setStatus('Applying draft…', 'processing');
+                MagnetStudio.terminal.info(`Applying equilibrium draft: ${nextDraft.toFixed(3)} m`);
+
+                // Patch canonical state
+                await this.patch(`/api/v1/designs/${this.designId}`, {
+                    path: 'hull.draft',
+                    value: nextDraft
+                });
+
+                // Re-run dependent phases so outputs are not stale (draft affects hydrostatics → resistance/stability).
+                // Keep this explicit and finite (do not try to "run everything").
+                const phasesToRun = ['hull', 'weight', 'stability'];
+                for (const uiPhase of phasesToRun) {
+                    try {
+                        const backendPhase = PhaseIdMapper.uiToBackend(uiPhase);
+                        await this.post(`/api/v1/designs/${this.designId}/phases/${backendPhase}/run`, {});
+                    } catch (e) {
+                        console.warn(`[MAGNET] Phase rerun after draft apply failed (${uiPhase}):`, e?.message || e);
+                    }
+                }
+
+                await this.loadDesignState();
+                MagnetStudio.toast('Draft updated', 'success');
+            } catch (error) {
+                MagnetStudio.toast(`Apply failed: ${error.message || error}`, 'error');
+            } finally {
+                MagnetStudio.setStatus('Ready');
+                MagnetStudio.terminal.cursor();
+            }
+        });
+
+        // View mode changes (shaded, wireframe, flat)
+        MagnetStudio.on('viewChange', ({ mode }) => {
+            // Some callers emit viewChange without a mode during init/reconnect.
+            // Avoid spamming the terminal with "undefined".
+            if (!mode) return;
+            if (window.magnetThreeScene?.setViewMode) {
+                window.magnetThreeScene.setViewMode(mode);
+                MagnetStudio.terminal.info(`View mode: ${mode}`);
+            }
+        });
+
+        // Layer visibility toggles (hull, deck, structure)
+        MagnetStudio.on('layerToggle', ({ layer, visible }) => {
+            if (window.magnetThreeScene?.setLayerVisibility) {
+                window.magnetThreeScene.setLayerVisibility(layer, visible);
+                MagnetStudio.terminal.info(`Layer '${layer}': ${visible ? 'visible' : 'hidden'}`);
             }
         });
     }
@@ -647,6 +859,16 @@ class MAGNETBackendAdapter {
 
                 // Auto-refresh geometry after commit
                 await this._loadHullGeometry();
+                
+                // === NEW: Refresh design state to update data panels ===
+                // This fetches fresh state and updates panel rendering
+                try {
+                    const design = await this.get(`/api/v1/designs/${this.designId}`);
+                    this.designState = design;
+                    this._renderCurrentPhasePanel();
+                } catch (e) {
+                    console.warn('[MAGNET] Failed to refresh state for panels:', e.message);
+                }
             } else {
                 MagnetStudio.terminal.error('Apply failed');
                 if (result.rejections?.length) {
@@ -671,8 +893,42 @@ class MAGNETBackendAdapter {
     // Module 63.2: Detect which phase to run based on changed paths
     _getPhaseToRun(actions) {
         const HULL_PATHS = [
+            // Core dimensions
             'hull.loa', 'hull.lwl', 'hull.beam', 'hull.draft',
-            'hull.depth', 'hull.cb', 'hull.cp', 'hull.cm', 'hull.deadrise'
+            'hull.depth', 'hull.cb', 'hull.cp', 'hull.cm', 'hull.deadrise',
+            'hull.deadrise_deg',
+            'hull.deadrise_transom_deg',
+            'hull.cwp',
+            'hull.hull_spacing_m',
+            'hull.hull_type',
+            'hull.lcb_fraction',
+            'hull.transom_beam_ratio',
+            'hull.bow_entrance_deg',
+            'hull.freeboard_m',
+            'hull.draft_fwd_m',
+            'hull.draft_aft_m',
+            'hull.bow_flare_deg',
+            'hull.stem_rake_deg',
+            // Phase 2: Chine variations
+            'hull.chine_type',
+            'hull.chine_count',
+            'hull.chine_style',
+            // Phase 3: Bow forms
+            'hull.bow_style',
+            'hull.bow_facet_count',
+            // Phase 4: Spray rails
+            'hull.spray_rail_count',
+            'hull.has_spray_rails',
+            // Phase 5: Transom variations
+            'hull.transom_style',
+            'hull.transom_rake_deg',
+            // Phase 6: Tumblehome, panels, deck
+            'hull.tumblehome_enabled',
+            'hull.tumblehome_angle_deg',
+            'hull.tumblehome_start_ratio',
+            'hull.panel_style',
+            'hull.deck_enabled',
+            'hull.deck_camber_m',
         ];
         const PROPULSION_PATHS = [
             'propulsion.total_installed_power_kw', 'propulsion.engine_count',
@@ -696,6 +952,8 @@ class MAGNETBackendAdapter {
         // Guard: Scene manager must be ready
         if (!window.magnetThreeScene?.loadGLB) {
             console.warn('[MAGNET] Scene manager not ready, skipping geometry load');
+            MagnetStudio?.terminal?.error?.('3D viewer not ready (scene manager missing) — cannot load hull geometry.');
+            MagnetStudio?.terminal?.info?.('Hard refresh the page. If it persists, Three.js/GLTFLoader may be blocked.');
             return;
         }
 
@@ -704,7 +962,8 @@ class MAGNETBackendAdapter {
             // Use design_version for deterministic cache-busting, fallback to timestamp
             // GLB endpoint returns binary only - no JSON fields available
             const cacheBust = this._lastDesignVersion || Date.now();
-            const url = `${this.baseUrl}/api/v1/designs/${this.designId}/3d/export/glb?v=${cacheBust}`;
+            const lod = (localStorage.getItem('magnet-lod') || 'medium').toLowerCase();
+            const url = `${this.baseUrl}/api/v1/designs/${this.designId}/3d/export/glb?lod=${encodeURIComponent(lod)}&v=${cacheBust}`;
             console.log('[MAGNET] Loading GLB from:', url);
             const stats = await window.magnetThreeScene.loadGLB(url);
 
@@ -714,8 +973,18 @@ class MAGNETBackendAdapter {
             ]);
             MagnetStudio.terminal.success('3D model loaded');
         } catch (error) {
-            MagnetStudio.terminal.error(`Geometry failed: ${error.message}`);
-            MagnetStudio.terminal.info('Type "reload" to retry');
+            // Blank designs are expected to have no geometry until the first spiral program is applied.
+            const msg = String(error?.message || '');
+            if (msg.includes('404') || msg.includes('No geometry') || msg.includes('GeometryUnavailable')) {
+                // IMPORTANT: avoid stale geometry confusion when switching to a blank design.
+                // Only clear on definitive "no geometry" signals (404/GeometryUnavailable),
+                // not on transient retries.
+                try { window.magnetThreeScene?.clear?.(); } catch (e) {}
+                MagnetStudio.terminal.info('No geometry yet (blank design). Send a command to generate hull geometry.');
+            } else {
+                MagnetStudio.terminal.error(`Geometry failed: ${msg}`);
+                MagnetStudio.terminal.info('Type "reload" to retry');
+            }
         } finally {
             MagnetStudio.hideLoading();
         }
@@ -748,6 +1017,13 @@ class MAGNETBackendAdapter {
             MagnetStudio.setStatus(`Ready (v${designVersion})`);
             MagnetStudio.terminal.info(`Design ${this.designId} v${designVersion}`);
 
+            // === NEW: Store design state for panel rendering ===
+            this.designState = design;
+            console.info('[BackendAdapter] Design state cached for panel rendering');
+            
+            // === NEW: Render current phase panel if data view would be shown ===
+            this._renderCurrentPhasePanel();
+
             // Auto-load geometry on connect
             // Attempt load and treat 404 as "no geometry yet" (silent fail)
             // GLB generates on-demand even if vision.geometry_generated=false
@@ -766,6 +1042,79 @@ class MAGNETBackendAdapter {
             console.error('[MAGNET] Failed to load design:', error);
             MagnetStudio.terminal.error(`Failed to load design: ${error.message}`);
         }
+    }
+
+    _getStateValue(path) {
+        if (!this.designState) return undefined;
+        // Preferred: canonical flat map attached by backend (design.state)
+        const flat = this.designState.state;
+        if (flat && typeof flat === 'object' && path in flat) return flat[path];
+
+        // Fallback: nested payload
+        const parts = String(path || '').split('.');
+        let cur = this.designState;
+        for (const p of parts) {
+            if (!cur || typeof cur !== 'object' || !(p in cur)) return undefined;
+            cur = cur[p];
+        }
+        return cur;
+    }
+
+    _printHydrostaticsSummary() {
+        const T = MagnetStudio.terminal;
+        const disp = this._getStateValue('hull.displacement_m3');
+        const vcb = this._getStateValue('hull.vcb_m');
+        const bm = this._getStateValue('hull.bm_m');
+        const gm = this._getStateValue('stability.gm_m') ?? this._getStateValue('hull.gm_m');
+
+        if (disp === undefined && vcb === undefined && bm === undefined) {
+            T.info('No hydrostatics outputs found yet.');
+            T.info('Tip: run a hull generation prompt first, then run "show hydrostatics" again.');
+            return;
+        }
+
+        const fmt = (v, digits = 3) => (typeof v === 'number' && isFinite(v) ? v.toFixed(digits) : String(v));
+        T.success('══ HYDROSTATICS ══');
+        if (disp !== undefined) T.info(`displacement: ${fmt(disp, 3)} m³`);
+        if (vcb !== undefined) T.info(`VCB: ${fmt(vcb, 3)} m`);
+        if (bm !== undefined) T.info(`BM: ${fmt(bm, 3)} m`);
+        if (gm !== undefined) T.info(`GM: ${fmt(gm, 3)} m`);
+    }
+
+    /**
+     * Render the data panel for the current phase using cached design state.
+     * Called on loadDesignState and on phase change.
+     */
+    _renderCurrentPhasePanel() {
+        if (!this.designState) {
+            console.info('[BackendAdapter] No design state cached, skipping panel render');
+            return;
+        }
+        
+        // Get current phase from MagnetStudio state
+        var currentPhase = (typeof MagnetStudio !== 'undefined' && MagnetStudio.getState) 
+            ? MagnetStudio.getState().currentPhase 
+            : null;
+        
+        if (!currentPhase) {
+            console.info('[BackendAdapter] No current phase, skipping panel render');
+            return;
+        }
+        
+        // Check if PanelRenderer is available
+        if (typeof PanelRenderer === 'undefined') {
+            console.warn('[BackendAdapter] PanelRenderer not loaded');
+            return;
+        }
+        
+        // Check if this phase has panel config
+        if (!PanelRenderer.hasConfig(currentPhase)) {
+            console.info('[BackendAdapter] No panel config for phase: ' + currentPhase);
+            return;
+        }
+        
+        // Render the panel
+        PanelRenderer.render(currentPhase, this.designState);
     }
 
     // HTTP helpers with auth headers
@@ -831,6 +1180,94 @@ class MAGNETBackendAdapter {
         a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
+    }
+
+    // =========================================================================
+    // Control Plane v1.1: Why Query Support
+    // =========================================================================
+
+    /**
+     * Detect if a command is a "why" query
+     * @param {string} cmd - Lowercase command
+     * @returns {boolean}
+     */
+    _isWhyQuery(cmd) {
+        const patterns = [
+            /^why\s+/,
+            /^what\s+is\s+/,
+            /^what\s+does\s+/,
+            /^explain\s+/,
+            /^tell\s+me\s+about\s+/,
+            /what\s+(caused|changed|happened)/,
+            /history\s+of\s+/,
+            /when\s+did\s+.+\s+change/,
+            /what\s+changed\s+in\s+(version|v)\s*\d+/i,
+        ];
+        return patterns.some(p => p.test(cmd));
+    }
+
+    /**
+     * Handle a "why" query via Control Plane /why endpoint
+     * @param {string} query - Original user query
+     */
+    async _handleWhyQuery(query) {
+        const T = MagnetStudio.terminal;
+        T.info('Asking Control Plane...');
+
+        try {
+            // Call the /why endpoint with proper body format
+            const url = `/api/v1/designs/${this.designId}/why`;
+            const result = await this.post(url, {
+                query: query,
+                context_paths: this._whyContextPaths || [],
+                context_version: this._whyContextVersion || null
+            });
+
+            // Handle clarification needed
+            if (result.clarification) {
+                T.info(result.clarification);
+                return;
+            }
+
+            // Display results
+            if (!result.results || result.results.length === 0) {
+                T.info('No relevant information found.');
+                return;
+            }
+
+            // Show intent for debugging
+            if (this.debug) {
+                T.info(`[debug] Intent: ${result.intent}`);
+            }
+
+            // Display each result
+            result.results.forEach((r, i) => {
+                if (result.results.length > 1 && r.path) {
+                    T.info('');
+                    T.info(`── ${r.path} ──`);
+                }
+                
+                // Display narrative (may contain markdown-ish formatting)
+                const lines = r.narrative.split('\n');
+                lines.forEach(line => {
+                    if (line.startsWith('**') && line.endsWith('**')) {
+                        T.info(line.slice(2, -2));
+                    } else if (line.startsWith('- ')) {
+                        T.info('  • ' + line.slice(2));
+                    } else if (line.trim()) {
+                        T.info(line);
+                    }
+                });
+            });
+
+            if (result.truncated) {
+                T.info('');
+                T.info('(Results truncated. Ask about specific items for more detail.)');
+            }
+
+        } catch (error) {
+            T.error(`Query failed: ${error.message}`);
+        }
     }
 
     attemptReconnect() {

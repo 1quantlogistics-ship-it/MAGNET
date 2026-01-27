@@ -27,11 +27,38 @@ class SynthesisLock:
     only the lock owner can write hull parameters during synthesis.
     """
 
-    # Hull paths that are protected during synthesis
+    # Hull paths that are protected during synthesis (all 21 schema params + derived + Phase 2-6)
     HULL_PATHS = frozenset([
-        "hull.lwl", "hull.beam", "hull.draft",
-        "hull.cb", "hull.cp", "hull.cm", "hull.cwp",
+        # Principal dimensions
+        "hull.loa", "hull.lwl", "hull.beam", "hull.draft", "hull.depth",
+        "hull.draft_fwd_m", "hull.draft_aft_m", "hull.freeboard_m",
+        # Form coefficients
+        "hull.cb", "hull.cp", "hull.cm", "hull.cwp", "hull.lcb_fraction",
+        # Hull form inputs
+        "hull.transom_beam_ratio", "hull.bow_entrance_deg", "hull.bow_flare_deg",
+        "hull.stem_rake_deg", "hull.deadrise_deg", "hull.deadrise_transom_deg",
+        # Type and multihull
+        "hull.hull_type", "hull.hull_spacing_m",
+        # Derived (computed by hydrostatics)
         "hull.displacement_m3", "hull.displacement_kg", "hull.displacement_mt",
+        # Phase 2: Chine Variations
+        "hull.chine_type", "hull.chine_count", "hull.chine_style",
+        "hull.chine_transition_start", "hull.chine_transition_end",
+        "hull.reverse_chine_height_ratio", "hull.reverse_chine_extension_m",
+        "hull.chine_flat_width_m",
+        # Phase 3: Bow Forms
+        "hull.bow_style", "hull.bow_facet_count", "hull.bow_planarity",
+        "hull.bow_half_angle_deg", "hull.bow_region_length",
+        "hull.bow_freeboard_ratio", "hull.stem_profile", "hull.stem_radius_m",
+        # Phase 4: Spray Rails + Knuckle Lines
+        "hull.spray_rail_count", "hull.spray_rail_spacing",
+        "hull.has_spray_rails", "hull.has_knuckle_lines",
+        # Phase 5: Transom Variations
+        "hull.transom_style", "hull.transom_rake_deg",
+        # Phase 6: Tumblehome, Panels, Deck
+        "hull.tumblehome_enabled", "hull.tumblehome_angle_deg",
+        "hull.tumblehome_start_ratio", "hull.panel_style",
+        "hull.deck_enabled", "hull.deck_camber_m",
     ])
 
     def __init__(self, state_manager: "StateManager"):
@@ -128,11 +155,19 @@ class SynthesisLock:
         source = f"synthesis:{owner}"
         owns_transaction = not self._state.in_transaction()
 
+        # Constraint-Aware Completion v1.0: Import provenance enum
+        from magnet.core.state_manager import DimensionProvenance
+
         if owns_transaction:
             self._state.begin_transaction()
         try:
             for path, value in params.items():
-                self._state.set(path, value, source)
+                # Mark synthesized dimensions with SYNTHESIZED provenance
+                # This distinguishes them from ship-scale placeholders
+                self._state.set(
+                    path, value, source,
+                    provenance=DimensionProvenance.SYNTHESIZED
+                )
             if owns_transaction:
                 self._state.commit()
         except Exception:
