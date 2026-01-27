@@ -196,6 +196,7 @@ class ResultAggregator:
         """
         status = GateStatus(gate_id=phase, can_advance=True)
 
+        # Evaluate ALL gate-condition validators for this phase (required + optional).
         gate_validators = self._topology.get_gate_validators_for_phase(phase)
 
         for validator_id in gate_validators:

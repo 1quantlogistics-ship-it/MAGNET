@@ -243,3 +243,13 @@ export type {
   GeometryStreamMessage,
   GeometryStreamError,
 } from './geometry';
+
+// Intent types
+export type {
+  IntentAction,
+  RejectedAction,
+  ApplyPayload,
+  IntentPreviewResponse,
+  IntentPreviewRequest,
+  ApplyResult,
+} from './intent';

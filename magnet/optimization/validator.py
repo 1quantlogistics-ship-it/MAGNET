@@ -109,15 +109,41 @@ class OptimizationValidator(ValidatorInterface):
             # Get validators from context or use empty list
             validators = context.get("validators", [])
 
-            # Run optimization
-            optimizer = DesignOptimizer(
-                problem=problem,
-                base_state=state_manager,
-                validators=validators,
-                population_size=self.population_size,
-                max_generations=self.max_generations,
-                seed=context.get("seed"),
-            )
+            # Run optimization (backend-selectable; defaults to native NSGA-II)
+            backend = str(context.get("optimizer_backend", "native") or "native").lower()
+            if backend == "pymoo":
+                try:
+                    from .pymoo_optimizer import PymooDesignOptimizer, PymooSettings
+
+                    optimizer = PymooDesignOptimizer(
+                        problem=problem,
+                        base_state=state_manager,
+                        validators=validators,
+                        settings=PymooSettings(
+                            population_size=int(self.population_size),
+                            max_generations=int(self.max_generations),
+                            seed=context.get("seed"),
+                        ),
+                    )
+                except Exception:
+                    # Graceful degradation: fall back to native optimizer.
+                    optimizer = DesignOptimizer(
+                        problem=problem,
+                        base_state=state_manager,
+                        validators=validators,
+                        population_size=self.population_size,
+                        max_generations=self.max_generations,
+                        seed=context.get("seed"),
+                    )
+            else:
+                optimizer = DesignOptimizer(
+                    problem=problem,
+                    base_state=state_manager,
+                    validators=validators,
+                    population_size=self.population_size,
+                    max_generations=self.max_generations,
+                    seed=context.get("seed"),
+                )
 
             opt_result = optimizer.optimize()
 

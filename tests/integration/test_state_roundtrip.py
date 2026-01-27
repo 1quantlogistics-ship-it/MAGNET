@@ -127,7 +127,8 @@ class TestFileRoundtrip:
     def test_json_file_roundtrip(self):
         """Test roundtrip through JSON file."""
         manager = StateManager()
-        manager.state.design_name = "File Roundtrip Test"
+        with manager.state.mutator_context():
+            manager.state.design_name = "File Roundtrip Test"
         manager.state.mission.vessel_type = "ferry"
         manager.state.hull.loa = 100.0
 
@@ -178,7 +179,8 @@ class TestStateManagerRoundtrip:
     def test_snapshot_roundtrip(self):
         """Test roundtrip through snapshot."""
         manager = StateManager()
-        manager.state.design_name = "Snapshot Test"
+        with manager.state.mutator_context():
+            manager.state.design_name = "Snapshot Test"
         manager.state.mission.vessel_type = "workboat"
 
         snapshot = manager.export_snapshot(include_metadata=True)

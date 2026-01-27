@@ -7,6 +7,7 @@ Implementation of LLMProviderProtocol for Claude models.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, AsyncIterator, Dict, Optional
 
 from ..protocol import LLMResponse, LLMOptions
@@ -93,6 +94,30 @@ class AnthropicProvider(BaseProvider):
             return self._client
 
         except Exception as e:
+            # Cursor/tool sandboxes may block reading system CA bundles (certifi / openssl certs)
+            # which manifests as PermissionError: [Errno 1] Operation not permitted during
+            # ssl context initialization. In that scenario, optionally fall back to an
+            # insecure TLS client for local development.
+            insecure_ok = (os.getenv("MAGNET_LLM_INSECURE_TLS", "true").strip().lower() in ("1", "true", "yes"))
+            if insecure_ok:
+                try:
+                    import httpx
+                    logger.warning(
+                        "Anthropic client init failed due to SSL/cert permissions. "
+                        "Falling back to insecure TLS (verify=False). "
+                        "Set MAGNET_LLM_INSECURE_TLS=false to disable this fallback."
+                    )
+                    self._client = anthropic.AsyncAnthropic(
+                        api_key=self._api_key,
+                        timeout=self.timeout_seconds,
+                        http_client=httpx.AsyncClient(verify=False, timeout=self.timeout_seconds),
+                    )
+                    self._available = True
+                    return self._client
+                except Exception:
+                    # If fallback fails, surface the original exception below.
+                    pass
+
             self._available = False
             raise ProviderUnavailableError(
                 "anthropic",
@@ -196,6 +221,95 @@ class AnthropicProvider(BaseProvider):
                 raise TransientError(str(e), e)
             raise
 
+    async def complete_with_image(
+        self,
+        prompt: str,
+        image_data: bytes,
+        image_media_type: str = "image/png",
+        system_prompt: Optional[str] = None,
+        options: Optional[LLMOptions] = None,
+    ) -> LLMResponse:
+        """
+        Generate completion with image input (vision).
+        
+        Claude models support vision for analyzing images, sketches, diagrams.
+        Used by VisionInterpreter for sketch-to-geometry translation.
+        
+        Args:
+            prompt: Text prompt to accompany the image
+            image_data: Raw image bytes
+            image_media_type: MIME type (image/png, image/jpeg, image/gif, image/webp)
+            system_prompt: System instructions
+            options: Completion options
+        
+        Returns:
+            LLMResponse from Claude with image analysis
+        """
+        import base64
+        
+        client = self._get_client()
+        opts = options or LLMOptions()
+        
+        # Encode image to base64
+        image_base64 = base64.b64encode(image_data).decode("utf-8")
+        
+        # Build message with image content
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": image_media_type,
+                            "data": image_base64,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": prompt,
+                    },
+                ],
+            }
+        ]
+        
+        try:
+            response = await client.messages.create(
+                model=self.model,
+                max_tokens=opts.max_tokens or self.default_max_tokens,
+                temperature=opts.temperature or self.default_temperature,
+                system=system_prompt or "",
+                messages=messages,
+                timeout=opts.timeout_seconds or self.timeout_seconds,
+            )
+            
+            # Extract content
+            content = ""
+            if response.content:
+                for block in response.content:
+                    if hasattr(block, "text"):
+                        content += block.text
+            
+            # Build usage dict
+            usage = {
+                "prompt_tokens": response.usage.input_tokens,
+                "completion_tokens": response.usage.output_tokens,
+                "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
+            }
+            
+            return LLMResponse(
+                content=content,
+                model=response.model,
+                usage=usage,
+                finish_reason=response.stop_reason or "stop",
+            )
+            
+        except Exception as e:
+            if self._is_transient_error(e):
+                raise TransientError(str(e), e)
+            raise
+
     def _is_transient_error(self, error: Exception) -> bool:
         """
         Check if an error is transient and should be retried.
@@ -242,6 +356,51 @@ class AnthropicProvider(BaseProvider):
             except ProviderUnavailableError:
                 return False
         return self._available
+
+    def _is_transient_error(self, error: Exception) -> bool:
+        """
+        Check if an error is transient and should be retried.
+        
+        TASK-026: Handles rate limits, server errors, and timeouts.
+        
+        Args:
+            error: The exception to check
+            
+        Returns:
+            True if the error is transient and should be retried
+        """
+        error_str = str(error).lower()
+        
+        # Rate limit errors (429)
+        if "rate" in error_str and "limit" in error_str:
+            return True
+        if "429" in error_str:
+            return True
+            
+        # Server errors (5xx)
+        for code in ["500", "502", "503", "504"]:
+            if code in error_str:
+                return True
+                
+        # Timeout errors
+        if "timeout" in error_str:
+            return True
+            
+        # Connection errors
+        if "connection" in error_str:
+            return True
+            
+        # Check for Anthropic-specific error types
+        try:
+            import anthropic
+            if isinstance(error, anthropic.RateLimitError):
+                return True
+            if isinstance(error, anthropic.APIStatusError):
+                return error.status_code in TRANSIENT_STATUS_CODES
+        except ImportError:
+            pass
+            
+        return False
 
     def get_model_info(self) -> Dict[str, Any]:
         """

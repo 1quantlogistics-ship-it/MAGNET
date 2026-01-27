@@ -105,8 +105,13 @@ class TestGLBExportContract:
             offset = bv["byteOffset"]
             assert offset % 4 == 0, f"bufferView[{i}] offset {offset} not 4-byte aligned"
 
-    def test_missing_normals_raises_export_error(self):
-        """Gate 5.6: Exporting hull without normals must fail."""
+    def test_missing_normals_are_computed_for_export(self):
+        """
+        Gate 5.6: Export must never produce a hull GLB without NORMAL.
+
+        Upstream meshes may omit normals; the exporter is allowed to generate them
+        deterministically from vertices+indices as long as the exported glTF includes NORMAL.
+        """
         mesh = MeshData(
             mesh_id="no_normals",
             vertices=[0, 0, 0, 1, 0, 0, 0, 1, 0],
@@ -115,12 +120,12 @@ class TestGLBExportContract:
         )
         exporter = GeometryExporter()
 
-        # The export should fail due to contract violation
         result = exporter.export(mesh, ExportFormat.GLB)
 
-        # Either raises ExportError or returns failure
-        assert not result.success or "NORMAL" in str(result.errors), \
-            "Export should fail or report error when normals missing"
+        assert result.success, f"Export failed unexpectedly: {result.errors}"
+        gltf = parse_glb_json(result.data)
+        attrs = gltf["meshes"][0]["primitives"][0]["attributes"]
+        assert "NORMAL" in attrs, "Exporter must include NORMAL even if input normals were empty"
 
     def test_scene_export_includes_normals(self):
         """Gate 5.7: Scene export must include normals on hull mesh."""
@@ -137,6 +142,30 @@ class TestGLBExportContract:
         attrs = gltf["meshes"][0]["primitives"][0]["attributes"]
 
         assert "NORMAL" in attrs, "Scene export missing NORMAL on hull"
+
+    def test_multi_hull_scene_exports_multiple_meshes(self):
+        """
+        Multi-body regression: a SceneData with multiple hull meshes must export
+        a GLB containing multiple glTF meshes (no forced single-hull merge).
+        """
+        hull_a = create_test_hull_mesh()
+        hull_a.mesh_id = "hull_a"
+        hull_b = create_test_hull_mesh()
+        hull_b.mesh_id = "hull_b"
+
+        scene = SceneData(
+            design_id="test_multi",
+            hull=hull_a,             # backward compat
+            hulls=[hull_a, hull_b],  # new multi-body field
+            geometry_mode=GeometryMode.AUTHORITATIVE,
+        )
+        exporter = GeometryExporter()
+        result = exporter.export_scene(scene, ExportFormat.GLB)
+        assert result.success, f"Scene export failed: {result.errors}"
+
+        gltf = parse_glb_json(result.data)
+        # Expect at least 2 meshes (one per hull) in the exported glTF.
+        assert len(gltf.get("meshes", [])) >= 2, f"Expected >=2 meshes, got {len(gltf.get('meshes', []))}"
 
 
 class TestGLBExportMetadata:

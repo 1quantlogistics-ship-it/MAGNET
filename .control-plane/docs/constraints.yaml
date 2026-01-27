@@ -1,0 +1,246 @@
+constraints:
+  # ===========================================================================
+  # CORE CONSTITUTION (HARD)
+  # ===========================================================================
+
+  - id: UI_V2_ONLY
+    name: UI v2 is the only supported product UI surface
+    description: >
+      The only supported product UI is `magnet/ui_v2/` served by `magnet/deployment/api.py`
+      at `/ui/v2/` (with `/` redirecting to `/ui/v2/` when UI v2 exists). New work MUST NOT
+      make `app/` or `frontend/` authoritative UI surfaces.
+    type: hard
+    scope: code
+    rationale: Single UI authority prevents UI drift and preserves spiral coherence.
+
+  - id: NO_PARALLEL_SUBSYSTEMS
+    name: No parallel subsystems for existing functionality
+    description: >
+      New code MUST NOT create parallel implementations of existing subsystems
+      (e.g., a new geometry pipeline, a new state manager, a new validation framework)
+      unless refactoring the existing system would demonstrably cost more.
+      Extend existing systems; do not duplicate them.
+    type: hard
+    scope: code
+    rationale: Prevents architectural drift and maintenance burden.
+
+  # ===========================================================================
+  # IDENTITY & LINEAGE (HARD)
+  # ===========================================================================
+
+  - id: EDIT_VS_REWRITE_EXPLICIT
+    name: Edit vs rewrite must be explicit
+    description: >
+      Rewrite-class operations MUST create a new design with a new `design_id`.
+      Ambiguous rewrite intent MUST escalate to the user (or ASK), not guess.
+      In-place mutation is edit; new design creation is rewrite.
+    type: hard
+    scope: code
+    rationale: Preserves identity and prevents silent destruction of design history.
+
+  - id: LINEAGE_PRESERVED
+    name: Forks must record parent lineage
+    description: >
+      When a design is forked or rewritten, the new design MUST record its parent
+      (e.g., `metadata.parent_design_id` and a reason such as `metadata.rewrite_reason`,
+      or an equivalent durable record in `history`). Lineage must survive save/load.
+    type: hard
+    scope: code
+    rationale: Auditability and decision provenance.
+
+  - id: VERSION_MONOTONIC
+    name: design_version must only increment
+    description: >
+      `design_version` MUST be monotonically increasing within a design. No code path
+      may decrement or reset the version. Rollback/time-travel behavior creates a new
+      versioned commit, not a version decrement.
+    type: hard
+    scope: code
+    rationale: Prevents version confusion and cache corruption.
+
+  # ===========================================================================
+  # HUMAN-IN-THE-LOOP (HARD)
+  # ===========================================================================
+
+  - id: HUMAN_APPROVAL_FOR_FIXES
+    name: Suggested fixes require explicit human approval
+    description: >
+      When the system suggests an upstream fix for a downstream failure, applying
+      that fix MUST require explicit human approval. Fixes MUST NOT auto-apply.
+    type: hard
+    scope: code
+    rationale: Human decides; system proposes. Core to the spiral.
+
+  - id: FIREWALL_NO_DIRECT_STATE_MUTATION
+    name: LLM/agents never directly mutate refinable state
+    description: >
+      No LLM/agent/control-plane code may directly write refinable paths in DesignState.
+      Refinable mutations MUST occur only via the Intent→Action protocol:
+      ActionPlan → ActionPlanValidator → ActionExecutor → transactional commit.
+    type: hard
+    scope: code
+    rationale: Preserves kernel authority and auditability; prevents hallucinated state.
+
+  - id: STALE_PLAN_REJECTION_REQUIRED
+    name: Stale plan detection must remain enforced
+    description: >
+      ActionPlan execution MUST reject stale plans using `design_version_before` vs current
+      `design_version`. No code path may silently apply a stale plan.
+    type: hard
+    scope: code
+    rationale: Prevents corruption under concurrent edits and preserves deterministic iteration.
+
+  - id: LOCKS_ENFORCED
+    name: Locked parameters must block mutation
+    description: >
+      If a path is locked (persisted in `locked_parameters`), attempted mutation MUST be rejected
+      until explicitly unlocked. Locks must survive save/load.
+    type: hard
+    scope: code
+    rationale: Human intent must be enforceable; prevents silent overrides.
+
+  - id: GATE_VS_GRADES
+    name: Gate vs grades semantics must not be violated
+    description: >
+      Hydrostatics is the hull validity gate (floats or fails) when implemented and REQUIRED.
+      All other physics/validation outputs are grades (warnings/preferences/info) unless explicitly
+      configured as REQUIRED by taxonomy. NOT_IMPLEMENTED validators MUST NOT silently pass as truth.
+    type: hard
+    scope: code
+    rationale: Preserves North Star validation model and avoids punishing novelty.
+
+  - id: VALIDATOR_HONESTY_FAIL_CLOSED
+    name: Validators must not silently pass unknowns
+    description: >
+      Validator implementations MUST fail closed (FAILED with explicit error finding) when
+      preconditions are not met, and MUST emit explicit WARNING findings when operating outside
+      their validity envelope. Code failures must surface as execution errors, not as validation pass.
+    type: hard
+    scope: code
+    rationale: Prevents false truth and keeps autonomous runs auditable.
+
+  - id: NO_SILENT_GEOMETRY_FALLBACK
+    name: Authoritative geometry must not silently fall back
+    description: >
+      Geometry generation MUST fail closed by default when authoritative geometry is unavailable.
+      Visual-only approximation is permitted only when explicitly requested (allow_visual_only=true)
+      and MUST be labeled end-to-end (API responses/headers and UI status).
+    type: hard
+    scope: code
+    rationale: Prevents visual/engineering divergence.
+
+  - id: EXPORT_HEADERS_REQUIRED
+    name: GLB export must include identity/version/mode headers and be non-cacheable
+    description: >
+      GLB export responses MUST include: X-Design-Id, X-Design-Version, X-Geometry-Mode,
+      and Cache-Control: no-store. UI and tests must treat these as authoritative consistency signals.
+    type: hard
+    scope: code
+    rationale: Prevents cache drift and wrong-design rendering.
+
+  - id: NO_NEW_KERNEL_PRESETS_OR_STYLE_CATALOGS
+    name: No kernel presets / vessel family catalogs (no enumeration for novelty)
+    description: >
+      Kernel and physics/geometry subsystems MUST NOT introduce preset catalogs or lookup tables
+      that map vessel family/style names (e.g., "sportfish", "Viking", "patrol boat") to parameter sets
+      as decision logic. Novelty must be expressed via composition and resolution, not enumerated presets.
+    type: hard
+    scope: code
+    rationale: Preserves North Star: novelty through composition, not enumeration.
+
+  - id: KERNEL_PURITY_NO_LLM_DEPS
+    name: Kernel/core/physics/validators/webgl must not depend on LLM code
+    description: >
+      `magnet/kernel/**`, `magnet/core/**`, `magnet/validators/**`, `magnet/physics/**`,
+      and `magnet/webgl/**` MUST NOT import from `magnet/agents/**` or any external LLM SDKs.
+      LLM integration must remain in agent/control-plane layers.
+    type: hard
+    scope: code
+    rationale: Kernel must remain deterministic computation and validation.
+
+  - id: STATE_IS_PRODUCT
+    name: State is the product; derived artifacts are not authoritative
+    description: >
+      Design truth MUST be represented in persisted DesignState. Derived artifacts (meshes/GLB)
+      are exports and caches only. No logic may treat a render/export as authoritative state.
+    type: hard
+    scope: code
+    rationale: Preserves auditability and prevents UI-driven truth drift.
+
+  - id: NO_SECRETS_IN_CODE
+    name: No hardcoded secrets
+    description: No API keys, passwords, tokens, or credentials may be committed in source files.
+    type: hard
+    scope: code
+    rationale: Security.
+
+  # ===========================================================================
+  # AUTONOMY HYGIENE (SOFT unless explicitly promoted)
+  # ===========================================================================
+
+  - id: TESTS_REQUIRED_FOR_INVARIANT_CHANGES
+    name: Changes affecting invariants must add/update tests
+    description: >
+      If a change touches any of: `magnet/kernel/**`, `magnet/core/**`, `magnet/validators/**`,
+      `magnet/physics/**`, `magnet/webgl/**`, or `magnet/deployment/api.py`, then tests MUST be added
+      or updated to cover the impacted acceptance criteria/invariants (unit or integration as appropriate).
+    type: soft
+    scope: code
+    rationale: Maintains REVIEW verifiability across autonomous iterations.
+
+  - id: NO_UNBOUNDED_CONTEXT_DUMPS
+    name: Avoid unbounded prompt/state dumps into the LLM
+    description: >
+      Control-plane prompts should use a bounded state lens rather than dumping full DesignState
+      by default. If full dumps are required, they must be explicitly justified and size-capped.
+    type: soft
+    scope: code
+    rationale: Prevents token bloat and autonomy stalls.
+
+  - id: DOCSTRINGS_FOR_PUBLIC_APIS
+    name: Public functions/classes should have docstrings
+    description: Public APIs (exported or used across modules) should have docstrings describing contract and invariants.
+    type: soft
+    scope: code
+    rationale: Maintainability and audit clarity.
+
+  - id: ASK_OVER_HALLUCINATION
+    name: Ambiguity triggers ASK, not guess
+    description: >
+      When input is ambiguous and the ambiguity materially affects correctness
+      (units, target design, rewrite intent, locked-parameter intent), the system SHOULD
+      emit an ASK/clarification request rather than guess. Guessing is permitted only
+      for non-material ambiguity.
+    type: soft
+    scope: code
+    rationale: Prevents hallucinated state and preserves human authority.
+
+  - id: NO_SILENT_TRANSFORMS
+    name: Compiler transforms must be reported
+    description: >
+      When the geometry compiler applies transforms (upsampling, reordering, normalization),
+      it SHOULD emit a structured report so the LLM/user can learn from the transform.
+      Silent transforms prevent convergence.
+    type: soft
+    scope: code
+    rationale: Enables learning and debugging in the iteration loop.
+
+  - id: PROMPT_NO_ENUMERATION
+    name: Prompts should not contain vessel-type shortcuts
+    description: >
+      LLM prompts SHOULD NOT contain vessel-type shortcuts (e.g., "if sportfish then X")
+      that bypass compositional geometry. Prompts describe primitives and operations,
+      not design catalogs.
+    type: soft
+    scope: code
+    rationale: Enumeration leaks through prompts, not just kernel code.
+
+  - id: QUALITY_MINIMUM_RESOLUTION
+    name: Quality hulls require minimum resolution
+    description: >
+      For "high-quality" hull output, the system SHOULD enforce minimum resolution
+      (≥7 sections and ≥12 points/section) and fairness checks. Low resolution SHOULD
+      trigger explicit warnings, not silent acceptance.
+    type: soft
+    scope: code
+    rationale: Quality = resolution, not enumeration.

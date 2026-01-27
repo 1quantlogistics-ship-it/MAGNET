@@ -55,7 +55,9 @@ PHASE_DEFINITIONS = {
         description="Mission requirements and configuration",
         phase_type=PhaseType.DEFINITION,
         order=1,
-        validators=["mission/requirements"],
+        # Source of truth for phase→validators is ValidatorTopology (by ValidatorDefinition.phase).
+        # Keep this list as a legacy hint only; it must reference real validator IDs.
+        validators=["mission/requirements", "bounds/mission_parameters", "bounds/design_intent"],
         state_namespace="mission",
     ),
     "hull": PhaseDefinition(
@@ -64,7 +66,14 @@ PHASE_DEFINITIONS = {
         phase_type=PhaseType.ANALYSIS,
         order=2,
         depends_on=["mission"],
-        validators=["hull/form", "physics/hydrostatics"],
+        # Legacy hints (must be real IDs).
+        # Hydrostatics is REQUIRED gate; resistance/bounds are advisory grades.
+        validators=[
+            "physics/hydrostatics",
+            "physics/resistance",
+            "bounds/hull_parameters",
+            "bounds/proportional_harmony",
+        ],
         state_namespace="hull",
     ),
     "structure": PhaseDefinition(
@@ -73,7 +82,7 @@ PHASE_DEFINITIONS = {
         phase_type=PhaseType.ANALYSIS,
         order=3,
         depends_on=["hull"],
-        validators=["structure/scantlings"],
+        validators=["physics/structural_loads", "physics/scantlings"],
         state_namespace="structure",
     ),
     "propulsion": PhaseDefinition(
@@ -82,7 +91,7 @@ PHASE_DEFINITIONS = {
         phase_type=PhaseType.ANALYSIS,
         order=4,
         depends_on=["hull"],
-        validators=["propulsion/sizing"],
+        validators=["physics/powering"],
         state_namespace="propulsion",
     ),
     "weight": PhaseDefinition(
@@ -91,7 +100,7 @@ PHASE_DEFINITIONS = {
         phase_type=PhaseType.ANALYSIS,
         order=5,
         depends_on=["hull", "structure", "propulsion"],
-        validators=["weight/estimation"],
+        validators=["weight/estimation", "physics/equilibrium_draft"],
         state_namespace="weight",
     ),
     "stability": PhaseDefinition(

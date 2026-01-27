@@ -21,6 +21,139 @@ from magnet.core.enums import (
     StructuralZone,
 )
 
+@dataclass
+class ValidatorReceipt:
+    """
+    Typed validator receipt (v0).
+
+    Stable, versioned shape to prevent receipts from turning into a dumping ground.
+    """
+    schema_version: str = "1.0"
+    validator_id: str = ""
+    state: str = ""  # passed|warning|failed|error|skipped (matches taxonomy output)
+    is_gate: bool = False
+    metrics: Dict[str, float] = field(default_factory=dict)
+    details: Dict[str, Any] = field(default_factory=dict)  # escape hatch (non-contractual)
+
+
+@dataclass
+class PhaseReceipt:
+    """
+    Typed phase receipt (v0).
+
+    Timestamp authority: these are stamped once by the Conductor and must never enter deterministic hashes.
+    """
+    schema_version: str = "1.0"
+    phase_id: str = ""
+    phase_status: str = ""  # completed|failed|blocked|...
+    started_at_s: Optional[float] = None
+    completed_at_s: Optional[float] = None
+    validators_run: int = 0
+    validators_passed: int = 0
+    validators_failed: int = 0
+    errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    details: Dict[str, Any] = field(default_factory=dict)  # escape hatch (non-contractual)
+
+
+@dataclass
+class IntegrityInputs:
+    """
+    Typed integrity inputs block (v0).
+
+    Observational only: does not introduce new policy.
+    """
+    schema_version: str = "1.0"
+    surface_definition: Optional[str] = None
+    required_stamps_present: bool = False
+    stamp_versions: Dict[str, Optional[int]] = field(default_factory=dict)
+
+
+@dataclass
+class SceneReceipt:
+    """
+    Typed scene-time receipt (v0).
+
+    This records mesh/render-time checks and must not be confused with phase guarantees.
+    """
+    schema_version: str = "1.0"
+    scene_receipt_id: str = ""
+    design_id: str = ""
+    design_version: int = 0
+    geometry_version_id: str = ""
+    mesh_hash: str = ""
+    checks: Dict[str, Any] = field(default_factory=dict)
+    integrity_effect: Dict[str, Any] = field(default_factory=dict)  # {before, after, reason}
+    timestamp_s: float = 0.0
+
+
+@dataclass
+class TurnContract:
+    """
+    Turn Contract (Receipt) — append-only ledger entry.
+
+    This is the "vault" artifact that binds a specific design_version to:
+    - explicit intent hash
+    - stable state snapshot hash
+    - integrity classification + primary reason
+    - violations (structured later; stable strings for now)
+    """
+
+    schema_version: str = "1.0"
+
+    contract_id: str = ""
+    design_id: str = ""
+    design_version: int = 0
+    state_snapshot_hash: str = ""
+    intent_snapshot_hash: str = ""
+
+    integrity_state: str = "APPROXIMATE"  # "AUTHORITATIVE" | "APPROXIMATE" | "DECOUPLED"
+    primary_reason: Optional[str] = None
+    violations: List[str] = field(default_factory=list)
+
+    # Typed receipt bundle (v0)
+    phase_receipt: Optional[PhaseReceipt] = None
+    validator_receipts: List[ValidatorReceipt] = field(default_factory=list)
+    integrity_inputs: Optional[IntegrityInputs] = None
+
+    # Timestamp is informational only and excluded from deterministic hashes.
+    timestamp_s: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "TurnContract":
+        # Defensive parsing for older/malformed payloads
+        pr = data.get("phase_receipt")
+        vr = data.get("validator_receipts", []) or []
+        ii = data.get("integrity_inputs")
+
+        phase_receipt = PhaseReceipt(**pr) if isinstance(pr, dict) else None
+        validator_receipts: List[ValidatorReceipt] = []
+        if isinstance(vr, list):
+            for x in vr:
+                if isinstance(x, dict):
+                    validator_receipts.append(ValidatorReceipt(**x))
+
+        integrity_inputs = IntegrityInputs(**ii) if isinstance(ii, dict) else None
+
+        return cls(
+            schema_version=str(data.get("schema_version", "1.0")),
+            contract_id=str(data.get("contract_id", "")),
+            design_id=str(data.get("design_id", "")),
+            design_version=int(data.get("design_version", 0) or 0),
+            state_snapshot_hash=str(data.get("state_snapshot_hash", "")),
+            intent_snapshot_hash=str(data.get("intent_snapshot_hash", "")),
+            integrity_state=str(data.get("integrity_state", "APPROXIMATE")),
+            primary_reason=data.get("primary_reason", None),
+            violations=list(data.get("violations", []) or []),
+            phase_receipt=phase_receipt,
+            validator_receipts=validator_receipts,
+            integrity_inputs=integrity_inputs,
+            timestamp_s=float(data.get("timestamp_s", 0.0) or 0.0),
+        )
+
 
 # ==================== 1. MissionConfig ====================
 
@@ -43,6 +176,9 @@ class MissionConfig:
     # Range and endurance
     range_nm: Optional[float] = None
     endurance_hours: Optional[float] = None
+
+    # Stability requirement
+    gm_required_m: Optional[float] = None  # Required transverse GM (m)
 
     # Capacity
     crew_berthed: Optional[int] = None
@@ -107,9 +243,38 @@ class HullState:
     cvp: Optional[float] = None  # Vertical prismatic coefficient
 
     # Hull angles
-    deadrise_deg: Optional[float] = None  # Deadrise at transom
+    deadrise_deg: Optional[float] = None  # Deadrise at midship (deg)
+    deadrise_transom_deg: Optional[float] = None  # Deadrise at transom (deg)
     deadrise_midship_deg: Optional[float] = None
     entrance_angle_deg: Optional[float] = None  # Half angle of entrance
+
+    # Hull form inputs (engineering controls)
+    lcb_fraction: Optional[float] = None  # LCB as fraction of LWL from FP (0=bow/FP, 1=stern/AP)
+    transom_beam_ratio: Optional[float] = None  # Transom width / max beam
+    bow_entrance_deg: Optional[float] = None  # Waterline entry half-angle (deg)
+    freeboard_m: Optional[float] = None  # Minimum freeboard at side (m)
+    draft_fwd_m: Optional[float] = None  # Draft at FP (m)
+    draft_aft_m: Optional[float] = None  # Draft at AP (m)
+    bow_flare_deg: Optional[float] = None  # Bow flare angle above waterline (deg)
+    stem_rake_deg: Optional[float] = None  # Stem rake from vertical (deg)
+
+    # Hydro-weight convergence controls (T7.5 / §0.9.8)
+    auto_equilibrate_draft: Optional[bool] = None
+    """If true, allow equilibrium draft solver to apply to hull.draft (advisory path)."""
+
+    auto_converge_hydro_weight: Optional[bool] = None
+    """If true, run hydro-weight fixed-point loop and mutate hull.draft to equilibrium draft."""
+
+    hydro_weight_converged: Optional[bool] = None
+    hydro_weight_iterations: Optional[int] = None
+
+    # Equilibrium diagnostics (written by equilibrium solver and/or convergence loop)
+    equilibrium_draft_m: Optional[float] = None
+    equilibrium_converged: Optional[bool] = None
+    equilibrium_iterations: Optional[int] = None
+    equilibrium_residual_mt: Optional[float] = None
+    equilibrium_target_displacement_mt: Optional[float] = None
+    equilibrium_reason: Optional[str] = None
 
     # Derived values
     displacement_m3: Optional[float] = None  # Volume displacement (m³)
@@ -130,9 +295,68 @@ class HullState:
     tpc: Optional[float] = None  # Tonnes per cm immersion
     mct: Optional[float] = None  # Moment to change trim 1cm
 
+    # Geometry-derived hydrostatics (P2)
+    hydrostatics_method: Optional[str] = None  # "geometry_integration" | "parametric"
+    cb_geometry: Optional[float] = None
+    cp_geometry: Optional[float] = None
+    cm_geometry: Optional[float] = None
+    cwp_geometry: Optional[float] = None
+    it_m4: Optional[float] = None  # Transverse waterplane inertia
+    il_m4: Optional[float] = None  # Longitudinal waterplane inertia
+    sectional_areas: List[float] = field(default_factory=list)
+    bonjean_stations: List[float] = field(default_factory=list)
+
     # Multi-hull specific
     hull_spacing_m: Optional[float] = None  # For catamarans
     demi_hull_beam_m: Optional[float] = None
+
+    # ==========================================================================
+    # Phase 2: Chine Variations
+    # ==========================================================================
+    chine_type: Optional[str] = None         # "soft" | "hard" | "double" | "triple" | "reverse" | "variable"
+    chine_count: Optional[int] = None        # Number of chine lines per side
+    chine_style: Optional[str] = None        # "standard" | "reverse" | "variable"
+    chine_transition_start: Optional[float] = None  # Station where chine starts (0-1)
+    chine_transition_end: Optional[float] = None    # Station where chine ends (0-1)
+    reverse_chine_height_ratio: Optional[float] = None  # Height ratio for reverse chine
+    reverse_chine_extension_m: Optional[float] = None   # Extension in meters
+    chine_flat_width_m: Optional[float] = None          # Width of flat at chine
+
+    # ==========================================================================
+    # Phase 3: Bow Forms
+    # ==========================================================================
+    bow_style: Optional[str] = None          # "traditional" | "wedge" | "axe" | "faceted" | "wave_piercing"
+    bow_facet_count: Optional[int] = None    # Number of facets for faceted bow
+    bow_planarity: Optional[float] = None    # 0-1 planarity factor
+    bow_half_angle_deg: Optional[float] = None  # Bow entry half-angle
+    bow_region_length: Optional[float] = None   # Bow region as fraction of LWL
+    bow_freeboard_ratio: Optional[float] = None # Bow freeboard ratio
+    stem_profile: Optional[str] = None       # "vertical" | "raked" | "wave_piercing" | "axe" | "clipper"
+    stem_radius_m: Optional[float] = None    # Stem radius
+
+    # ==========================================================================
+    # Phase 4: Spray Rails + Knuckle Lines
+    # ==========================================================================
+    spray_rail_count: Optional[int] = None   # Number of spray rails per side
+    spray_rail_spacing: Optional[float] = None  # Vertical spacing ratio
+    has_spray_rails: Optional[bool] = None   # Enable spray rails
+    has_knuckle_lines: Optional[bool] = None # Enable knuckle lines
+
+    # ==========================================================================
+    # Phase 5: Transom Variations
+    # ==========================================================================
+    transom_style: Optional[str] = None      # "vertical" | "raked" | "stepped" | "tunneled" | "sugar_scoop"
+    transom_rake_deg: Optional[float] = None # Transom rake angle
+
+    # ==========================================================================
+    # Phase 6: Tumblehome, Panels, Deck
+    # ==========================================================================
+    tumblehome_enabled: Optional[bool] = None      # Enable tumblehome
+    tumblehome_angle_deg: Optional[float] = None   # Tumblehome angle
+    tumblehome_start_ratio: Optional[float] = None # Height ratio where tumblehome starts
+    panel_style: Optional[str] = None              # "smooth" | "faceted" | "developable"
+    deck_enabled: Optional[bool] = None            # Enable deck surface
+    deck_camber_m: Optional[float] = None          # Deck camber height
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -441,13 +665,24 @@ class StabilityState:
     """
     # Metacentric height
     gm_transverse_m: Optional[float] = None
+    gm_m: Optional[float] = None  # Canonical GM (corrected if FSC applied)
+    gm_solid_m: Optional[float] = None  # GM without free surface correction
     gm_longitudinal_m: Optional[float] = None
     gm_corrected_m: Optional[float] = None  # After free surface correction
+    km_m: Optional[float] = None  # KM = KB + BM
+    fsc_m: Optional[float] = None  # Free surface correction (meters)
+    has_fsc: Optional[bool] = None
+    passes_gm_criterion: Optional[bool] = None
 
     # GZ curve characteristics
     gz_max_m: Optional[float] = None
+    gz_30_m: Optional[float] = None
+    angle_gz_max_deg: Optional[float] = None  # Canonical (schema/builtin)
     angle_of_max_gz_deg: Optional[float] = None
+    angle_vanishing_deg: Optional[float] = None  # Canonical (schema/builtin)
     angle_of_vanishing_stability_deg: Optional[float] = None
+    range_deg: Optional[float] = None  # Range of positive stability
+    passes_gz_criteria: Optional[bool] = None
 
     # Areas under GZ curve
     area_0_30_m_rad: Optional[float] = None
@@ -476,6 +711,16 @@ class StabilityState:
     damage_cases: List[Dict[str, Any]] = field(default_factory=list)
     damage_gm_min_m: Optional[float] = None
     damage_range_deg: Optional[float] = None
+    damage_cases_evaluated: Optional[int] = None
+    damage_all_pass: Optional[bool] = None
+    damage_worst_case: Optional[str] = None
+    damage_results: Optional[Dict[str, Any]] = None
+
+    # Weather criterion
+    weather_area_a_m_rad: Optional[float] = None
+    weather_area_b_m_rad: Optional[float] = None
+    weather_ratio: Optional[float] = None
+    weather_passes: Optional[bool] = None
 
     # Compliance
     imo_intact_passed: bool = False
@@ -786,6 +1031,16 @@ class OptimizationState:
     """
     Optimization objectives and results.
     """
+    # Persisted artifacts (written by optimization validators/executors)
+    # These fields exist so `StateManager.set("optimization.*", ...)` is never a no-op.
+    problem: Optional[Dict[str, Any]] = None
+    result: Optional[Dict[str, Any]] = None
+    pareto_front: Optional[Dict[str, Any]] = None
+    selected_solution: Optional[Dict[str, Any]] = None
+    status: Optional[str] = None
+    metrics: Optional[Dict[str, Any]] = None
+    evaluations: int = 0
+
     # Objectives
     objectives: List[str] = field(default_factory=list)
     objective_weights: Dict[str, float] = field(default_factory=dict)
@@ -884,6 +1139,27 @@ class KernelState:
     # Performance
     computation_time_s: float = 0.0
     memory_usage_mb: float = 0.0
+
+    # =============================================================================
+    # Truthfulness: physics freshness stamp (used to detect DECOUPLED state)
+    # =============================================================================
+    physics_last_validated_version: Optional[int] = None
+    physics_last_validated_at: Optional[str] = None
+
+    # Hydrostatics freshness is tracked separately because some integrity rules
+    # (panelized surfaces) require hydrostatics to be present and same-version.
+    hydrostatics_last_validated_version: Optional[int] = None
+    hydrostatics_last_validated_at: Optional[str] = None
+
+    # ==================== Human Decision Point (Unified Physics Theory) ====================
+    # When True, downstream automation is paused until explicit approval.
+    awaiting_human_decision: bool = False
+    # Structured request payload describing why the system halted and what options exist.
+    human_decision_request: Dict[str, Any] = field(default_factory=dict)
+    # Human approval token (audit trail) when user approves continuation or requests revision.
+    human_decision_token: Dict[str, Any] = field(default_factory=dict)
+    # ISO8601 timestamp when the decision was resolved (if any).
+    human_decision_resolved_at: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -1210,6 +1486,10 @@ class ResistanceState:
     # Total resistance
     total_resistance_kn: Optional[float] = None
 
+    # Power (from resistance model at the evaluated speed)
+    effective_power_kw: Optional[float] = None
+    effective_power_hp: Optional[float] = None
+
     # Components
     frictional_resistance_kn: Optional[float] = None
     residuary_resistance_kn: Optional[float] = None
@@ -1234,6 +1514,28 @@ class ResistanceState:
     # Reynolds/Froude numbers
     reynolds_number: Optional[float] = None
     froude_number: Optional[float] = None
+
+    # Regime / method validity (P1 backend consistency)
+    regime: Optional[str] = None  # "displacement" | "semi_displacement" | "planing"
+    method_valid: Optional[bool] = None
+    validity_note: Optional[str] = None
+
+    # Planing / multihull details (P2)
+    running_trim_deg: Optional[float] = None
+    wetted_length_m: Optional[float] = None
+    wetted_surface_m2: Optional[float] = None
+    froude_beam: Optional[float] = None
+    lift_coefficient: Optional[float] = None
+    drag_coefficient: Optional[float] = None
+    friction_coefficient: Optional[float] = None
+    pressure_resistance_kn: Optional[float] = None
+    interference_factor: Optional[float] = None
+    interference_note: Optional[str] = None
+
+    # Continuous blending / traceability (Phase 2.5 scaffolding)
+    method_components: Optional[Dict[str, Any]] = None
+    uncertainty_fraction: Optional[float] = None
+    uncertainty_kn: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

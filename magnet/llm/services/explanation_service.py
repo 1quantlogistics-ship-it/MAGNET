@@ -317,7 +317,7 @@ class ExplanationService:
             })
 
         # Check for incomplete phases
-        all_phases = ["mission", "hull_form", "arrangement", "stability", "compliance"]
+        all_phases = ["mission", "hull", "arrangement", "stability", "compliance"]
         incomplete = [p for p in all_phases if p not in completed_phases]
         if incomplete:
             next_phase = incomplete[0]

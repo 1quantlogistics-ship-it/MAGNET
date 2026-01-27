@@ -43,20 +43,6 @@ All hull geometry uses the following coordinate system:
           - No geometry at y = 0 (gap between hulls)
 """
 
-# Section 16: Enumerations
-from .enums import (
-    HullType,
-    ChineType,
-    StemProfile,
-    SternProfile,
-    TransomType,
-    KeelType,
-    SectionShape,
-    FairingQuality,
-    HullRegion,
-    SurfaceType,
-)
-
 # Section 16: Parameters
 from .parameters import (
     MainDimensions,
@@ -66,8 +52,7 @@ from .parameters import (
     HullDefinition,
 )
 
-# Section 16: Library & Scaler
-from .library import ParentHullLibrary
+# Section 16: Scaler
 from .scaler import HullScaler
 
 # Section 17: Geometry
@@ -85,25 +70,12 @@ from .nurbs import NURBSCurve, NURBSSurface
 
 
 __all__ = [
-    # Enums (Section 16)
-    "HullType",
-    "ChineType",
-    "StemProfile",
-    "SternProfile",
-    "TransomType",
-    "KeelType",
-    "SectionShape",
-    "FairingQuality",
-    "HullRegion",
-    "SurfaceType",
     # Parameters (Section 16)
     "MainDimensions",
     "FormCoefficients",
     "DeadriseProfile",
     "HullFeatures",
     "HullDefinition",
-    # Library (Section 16)
-    "ParentHullLibrary",
     "HullScaler",
     # Geometry (Section 17)
     "Point3D",

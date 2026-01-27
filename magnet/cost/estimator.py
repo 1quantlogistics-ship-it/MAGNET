@@ -117,13 +117,42 @@ class CostEstimator:
         breakdown = CostBreakdown(category=CostCategory.ENGINEERING)
 
         lwl = state.get("hull.lwl", 0)
-        vessel_type = state.get("mission.vessel_type", "commercial")
+        # TASK-018: Organizational intent is the ONLY categorical branch.
+        # Prefer explicit mission.organization; fall back ONLY if vessel_type is explicitly military.
+        organization = (state.get("mission.organization") or "").strip().lower()
+        vessel_type = (state.get("mission.vessel_type") or "").strip().lower()
+        if not organization and vessel_type in ("military", "naval"):
+            organization = "military"
 
         # Base engineering hours
         base_hours = 200 + lwl * 15  # Base + scaling
 
-        if vessel_type in ["military", "naval", "patrol"]:
-            base_hours *= 1.5  # More engineering for military
+        # Complexity scaling from geometry + configuration (continuous).
+        body_count = state.get("hull.body_count") or state.get("hull.num_hulls") or 1
+        try:
+            body_count = int(body_count)
+        except Exception:
+            body_count = 1
+        body_count = max(1, body_count)
+
+        compartment_count = state.get("interior.compartment_count") or 0
+        try:
+            compartment_count = int(compartment_count)
+        except Exception:
+            compartment_count = 0
+        compartment_count = max(0, compartment_count)
+
+        weld_length_m = state.get("production.weld_length_m")
+        if weld_length_m is None:
+            # Deterministic proxy if not provided (NOT geometric form branching).
+            # Scales with size + body_count only.
+            weld_length_m = max(0.0, float(lwl) * 4.0 * float(body_count))
+
+        complexity = (1.0 + 0.1 * body_count) * (1.0 + 0.05 * compartment_count) * (1.0 + 0.0005 * float(weld_length_m))
+        base_hours *= complexity
+
+        if organization == "military":
+            base_hours *= 1.5  # More engineering for military org intent
 
         rate = 125.0  # Engineering rate
 

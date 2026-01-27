@@ -9,9 +9,16 @@ Module 15 v1.1 - Integration Kernel data structures.
 from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 
 from .enums import PhaseStatus, GateCondition, SessionStatus
+
+# =============================================================================
+# Geometry Truthfulness Schema Extensions (Engineering Truth)
+# =============================================================================
+# These are shared schema literals used across kernel + webgl layers.
+SurfaceDefinition = Literal["smooth", "panelized"]
+SimulationIntegrity = Literal["AUTHORITATIVE", "APPROXIMATE", "DECOUPLED"]
 
 
 @dataclass

@@ -119,6 +119,79 @@ class Proposal:
 
 
 @dataclass
+class GeometryProposal(Proposal):
+    """
+    Proposal containing geometry DSL program.
+    
+    Extends Proposal to support the NEW geometry primitives path.
+    The program_text is pure DSL — no hull types, no enumeration.
+    
+    This enables the design spiral:
+    - Agent proposes geometry primitives
+    - Kernel compiles and validates
+    - Feedback drives iteration
+    
+    Reference: MAGNET_Merge_Implementation_Plan.md Phase 1
+    """
+
+    program_text: str = ""
+    """The geometry DSL program text."""
+
+    parsed_ast: Optional[List[Any]] = None
+    """Cached parsed AST (optional, for debugging)."""
+
+    def __post_init__(self):
+        # Set default phase if not specified
+        if not self.phase:
+            self.phase = "hull"
+        if not self.agent_id:
+            self.agent_id = "geometry_proposer"
+
+    def to_dict(self) -> Dict[str, Any]:
+        base = super().to_dict()
+        base["program_text"] = self.program_text
+        base["has_ast"] = self.parsed_ast is not None
+        base["proposal_type"] = "geometry"
+        return base
+
+    @classmethod
+    def from_program(
+        cls,
+        program_text: str,
+        agent_id: str = "geometry_proposer",
+        reasoning: str = "",
+        confidence: float = 0.8,
+    ) -> "GeometryProposal":
+        """Create GeometryProposal from DSL program text."""
+        return cls(
+            agent_id=agent_id,
+            phase="hull",
+            program_text=program_text,
+            reasoning=reasoning,
+            confidence=confidence,
+            changes=[],  # Changes are in the DSL, not parameter changes
+        )
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "GeometryProposal":
+        """Create from dict, handling both Proposal and GeometryProposal fields."""
+        changes = [ParameterChange.from_dict(c) for c in data.get("changes", [])]
+        status = ProposalStatus(data.get("status", "pending"))
+        return cls(
+            proposal_id=data.get("proposal_id", ""),
+            agent_id=data.get("agent_id", "geometry_proposer"),
+            phase=data.get("phase", "hull"),
+            iteration=data.get("iteration", 1),
+            changes=changes,
+            status=status,
+            reasoning=data.get("reasoning", ""),
+            confidence=data.get("confidence", 0.8),
+            parent_id=data.get("parent_id"),
+            program_text=data.get("program_text", ""),
+        )
+
+
+@dataclass
 class ValidationFinding:
     """Single finding from validation."""
 

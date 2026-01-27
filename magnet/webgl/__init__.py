@@ -22,6 +22,10 @@ from .annotations import (
     AnnotationStore,
     get_annotation_store,
 )
+from .geometry_adapter import (
+    hull_geometry_to_webgl,
+    GeometryAdapter,
+)
 
 __all__ = [
     # WebSocket streaming
@@ -35,4 +39,7 @@ __all__ = [
     "AnnotationCategory",
     "AnnotationStore",
     "get_annotation_store",
+    # Geometry adapter (Issue 1.1)
+    "hull_geometry_to_webgl",
+    "GeometryAdapter",
 ]

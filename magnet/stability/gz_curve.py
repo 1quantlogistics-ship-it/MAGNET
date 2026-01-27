@@ -7,10 +7,15 @@ Generates righting arm (GZ) curves for stability assessment.
 
 v1.1 FIX #2: GZ areas use explicit m-rad units.
 
-Implements wall-sided formula:
+Implements wall-sided formula (approximation; temporary lie):
 GZ = GM·sin(φ) + (BM/2)·tan²(φ)·sin(φ)
 
 Valid for heel angles up to ~40° for conventional hulls.
+
+Temporary lie (TASK-019):
+- This wall-sided approximation is NOT the final truth.
+- Cross-curve integration from the actual mesh is scheduled; until then,
+  results must carry a stability confidence that degrades with heel.
 """
 
 from __future__ import annotations
@@ -43,11 +48,13 @@ class GZPoint:
     """Single point on the GZ curve."""
     heel_deg: float
     gz_m: float
+    stability_confidence: float = 1.0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "heel_deg": round(self.heel_deg, 1),
             "gz_m": round(self.gz_m, 4),
+            "stability_confidence": round(self.stability_confidence, 3),
         }
 
 
@@ -150,6 +157,22 @@ class GZCurveCalculator:
     Accuracy: ±5% up to 40°, degrades at higher angles
     """
 
+    def _stability_confidence_for_heel(self, heel_deg: float, downflooding_angle_deg: float) -> float:
+        """
+        TASK-019: Confidence degrades with heel angle.
+
+        - 1.0 confidence up to 40°
+        - Linearly degrades toward 0.2 by downflooding angle
+        """
+        if heel_deg <= 40.0:
+            return 1.0
+        if downflooding_angle_deg <= 40.0:
+            return 0.2
+        if heel_deg >= downflooding_angle_deg:
+            return 0.2
+        t = (heel_deg - 40.0) / (downflooding_angle_deg - 40.0)
+        return max(0.2, 1.0 - 0.8 * t)
+
     def calculate(
         self,
         gm_m: float,
@@ -202,7 +225,8 @@ class GZCurveCalculator:
         heel_deg = 0.0
         while heel_deg <= max_heel_deg:
             gz = self._calculate_gz_wall_sided(gm_m, bm_m, heel_deg)
-            curve.append(GZPoint(heel_deg=heel_deg, gz_m=gz))
+            confidence = self._stability_confidence_for_heel(heel_deg, downflooding_angle)
+            curve.append(GZPoint(heel_deg=heel_deg, gz_m=gz, stability_confidence=confidence))
             heel_deg += heel_step_deg
 
         # Find key values
@@ -260,6 +284,15 @@ class GZCurveCalculator:
             calculation_time_ms=elapsed_ms,
             warnings=warnings,
         )
+
+    def _calculate_gz_from_mesh(self, *args: Any, **kwargs: Any) -> float:
+        """
+        TASK-019: Stub for future truth.
+
+        Intended future path: integrate cross-curves from watertight mesh at heel.
+        This method is intentionally unimplemented to prevent silent fallback.
+        """
+        raise NotImplementedError("Mesh-derived GZ not implemented yet (cross-curve integration scheduled).")
 
     def _calculate_gz_wall_sided(
         self,

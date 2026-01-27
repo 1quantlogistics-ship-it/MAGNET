@@ -34,7 +34,8 @@ class TestStateManagerPathAccess:
     def test_get_simple_path(self):
         """Test getting value at simple path."""
         manager = StateManager()
-        manager.state.design_name = "Test"
+        with manager.state.mutator_context():
+            manager.state.design_name = "Test"
         assert manager.get("design_name") == "Test"
 
     def test_get_nested_path(self):
@@ -52,7 +53,9 @@ class TestStateManagerPathAccess:
     def test_set_nested_path(self):
         """Test setting value at nested path."""
         manager = StateManager()
+        manager.begin_transaction()
         success = manager.set("mission.vessel_type", "ferry", source="test")
+        manager.commit()
         assert success
         assert manager.state.mission.vessel_type == "ferry"
 
@@ -64,11 +67,38 @@ class TestStateManagerPathAccess:
         manager.commit()
         assert manager.get("hull.loa") == 25.0
 
+    def test_set_new_hull_form_parameters(self):
+        """New hull-form engineering inputs are valid paths and persist in HullState."""
+        manager = StateManager()
+        manager.begin_transaction()
+        manager.set("hull.lcb_fraction", 0.54, source="test")
+        manager.set("hull.transom_beam_ratio", 0.9, source="test")
+        manager.set("hull.bow_entrance_deg", 15.0, source="test")
+        manager.set("hull.freeboard_m", 2.0, source="test")
+        manager.set("hull.draft_fwd_m", 1.8, source="test")
+        manager.set("hull.draft_aft_m", 2.2, source="test")
+        manager.set("hull.bow_flare_deg", 20.0, source="test")
+        manager.set("hull.stem_rake_deg", 12.0, source="test")
+        manager.set("hull.deadrise_transom_deg", 8.0, source="test")
+        manager.commit()
+
+        assert manager.get("hull.lcb_fraction") == 0.54
+        assert manager.get("hull.transom_beam_ratio") == 0.9
+        assert manager.get("hull.bow_entrance_deg") == 15.0
+        assert manager.get("hull.freeboard_m") == 2.0
+        assert manager.get("hull.draft_fwd_m") == 1.8
+        assert manager.get("hull.draft_aft_m") == 2.2
+        assert manager.get("hull.bow_flare_deg") == 20.0
+        assert manager.get("hull.stem_rake_deg") == 12.0
+        assert manager.get("hull.deadrise_transom_deg") == 8.0
+
     def test_set_records_history(self):
         """Test that set records history."""
         manager = StateManager()
         initial_history_len = len(manager.state.history)
+        manager.begin_transaction()
         manager.set("mission.vessel_type", "patrol", source="test")
+        manager.commit()
         assert len(manager.state.history) > initial_history_len
 
 
@@ -115,7 +145,9 @@ class TestStateManagerTransactions:
     def test_rollback_transaction(self):
         """Test rolling back a transaction."""
         manager = StateManager()
+        manager.begin_transaction()
         manager.set("mission.vessel_type", "original", source="test")
+        manager.commit()
 
         txn_id = manager.begin_transaction()
         manager.set("mission.vessel_type", "changed", source="test")
@@ -140,7 +172,8 @@ class TestStateManagerSerialization:
     def test_to_dict(self):
         """Test exporting to dictionary."""
         manager = StateManager()
-        manager.state.design_name = "Test"
+        with manager.state.mutator_context():
+            manager.state.design_name = "Test"
         data = manager.to_dict()
         assert isinstance(data, dict)
         assert data["design_name"] == "Test"
@@ -160,7 +193,8 @@ class TestStateManagerFileIO:
     def test_save_and_load_file(self):
         """Test saving and loading from file."""
         manager = StateManager()
-        manager.state.design_name = "File Test"
+        with manager.state.mutator_context():
+            manager.state.design_name = "File Test"
         manager.state.mission.vessel_type = "patrol"
         manager.state.hull.loa = 25.0
 
@@ -248,7 +282,8 @@ class TestStateManagerUtilities:
     def test_get_design_name(self):
         """Test getting design name."""
         manager = StateManager()
-        manager.state.design_name = "Test Name"
+        with manager.state.mutator_context():
+            manager.state.design_name = "Test Name"
         assert manager.get_design_name() == "Test Name"
 
     def test_set_design_name(self):
@@ -260,7 +295,8 @@ class TestStateManagerUtilities:
     def test_summary(self):
         """Test summary output."""
         manager = StateManager()
-        manager.state.design_name = "Summary Test"
+        with manager.state.mutator_context():
+            manager.state.design_name = "Summary Test"
         summary = manager.summary()
         assert isinstance(summary, str)
         assert "Summary Test" in summary

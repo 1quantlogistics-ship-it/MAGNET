@@ -20,6 +20,7 @@ from .taxonomy import (
     ValidatorDefinition,
     ValidatorState,
     ValidatorPriority,
+    GateRequirement,
 )
 from .builtin import get_all_validators, get_producer_for_parameter
 
@@ -352,10 +353,24 @@ class ValidatorTopology:
         ]
 
     def get_gate_validators_for_phase(self, phase: str) -> List[str]:
-        """Get gate validator IDs for a specific phase."""
+        """Get gate-condition validator IDs for a specific phase."""
         return [
             v_id for v_id, node in self._nodes.items()
-            if node.validator.phase == phase and node.validator.is_gate_condition
+            if (
+                node.validator.phase == phase
+                and node.validator.is_gate_condition
+            )
+        ]
+
+    def get_required_gate_validators_for_phase(self, phase: str) -> List[str]:
+        """Get REQUIRED-only gate validator IDs for a specific phase."""
+        return [
+            v_id for v_id, node in self._nodes.items()
+            if (
+                node.validator.phase == phase
+                and node.validator.is_gate_condition
+                and node.validator.gate_requirement == GateRequirement.REQUIRED
+            )
         ]
 
     def get_execution_groups(self) -> List[ExecutionGroup]:

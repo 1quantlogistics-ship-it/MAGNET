@@ -3,11 +3,15 @@ reporting/generators/design_summary.py - Design summary report generator.
 
 ALPHA OWNS THIS FILE.
 
-Module 14 v1.1 - Design summary report.
+Module 14 v1.2 - Design summary report.
+
+v1.2 CHANGES:
+- TASK-000c: Unified physical ownership — displacement from hull.displacement_mt only
+  (geometry_hydrostatics.py is the sole authority for buoyancy-derived values)
 
 v1.1 PATCHES:
 - P1: hull.lcb_percent_lwl (not hull.lcb_percent)
-- P3: Displacement path fallback
+- P3: Displacement path fallback (REMOVED in v1.2)
 """
 
 from __future__ import annotations
@@ -54,10 +58,9 @@ class DesignSummaryGenerator(BaseReportGenerator):
         beam = state.get("hull.beam", 0)
         max_speed = state.get("mission.max_speed_kts", 0)
 
-        # P3 FIX: Get displacement from multiple sources
-        displacement = state.get("weight.displacement_mt")
-        if displacement is None or displacement == 0:
-            displacement = state.get("hull.displacement_mt", 0)
+        # TASK-000c: Unified physical ownership — hull.displacement_mt is authoritative
+        # (geometry_hydrostatics.py is the sole source of truth for buoyancy values)
+        displacement = state.get("hull.displacement_mt", 0)
 
         return (
             f"This report summarizes the design characteristics of the "
@@ -75,10 +78,8 @@ class DesignSummaryGenerator(BaseReportGenerator):
             title="Principal Characteristics",
         )
 
-        # P3 FIX: Get displacement from multiple sources
-        displacement = state.get("weight.displacement_mt")
-        if displacement is None or displacement == 0:
-            displacement = state.get("hull.displacement_mt", 0)
+        # TASK-000c: Unified physical ownership — hull.displacement_mt is authoritative
+        displacement = state.get("hull.displacement_mt", 0)
 
         # Main characteristics table
         chars_table = ReportTable(

@@ -78,7 +78,7 @@ class TestPhaseDefinition:
             phase_type=PhaseType.ANALYSIS,
             order=2,
             depends_on=["mission"],
-            validators=["hull/form"],
+            validators=["physics/hydrostatics"],
             state_namespace="hull",
         )
         data = phase.to_dict()
@@ -88,7 +88,7 @@ class TestPhaseDefinition:
         assert data["phase_type"] == "analysis"
         assert data["order"] == 2
         assert data["depends_on"] == ["mission"]
-        assert data["validators"] == ["hull/form"]
+        assert data["validators"] == ["physics/hydrostatics"]
         assert data["state_namespace"] == "hull"
         assert data["is_gate"] == False
 

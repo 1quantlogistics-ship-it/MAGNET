@@ -2,9 +2,10 @@
  * MAGNET App - Main Application Component
  *
  * Composes the VisionOS-style UI components into the main ship design interface.
+ * Wired to Control Plane v1.1 via useChat hook.
  */
 
-import React, { useState } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { FloatingMicroWindow } from './components/core/FloatingMicroWindow';
 import { OrbPresence } from './components/core/OrbPresence';
 import { PillButton } from './components/core/PillButton';
@@ -13,7 +14,9 @@ import { ChatBubble } from './components/chat/ChatBubble';
 import { ChatInput } from './components/chat/ChatInput';
 import { PhaseProgress } from './components/prs/PhaseProgress';
 import { SpatialOcclusionProvider } from './contexts/SpatialOcclusionContext';
-import type { ChatMessage } from './types/chat';
+import { useChat } from './hooks/useChat';
+import { usePRSStore, setDesignId } from './stores/domain/prsStore';
+import { useChatStore } from './stores/domain/chatStore';
 
 // Inline styles for the app shell
 const appStyles: React.CSSProperties = {
@@ -79,44 +82,59 @@ const chatHeaderStyles: React.CSSProperties = {
 };
 
 export default function App() {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: '1',
+  // Design state from PRS store
+  const designId = usePRSStore((s) => s.designId);
+
+  // Chat state from useChat hook (wired to real backend)
+  const { messages, isStreaming, sendMessage } = useChat();
+
+  // Add welcome message on first render if no messages
+  const addMessage = useChatStore((s) => s.addMessage);
+  useEffect(() => {
+    if (messages.length === 0) {
+      addMessage({
+        id: 'welcome',
       role: 'assistant',
       content: 'Welcome to MAGNET. I\'m your AI design assistant. Describe the vessel you\'d like to design, and I\'ll guide you through the process.',
       timestamp: Date.now(),
       status: 'sent',
-    },
-  ]);
-  const [isTyping, setIsTyping] = useState(false);
+      });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleSendMessage = (content: string) => {
-    if (!content.trim()) return;
-
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: content.trim(),
+  // Handle new design creation
+  const handleNewDesign = useCallback(() => {
+    // Generate a new design ID
+    const newId = `MAGNET-${new Date().getFullYear()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    setDesignId(newId);
+    addMessage({
+      id: `design-created-${Date.now()}`,
+      role: 'assistant',
+      content: `New design created: **${newId}**\n\nDescribe your vessel requirements, or ask me anything about ship design.`,
       timestamp: Date.now(),
       status: 'sent',
-    };
+    });
+  }, [addMessage]);
 
-    setMessages((prev) => [...prev, userMessage]);
-    setIsTyping(true);
+  // Handle message submission
+  const handleSendMessage = useCallback((content: string) => {
+    if (!content.trim()) return;
 
-    // Simulate AI response
-    setTimeout(() => {
-      setIsTyping(false);
-      const assistantMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
+    if (!designId) {
+      // No design selected - prompt user
+      addMessage({
+        id: `no-design-${Date.now()}`,
         role: 'assistant',
-        content: 'I understand your requirements. Let me analyze the mission profile and propose an initial hull form...',
+        content: 'Please click **New Design** first to start a design session.',
         timestamp: Date.now(),
         status: 'sent',
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-    }, 1500);
-  };
+      });
+      return;
+    }
+
+    // Send to real backend via useChat
+    sendMessage(designId, content.trim());
+  }, [designId, sendMessage, addMessage]);
 
   return (
     <SpatialOcclusionProvider>
@@ -142,10 +160,10 @@ export default function App() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <PillButton variant="secondary" size="small">
+            <PillButton variant="secondary" size="small" onClick={handleNewDesign}>
               New Design
             </PillButton>
-            <PillButton variant="primary" size="small">
+            <PillButton variant="primary" size="small" disabled={!designId}>
               Run Analysis
             </PillButton>
           </div>
@@ -164,7 +182,7 @@ export default function App() {
           >
             <div style={canvasContainerStyles}>
               <div style={{ textAlign: 'center' }}>
-                <AIPresenceOrb isStreaming={isTyping} size="lg" />
+                <AIPresenceOrb isStreaming={isStreaming} size="lg" />
                 <p style={{ color: 'rgba(255,255,255,0.6)', marginTop: '24px', fontSize: '14px' }}>
                   3D Hull Visualization
                 </p>
@@ -204,13 +222,18 @@ export default function App() {
             >
               {/* Simple chat header */}
               <div style={chatHeaderStyles}>
-                <OrbPresence state={isTyping ? 'thinking' : 'idle'} size={20} />
+                <OrbPresence state={isStreaming ? 'thinking' : 'idle'} size={20} />
                 <span style={{ color: '#fff', fontSize: '13px', fontWeight: 500 }}>
                   Design Assistant
                 </span>
-                {isTyping && (
-                  <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px', marginLeft: 'auto' }}>
-                    typing...
+                {designId && (
+                  <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '10px', marginLeft: 'auto' }}>
+                    {designId}
+                  </span>
+                )}
+                {isStreaming && (
+                  <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px', marginLeft: designId ? '8px' : 'auto' }}>
+                    thinking...
                   </span>
                 )}
               </div>
@@ -228,8 +251,8 @@ export default function App() {
               <div style={{ padding: '12px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
                 <ChatInput
                   onSubmit={handleSendMessage}
-                  placeholder="Describe your vessel requirements..."
-                  disabled={isTyping}
+                  placeholder={designId ? "Ask about your design..." : "Click 'New Design' to start..."}
+                  disabled={isStreaming}
                 />
               </div>
             </FloatingMicroWindow>

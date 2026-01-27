@@ -70,12 +70,12 @@ class TestPhysicsPipeline:
         resist_result = resist_validator.validate(state_manager, {})
 
         assert resist_result.passed
-        assert "resistance.total_kn" in state_manager._values
+        assert "resistance.total_resistance_kn" in state_manager._values
         assert "resistance.effective_power_kw" in state_manager._values
 
         # Verify physics consistency
         displacement_mt = state_manager._values["hull.displacement_mt"]
-        total_resistance = state_manager._values["resistance.total_kn"]
+        total_resistance = state_manager._values["resistance.total_resistance_kn"]
         effective_power = state_manager._values["resistance.effective_power_kw"]
 
         assert displacement_mt > 500  # Should be around 700t
@@ -159,12 +159,15 @@ class TestPhysicsPipeline:
 
         # Check resistance outputs
         resist_outputs = [
-            "resistance.total_kn",
-            "resistance.frictional_kn",
-            "resistance.residuary_kn",
+            "resistance.total_resistance_kn",
+            "resistance.frictional_resistance_kn",
+            "resistance.residuary_resistance_kn",
             "resistance.effective_power_kw",
             "resistance.froude_number",
             "resistance.reynolds_number",
+            "resistance.regime",
+            "resistance.method_valid",
+            "resistance.validity_note",
         ]
         for key in resist_outputs:
             assert key in state_manager._values, f"Missing resist output: {key}"
@@ -210,7 +213,7 @@ class TestPhysicsPipeline:
 
         # Verify physical relationships
         # Power should be proportional to resistance * speed
-        total_resistance_n = state_manager._values["resistance.total_kn"] * 1000
+        total_resistance_n = state_manager._values["resistance.total_resistance_kn"] * 1000
         speed_ms = 15.0 * 0.514444
         expected_power_kw = total_resistance_n * speed_ms / 1000
 
@@ -239,7 +242,7 @@ class TestPhysicsCalculatorConsistency:
             "hull.depth": 4.0,
             "hull.cb": 0.55,
         })
-        HydrostaticsValidator().validate(state_manager, {})
+        HydrostaticsValidator().validate(state_manager, {"force_parametric_hydrostatics": True})
 
         # Compare results
         assert abs(calc_result.displacement_mt -
@@ -273,12 +276,12 @@ class TestPhysicsCalculatorConsistency:
             "hull.cb": 0.55,
             "mission.max_speed_kts": 15.0,
         })
-        HydrostaticsValidator().validate(state_manager, {})
+        HydrostaticsValidator().validate(state_manager, {"force_parametric_hydrostatics": True})
         ResistanceValidator().validate(state_manager, {})
 
         # Compare results
         assert abs(resist_result.total_kn -
-                  state_manager._values["resistance.total_kn"]) < 0.01
+                  state_manager._values["resistance.total_resistance_kn"]) < 0.01
         assert abs(resist_result.froude_number -
                   state_manager._values["resistance.froude_number"]) < 0.0001
 
@@ -302,7 +305,7 @@ class TestPhysicsEdgeCases:
 
         # Should still produce valid results
         assert state_manager._values["hull.displacement_mt"] > 0
-        assert state_manager._values["resistance.total_kn"] > 0
+        assert state_manager._values["resistance.total_resistance_kn"] > 0
 
     def test_very_large_vessel(self):
         """Test calculations for large vessel."""
