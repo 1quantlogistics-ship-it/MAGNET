@@ -41,7 +41,9 @@ class NewCommand(CLICommand):
 
             state = DesignState()
             if args.name:
-                state.design_name = args.name
+                # DesignState write-path guard: top-level writes require mutator_context.
+                with state.mutator_context():
+                    state.design_name = args.name
 
             ctx.state = StateManager(state)
             ctx.design_id = state.design_id

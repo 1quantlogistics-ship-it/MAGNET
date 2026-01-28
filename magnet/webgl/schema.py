@@ -52,6 +52,35 @@ class GeometryMode(Enum):
     VISUAL_ONLY = "visual_only"
 
 
+class SimulationIntegrity(Enum):
+    """
+    Engineering Truth tri-state.
+
+    AUTHORITATIVE: visual mesh + physics are deterministically coupled and up-to-date
+    APPROXIMATE: explicit approximation (visual-only OR physics out-of-domain/unvalidated)
+    DECOUPLED: visual and physics disagree
+    """
+    AUTHORITATIVE = "AUTHORITATIVE"
+    APPROXIMATE = "APPROXIMATE"
+    DECOUPLED = "DECOUPLED"
+
+
+class SimulationIntegrityReason(Enum):
+    """
+    Stable reason taxonomy for non-AUTHORITATIVE simulation_integrity states.
+
+    NOTE: This is intentionally coarse. It is a truth signal, not a debugging dump.
+    """
+    MISSING_PHYSICS = "missing_physics"
+    STALE_PHYSICS = "stale_physics"
+    MISSING_HYDROSTATICS_FOR_PANELIZED = "missing_hydrostatics_for_panelized"
+    PHYSICS_DOMAIN_VIOLATION = "physics_domain_violation"
+    VOLUME_PARITY_VIOLATION = "volume_parity_violation"
+    MISSING_CONTRACT = "missing_contract"
+    STALE_CONTRACT = "stale_contract"
+    PHASE_FAILED = "phase_failed"
+
+
 class LODLevel(Enum):
     """Level of detail settings."""
     LOW = "low"
@@ -562,8 +591,14 @@ class SceneData:
     # v1.1: Geometry authority (FM1)
     geometry_mode: GeometryMode = GeometryMode.AUTHORITATIVE
 
+    # v1.3: Engineering Truth tri-state (Fix 1)
+    simulation_integrity: SimulationIntegrity = SimulationIntegrity.APPROXIMATE
+
     # Mesh data
     hull: Optional[MeshData] = None
+    # v1.2: Multi-body hull support — multiple disconnected hull meshes.
+    # Backward compatible: `hull` remains the primary mesh for legacy clients.
+    hulls: Optional[List[MeshData]] = None
     deck: Optional[MeshData] = None
     transom: Optional[MeshData] = None
     structure: Optional[StructureSceneData] = None
@@ -582,7 +617,9 @@ class SceneData:
             "design_id": self.design_id,
             "version_id": self.version_id,
             "geometry_mode": self.geometry_mode.value,
+            "simulation_integrity": self.simulation_integrity.value,
             "hull": self.hull.to_dict() if self.hull else None,
+            "hulls": [h.to_dict() for h in self.hulls] if self.hulls else None,
             "deck": self.deck.to_dict() if self.deck else None,
             "transom": self.transom.to_dict() if self.transom else None,
             "structure": self.structure.to_dict() if self.structure else None,
@@ -599,7 +636,9 @@ class SceneData:
             design_id=data.get("design_id", ""),
             version_id=data.get("version_id", ""),
             geometry_mode=GeometryMode(data.get("geometry_mode", "authoritative")),
+            simulation_integrity=SimulationIntegrity(data.get("simulation_integrity", "APPROXIMATE")),
             hull=MeshData.from_dict(data["hull"]) if data.get("hull") else None,
+            hulls=[MeshData.from_dict(m) for m in data.get("hulls", [])] if data.get("hulls") else None,
             deck=MeshData.from_dict(data["deck"]) if data.get("deck") else None,
             transom=MeshData.from_dict(data["transom"]) if data.get("transom") else None,
             structure=StructureSceneData.from_dict(data["structure"]) if data.get("structure") else None,
@@ -617,8 +656,8 @@ def generate_typescript_types() -> str:
     """
     Generate TypeScript interfaces from Python schema.
 
-    Run this after schema changes:
-        python -c "from magnet.webgl.schema import generate_typescript_types; print(generate_typescript_types())" > frontend/types/schema.ts
+    Run this after schema changes (UI v2 only):
+        python -c "from magnet.webgl.schema import generate_typescript_types; print(generate_typescript_types())" > magnet/ui_v2/js/types/schema.ts
     """
     timestamp = datetime.utcnow().isoformat()
 
@@ -635,6 +674,16 @@ export const SCHEMA_VERSION = "{SCHEMA_VERSION}";
 export type CoordinateSystem = "magnet_standard";
 export type Units = "meters" | "millimeters";
 export type GeometryMode = "authoritative" | "visual_only";
+export type SimulationIntegrity = "AUTHORITATIVE" | "APPROXIMATE" | "DECOUPLED";
+export type SimulationIntegrityReason =
+  | "missing_physics"
+  | "stale_physics"
+  | "missing_hydrostatics_for_panelized"
+  | "physics_domain_violation"
+  | "volume_parity_violation"
+  | "missing_contract"
+  | "stale_contract"
+  | "phase_failed";
 export type LODLevel = "low" | "medium" | "high" | "ultra";
 export type MaterialSide = "front" | "back" | "double";
 
@@ -720,6 +769,7 @@ export interface SceneData {{
   design_id: string;
   version_id: string;
   geometry_mode: GeometryMode;
+  simulation_integrity: SimulationIntegrity;
   hull: MeshData | null;
   deck: MeshData | null;
   transom: MeshData | null;

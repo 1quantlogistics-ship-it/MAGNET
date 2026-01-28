@@ -17,6 +17,8 @@ from .schemas import (
 
 if TYPE_CHECKING:
     from magnet.protocol.schemas import ValidationResult
+    from magnet.kernel.enriched_delta import EnrichedDelta, DeltaSummary
+    from magnet.kernel.program_executor import ExecutionResult
 
 
 # v1.1: Parameter name mappings with aliases
@@ -275,3 +277,181 @@ class NarrativeGenerator:
             steps.append("Review changes and proceed to next phase")
 
         return steps
+
+    # =========================================================================
+    # Phase 5: Geometry-Specific Narrative Generation
+    # Reference: MAGNET_Merge_Implementation_Plan.md
+    # =========================================================================
+
+    def generate_geometry_narrative(
+        self,
+        exec_result: Optional["ExecutionResult"] = None,
+        deltas: Optional[List["EnrichedDelta"]] = None,
+        level: ExplanationLevel = ExplanationLevel.STANDARD,
+    ) -> str:
+        """
+        Generate narrative for geometry execution result.
+        
+        This is the NEW PATH feedback generation that works with
+        geometry primitives instead of hull types.
+        
+        Args:
+            exec_result: ExecutionResult from program_executor
+            deltas: List of EnrichedDeltas showing what changed
+            level: Detail level for narrative
+        
+        Returns:
+            Human-readable narrative string
+        """
+        paragraphs = []
+        
+        # Geometry execution summary
+        if exec_result:
+            paragraphs.append(self._format_geometry_execution(exec_result))
+        
+        # Delta summary with directions
+        if deltas:
+            paragraphs.append(self._format_deltas(deltas, level))
+        
+        # Validation summary
+        if exec_result and exec_result.validation:
+            paragraphs.append(self._format_geometry_validation(exec_result.validation))
+        
+        # Recommendations
+        recommendations = self._generate_geometry_recommendations(exec_result, deltas)
+        if recommendations:
+            paragraphs.append("**Recommendations:**\n" + "\n".join(f"- {r}" for r in recommendations))
+        
+        return "\n\n".join(p for p in paragraphs if p)
+
+    def _format_geometry_execution(self, exec_result: "ExecutionResult") -> str:
+        """Format geometry execution summary."""
+        if exec_result.success:
+            action_count = len(exec_result.actions) if exec_result.actions else 0
+            return f"✅ **Geometry compiled successfully** ({action_count} actions executed)"
+        else:
+            errors = exec_result.errors or []
+            error_text = "; ".join(errors[:3])
+            return f"❌ **Geometry compilation failed**: {error_text}"
+
+    def _format_deltas(
+        self,
+        deltas: List["EnrichedDelta"],
+        level: ExplanationLevel,
+    ) -> str:
+        """Format deltas with direction indicators."""
+        if not deltas:
+            return ""
+        
+        # Group by direction
+        improved = [d for d in deltas if d.direction == "improved"]
+        degraded = [d for d in deltas if d.direction == "degraded"]
+        neutral = [d for d in deltas if d.direction == "neutral"]
+        
+        lines = ["**Changes:**"]
+        
+        # Show improved first
+        for delta in improved[:5]:
+            lines.append(f"  ✅ {delta.format_for_display()}")
+        
+        # Then degraded
+        for delta in degraded[:5]:
+            lines.append(f"  ⚠️ {delta.format_for_display()}")
+        
+        # Then neutral (only at detailed level)
+        if level in [ExplanationLevel.DETAILED, ExplanationLevel.EXPERT]:
+            for delta in neutral[:3]:
+                lines.append(f"  ➡️ {delta.format_for_display()}")
+        
+        # Summary line
+        summary_parts = []
+        if improved:
+            summary_parts.append(f"{len(improved)} improved")
+        if degraded:
+            summary_parts.append(f"{len(degraded)} degraded")
+        if neutral and level == ExplanationLevel.EXPERT:
+            summary_parts.append(f"{len(neutral)} unchanged")
+        
+        if summary_parts:
+            lines.append(f"\n*Summary: {', '.join(summary_parts)}*")
+        
+        return "\n".join(lines)
+
+    def _format_geometry_validation(self, validation: Dict[str, Any]) -> str:
+        """Format validation results from geometry execution."""
+        lines = ["**Validation:**"]
+        
+        # Hydrostatics
+        hydro = validation.get("hydrostatics", {})
+        if hydro:
+            gm = hydro.get("gm_m")
+            if gm is not None:
+                status = "✅" if gm >= 0.5 else "⚠️"
+                lines.append(f"  {status} GM: {gm:.2f}m")
+            
+            displacement = hydro.get("displacement_m3")
+            if displacement is not None:
+                lines.append(f"  📊 Displacement: {displacement:.1f}m³")
+        
+        # Resistance
+        resist = validation.get("resistance", {})
+        if resist:
+            resistance = resist.get("resistance_kn")
+            method_valid = resist.get("method_valid", True)
+            validity_note = resist.get("validity_note", "")
+            
+            if resistance is not None:
+                lines.append(f"  🚀 Resistance: {resistance:.1f}kN")
+            
+            # Surface validity warnings when method is not valid
+            if not method_valid and validity_note:
+                lines.append(f"  ⚠️  Resistance validity: {validity_note}")
+        
+        # Constraint violations
+        violations = validation.get("constraint_violations", [])
+        if violations:
+            lines.append(f"  ❌ {len(violations)} constraint violation(s)")
+            for v in violations[:3]:
+                lines.append(f"     - {v.get('path')}: required {v.get('required')}, actual {v.get('actual')}")
+        
+        return "\n".join(lines) if len(lines) > 1 else ""
+
+    def _generate_geometry_recommendations(
+        self,
+        exec_result: Optional["ExecutionResult"],
+        deltas: Optional[List["EnrichedDelta"]],
+    ) -> List[str]:
+        """Generate recommendations based on geometry results."""
+        recommendations = []
+        
+        if exec_result and not exec_result.success:
+            recommendations.append("Fix geometry errors before proceeding")
+            return recommendations
+        
+        if exec_result and exec_result.validation:
+            hydro = exec_result.validation.get("hydrostatics", {})
+            gm = hydro.get("gm_m")
+            
+            if gm is not None and gm < 0.5:
+                recommendations.append(
+                    f"GM ({gm:.2f}m) is below 0.5m — consider increasing beam or lowering VCG"
+                )
+            
+            violations = exec_result.validation.get("constraint_violations", [])
+            if violations:
+                for v in violations[:2]:
+                    path = v.get("path", "unknown")
+                    recommendations.append(f"Address constraint violation: {path}")
+        
+        if deltas:
+            degraded = [d for d in deltas if d.direction == "degraded"]
+            if degraded:
+                worst = max(degraded, key=lambda d: abs(d.percent_change or 0))
+                recommendations.append(
+                    f"Review {worst.display_name} degradation ({worst.percent_change:+.1f}%)"
+                )
+        
+        if not recommendations:
+            recommendations.append("Design looks good — proceed to next iteration or finalize")
+        
+        return recommendations

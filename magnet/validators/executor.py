@@ -500,11 +500,17 @@ class PipelineExecutor:
                 result.input_hash = input_hash
 
                 # FIX #5: If validate() returned a result (not raised),
-                # we do NOT retry regardless of state
+                # we do NOT retry regardless of state.
+                #
+                # IMPORTANT: SKIPPED / NOT_IMPLEMENTED are terminal outcomes too; retrying them
+                # creates spurious ERROR states ("Failed after N attempts: None") and can
+                # incorrectly fail phases (e.g., advisory equilibrium draft).
                 if result.state in (
                     ValidatorState.PASSED,
                     ValidatorState.WARNING,
-                    ValidatorState.FAILED
+                    ValidatorState.FAILED,
+                    ValidatorState.SKIPPED,
+                    ValidatorState.NOT_IMPLEMENTED,
                 ):
                     # Cache successful results
                     if definition.is_cacheable and input_hash and result.passed:

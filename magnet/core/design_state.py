@@ -6,10 +6,12 @@ Implements the DesignStateContract interface.
 """
 
 from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Literal
 from datetime import datetime
 import uuid
 import copy
+import traceback
+from contextlib import contextmanager
 
 from magnet.core.constants import DESIGN_STATE_VERSION
 from magnet.core.dataclasses import (
@@ -40,7 +42,14 @@ from magnet.core.dataclasses import (
     ManeuveringState,
     ElectricalState,
     SafetyState,
+    TurnContract,
 )
+
+# =============================================================================
+# Geometry Truthfulness Schema Extensions (Engineering Truth)
+# =============================================================================
+SurfaceDefinition = Literal["smooth", "panelized"]
+SimulationIntegrity = Literal["AUTHORITATIVE", "APPROXIMATE", "DECOUPLED"]
 
 
 @dataclass
@@ -157,10 +166,29 @@ class DesignState:
     phase_states: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     phase_metadata: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
+    # ==================== Design Language Resources ====================
+    # Persisted store for kernel/stdlib geometry primitives (resources.*).
+    # This enables the declarative geometry language without adding new kernel code
+    # for each novel form: agents write geometry primitives, kernel compiles + validates.
+    resources: Dict[str, Any] = field(default_factory=dict)
+
+    # ==================== Geometry Intent (Truthfulness Pivot) ====================
+    # Engineering Truth: explicit intent must flow through compilation → mesh → physics.
+    # This is intentionally separate from freeform resources to avoid accidental inference.
+    #
+    # Keys (v1.20):
+    # - surface_definition: "smooth" | "panelized"
+    geometry_intent: Dict[str, Any] = field(default_factory=dict)
+
     # ==================== Agent Layer ====================
     agents: Dict[str, Any] = field(default_factory=dict)
     orchestration: Dict[str, Any] = field(default_factory=dict)
     decisions: List[Dict[str, Any]] = field(default_factory=list)
+
+    # ==================== Turn Contract Ledger (Vault) ====================
+    # Append-only ledger of signed TurnContract artifacts.
+    turn_contracts: List[TurnContract] = field(default_factory=list)
+    current_turn_contract_id: Optional[str] = None
 
     # ==================== Metadata ====================
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -172,13 +200,48 @@ class DesignState:
     # ==================== Parameter Locks ====================
     locked_parameters: Set[str] = field(default_factory=set)  # Paths that cannot be modified
 
+    # ==================== Write-Path Enforcement (T1.3 / §0.8.4) ====================
+    # NOTE: This is intentionally lightweight: it prevents direct writes to top-level
+    # DesignState attributes unless a mutator context is active. Nested writes (e.g.
+    # hull.loa) are enforced at the StateManager/path layer.
+    _write_lock: bool = field(default=False, init=False, repr=False)
+    _mutator_context_active: bool = field(default=False, init=False, repr=False)
+
     def __post_init__(self):
         """Initialize design_id and timestamps if not set."""
+        # Allow initialization to populate dataclass fields.
+        object.__setattr__(self, "_write_lock", False)
         if self.design_id is None:
             self.design_id = str(uuid.uuid4())
         if self.created_at is None:
             self.created_at = datetime.utcnow().isoformat()
         self.updated_at = datetime.utcnow().isoformat()
+        # Lock after init; further top-level writes require mutator_context().
+        object.__setattr__(self, "_write_lock", True)
+
+    @contextmanager
+    def mutator_context(self):
+        """Only the canonical write path (DesignMutator/StateManager) may acquire this."""
+        if self._mutator_context_active:
+            raise RuntimeError("Nested mutator context is not allowed")
+        object.__setattr__(self, "_mutator_context_active", True)
+        object.__setattr__(self, "_write_lock", False)
+        try:
+            yield
+        finally:
+            object.__setattr__(self, "_write_lock", True)
+            object.__setattr__(self, "_mutator_context_active", False)
+
+    def __setattr__(self, name, value):
+        if str(name).startswith("_"):
+            object.__setattr__(self, name, value)
+            return
+        if getattr(self, "_write_lock", False):
+            raise RuntimeError(
+                f"Direct write to DesignState.{name} outside mutator context.\n"
+                f"Call stack:\n{''.join(traceback.format_stack(limit=25))}"
+            )
+        object.__setattr__(self, name, value)
 
     # ==================== Section Names ====================
 
@@ -229,10 +292,17 @@ class DesignState:
             # Phase integration
             "phase_states": self.phase_states,
             "phase_metadata": self.phase_metadata,
+            # Design language resources (geometry primitives)
+            "resources": self.resources,
+            # Geometry intent (truthfulness)
+            "geometry_intent": self.geometry_intent,
             # Agent layer
             "agents": self.agents,
             "orchestration": self.orchestration,
             "decisions": self.decisions,
+            # Turn contract ledger
+            "turn_contracts": [c.to_dict() if hasattr(c, "to_dict") else c for c in (self.turn_contracts or [])],
+            "current_turn_contract_id": self.current_turn_contract_id,
             # Metadata
             "metadata": self.metadata,
             "history": self.history,
@@ -291,8 +361,19 @@ class DesignState:
             if key in data:
                 kwargs[key] = data[key]
 
-        # Extract phase/agent fields
-        for key in ["phase_states", "phase_metadata", "agents", "orchestration", "decisions", "metadata", "history"]:
+        # Extract phase/agent/resource fields
+        for key in [
+            "phase_states",
+            "phase_metadata",
+            "resources",
+            "geometry_intent",
+            "agents",
+            "orchestration",
+            "decisions",
+            "current_turn_contract_id",
+            "metadata",
+            "history",
+        ]:
             if key in data:
                 kwargs[key] = data[key]
 
@@ -304,6 +385,14 @@ class DesignState:
         for section_name, section_class in section_classes.items():
             if section_name in data and data[section_name] is not None:
                 kwargs[section_name] = section_class.from_dict(data[section_name])
+
+        # Deserialize turn contracts
+        try:
+            raw = data.get("turn_contracts", []) or []
+            if isinstance(raw, list):
+                kwargs["turn_contracts"] = [TurnContract.from_dict(x) for x in raw if isinstance(x, dict)]
+        except Exception:
+            pass
 
         return cls(**kwargs)
 
@@ -355,6 +444,15 @@ class DesignState:
             if self.mission.cruise_speed_kts > self.mission.max_speed_kts:
                 errors.append("cruise_speed cannot exceed max_speed")
 
+        # Geometry Truthfulness: validate declared surface intent if present
+        try:
+            sd = (self.geometry_intent or {}).get("surface_definition")
+            if sd is not None and sd not in ("smooth", "panelized"):
+                errors.append("geometry_intent.surface_definition must be 'smooth' or 'panelized'")
+        except Exception:
+            # Never crash validation; treat as invalid only if we can deterministically detect it.
+            pass
+
         # Validate propulsion
         if self.propulsion.num_engines < 0:
             errors.append("num_engines cannot be negative")
@@ -384,7 +482,8 @@ class DesignState:
             if len(parts) == 1:
                 # Top-level attribute
                 if hasattr(self, parts[0]):
-                    setattr(self, parts[0], value)
+                    with self.mutator_context():
+                        setattr(self, parts[0], value)
                     modified_paths.append(path)
             elif len(parts) == 2:
                 # Section.attribute
@@ -418,13 +517,14 @@ class DesignState:
 
         # Record in history
         if modified_paths:
-            self.history.append({
-                "timestamp": datetime.utcnow().isoformat(),
-                "source": source,
-                "action": "patch",
-                "paths_modified": modified_paths,
-            })
-            self.updated_at = datetime.utcnow().isoformat()
+            with self.mutator_context():
+                self.history.append({
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "source": source,
+                    "action": "patch",
+                    "paths_modified": modified_paths,
+                })
+                self.updated_at = datetime.utcnow().isoformat()
 
         return modified_paths
 
@@ -472,8 +572,9 @@ class DesignState:
     def set_section(self, section_name: str, value: Any) -> None:
         """Set a specific section by name."""
         if section_name in self.SECTION_NAMES:
-            setattr(self, section_name, value)
-            self.updated_at = datetime.utcnow().isoformat()
+            with self.mutator_context():
+                setattr(self, section_name, value)
+                self.updated_at = datetime.utcnow().isoformat()
         else:
             raise ValueError(f"Unknown section: {section_name}")
 

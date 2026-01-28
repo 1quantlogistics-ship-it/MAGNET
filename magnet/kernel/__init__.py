@@ -44,19 +44,23 @@ from .validator import (
 # v1.1: Hull Synthesis Engine
 from .synthesis import (
     HullSynthesizer,
-    SynthesisRequest,
     SynthesisProposal,
     SynthesisResult,
     ConvergenceCriteria,
     TerminationReason,
+    GeometrySynthesisRequest,
+    harmonize_sections_global,
 )
 from .synthesis_lock import SynthesisLock, SynthesisLockError
-from .synthesis_fallback import (
-    FallbackProposal,
-    FallbackMode,
-    create_fallback_proposal,
+
+# TASK-002: Import geometry-based analysis (PREFERRED)
+from .analysis import (
+    calculate_froude_geometry,
+    classify_regime_geometry,
+    recommend_regime_defaults,
 )
-from .priors.hull_families import HullFamily, get_family_prior
+
+# Legacy family/type synthesis is removed in Phase 3.
 
 
 __all__ = [
@@ -84,16 +88,16 @@ __all__ = [
     "register_kernel_validators",
     # Synthesis (v1.1)
     "HullSynthesizer",
-    "SynthesisRequest",
+    "GeometrySynthesisRequest",  # PREFERRED (TASK-002)
     "SynthesisProposal",
     "SynthesisResult",
     "ConvergenceCriteria",
     "TerminationReason",
+    "harmonize_sections_global",
     "SynthesisLock",
     "SynthesisLockError",
-    "FallbackProposal",
-    "FallbackMode",
-    "create_fallback_proposal",
-    "HullFamily",
-    "get_family_prior",
+    # Analysis (TASK-002)
+    "calculate_froude_geometry",
+    "classify_regime_geometry",
+    "recommend_regime_defaults",
 ]

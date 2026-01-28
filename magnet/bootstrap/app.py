@@ -528,11 +528,21 @@ class MAGNETApp:
 
             app = create_fastapi_app(self._context)
 
+            # NOTE: When passing an app object directly, uvicorn cannot use multiple
+            # workers (or reload) unless the app is provided as an import string.
+            # For demo operations, fail safe by forcing a single worker.
+            workers = self.config.api.workers
+            if workers and workers != 1:
+                logger.warning(
+                    f"Configured workers={workers} not supported for object app; forcing workers=1"
+                )
+                workers = 1
+
             uvicorn.run(
                 app,
                 host=self.config.api.host,
                 port=self.config.api.port,
-                workers=self.config.api.workers,
+                workers=workers,
             )
         except ImportError as e:
             logger.error(f"API module not available: {e}")
@@ -566,3 +576,47 @@ class MAGNETApp:
 def create_app(config_file: str = None) -> MAGNETApp:
     """Create and configure MAGNET application."""
     return MAGNETApp(config_file).build()
+
+
+# -----------------------------------------------------------------------------
+# Module entrypoint
+# -----------------------------------------------------------------------------
+#
+# FIX_PLAN.md expects:
+#   python3 -m magnet.bootstrap.app --api
+#
+# Historically, bootstrap entrypoints lived in `magnet.bootstrap.entrypoints`.
+# This block preserves that entrypoint UX for demo ops and CI scripts.
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="MAGNET bootstrap entrypoint")
+    parser.add_argument(
+        "--api",
+        action="store_true",
+        help="Start the FastAPI server (bootstrapped DI)",
+    )
+    parser.add_argument(
+        "-c",
+        "--config",
+        default=None,
+        help="Path to configuration file",
+    )
+    parser.add_argument("--host", default=None, help="API host override")
+    parser.add_argument("--port", type=int, default=None, help="API port override")
+    parser.add_argument("--workers", type=int, default=None, help="Uvicorn workers override")
+    args = parser.parse_args()
+
+    app = MAGNETApp(args.config).build()
+    if args.host:
+        app.config.api.host = args.host
+    if args.port:
+        app.config.api.port = args.port
+    if args.workers:
+        app.config.api.workers = args.workers
+
+    if args.api:
+        app.run_api()
+    else:
+        # Default to interactive CLI if no flag given (backwards compatible).
+        raise SystemExit(app.run_cli())

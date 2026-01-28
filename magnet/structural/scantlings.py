@@ -390,10 +390,23 @@ class ScantlingCalculator:
         # Calculate pressure
         p_slam = 0.35 * v ** 2 * pos_factor * deadrise_factor
 
-        # Apply reduction for semi-displacement
-        hull_type = self.state.get("hull.hull_type", "planing")
-        if "displacement" in str(hull_type).lower():
+        # Apply reduction for displacement/semi-displacement regime
+        # This is derived from SPEED (Froude number), not hull_type
+        # Issue 2.3: Derive slamming regime from geometry/physics
+        froude_number = v / ((9.81 * self.lwl) ** 0.5)
+        
+        # NOTE: This is PHYSICS, not design type classification.
+        # Fn < 0.4: Displacement regime (less slamming)
+        # Fn > 0.5: Planing regime (full slamming)
+        # 0.4 <= Fn <= 0.5: Semi-displacement (interpolate)
+        if froude_number < 0.4:
+            # Displacement: reduced slamming
             p_slam *= 0.7
+        elif froude_number < 0.5:
+            # Semi-displacement: interpolate
+            # At Fn=0.4 → 0.7, at Fn=0.5 → 1.0
+            reduction = 0.7 + (froude_number - 0.4) / 0.1 * 0.3
+            p_slam *= reduction
 
         return p_slam
 

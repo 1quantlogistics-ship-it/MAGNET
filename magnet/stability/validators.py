@@ -1,9 +1,15 @@
 """
 MAGNET Stability Validators
 
-Module 06 v1.2 - Production-Ready
+Module 06 v1.3 - Production-Ready
 
 Implements ValidatorInterface for stability calculations.
+
+v1.3 Changes (Silence #1 CUT):
+- REMOVED silent KG estimation (0.55*depth fallback)
+- KG MUST come from stability.kg_m or weight.lightship_vcg_m
+- If KG unavailable, validator FAILS instead of compensating
+- GM < 0 now returns FAILED state (hard gate, not warning)
 
 v1.2 Changes:
 - KG sourcing priority: stability.kg_m then weight.lightship_vcg_m
@@ -60,8 +66,9 @@ class IntactGMValidator(ValidatorInterface):
         stability.kg_m OR weight.lightship_vcg_m
 
     Writes:
-        stability.gm_transverse_m, stability.kg_m, stability.kb_m,
-        stability.bm_m, stability.gm_corrected_m
+        stability.gm_transverse_m (uncorrected), stability.gm_corrected_m (after FSC),
+        stability.gm_m, stability.gm_solid_m, stability.km_m, stability.fsc_m,
+        stability.passes_gm_criterion, stability.kg_m, stability.kb_m, stability.bm_m
     """
 
     def __init__(self, definition: Optional[ValidatorDefinition] = None):
@@ -95,7 +102,8 @@ class IntactGMValidator(ValidatorInterface):
             if bm_m is None:
                 bm_m = state_manager.get("hull.bmt")
 
-            # KG sourcing priority (v1.2)
+            # KG sourcing priority (v1.3 - Silence #1 CUT)
+            # NO MORE SILENT ESTIMATION. KG must come from explicit sources.
             kg_m = None
             kg_source = "unknown"
 
@@ -108,18 +116,8 @@ class IntactGMValidator(ValidatorInterface):
                 kg_m = state_manager.get("weight.lightship_vcg_m")
                 if kg_m is not None and kg_m > 0:
                     kg_source = "weight.lightship_vcg_m"
-                else:
-                    # 3. Estimate from hull depth
-                    depth = state_manager.get("hull.depth")
-                    if depth is not None and depth > 0:
-                        kg_m = 0.55 * depth  # Typical KG ~ 55% of depth
-                        kg_source = "estimated"
-                        findings.append(ValidationFinding(
-                            finding_id=str(uuid.uuid4())[:8],
-                            severity=ResultSeverity.WARNING,
-                            message=f"KG estimated as 55% of depth: {kg_m:.3f}m",
-                            suggestion="Provide stability.kg_m or weight.lightship_vcg_m",
-                        ))
+                # v1.3: REMOVED silent 0.55*depth estimation
+                # If KG is not available, the validator FAILS - no silent compensation
 
             # Validate required inputs
             missing = []
@@ -147,21 +145,57 @@ class IntactGMValidator(ValidatorInterface):
                 return result
 
             # Calculate GM
+            # P1: Apply free-surface correction even without tank geometry (quick-win default).
+            DEFAULT_FSC_M = 0.05
+            fsc_m = state_manager.get("stability.fsc_m")
+            if fsc_m is None:
+                fsc_m = DEFAULT_FSC_M
+
             gm_results = self._calculator.calculate(
                 kb_m=kb_m,
                 bm_m=bm_m,
                 kg_m=kg_m,
-                fsc_m=0.0,  # FSC would require tank data
+                fsc_m=float(fsc_m or 0.0),
                 kg_source=kg_source,
             )
 
             # Write outputs to state
             source = "stability/intact_gm"
-            state_manager.set("stability.gm_transverse_m", gm_results.gm_m, source)
+            # Convention:
+            # - gm_transverse_m: uncorrected ("solid") GM
+            # - gm_corrected_m / gm_m: corrected GM (after FSC)
+            state_manager.set("stability.gm_transverse_m", gm_results.gm_solid_m, source)
             state_manager.set("stability.gm_corrected_m", gm_results.gm_m, source)
+            state_manager.set("stability.gm_m", gm_results.gm_m, source)
+            state_manager.set("stability.gm_solid_m", gm_results.gm_solid_m, source)
             state_manager.set("stability.kg_m", gm_results.kg_m, source)
             state_manager.set("stability.kb_m", gm_results.kb_m, source)
             state_manager.set("stability.bm_m", gm_results.bm_m, source)
+            state_manager.set("stability.km_m", gm_results.km_m, source)
+            state_manager.set("stability.fsc_m", gm_results.fsc_m, source)
+            state_manager.set("stability.has_fsc", gm_results.has_fsc, source)
+            state_manager.set("stability.passes_gm_criterion", gm_results.passes_gm_criterion, source)
+
+            # Phase 4: Honest Output Contract (uncertainty block)
+            try:
+                from magnet.physics.uncertainty import make_uncertainty, novelty_impact_from_state_resources
+
+                used_estimated_kg = (str(kg_source).lower() == "estimated")
+                pct = 15.0 if used_estimated_kg else 7.5
+                state_manager.set(
+                    "stability.uncertainty",
+                    make_uncertainty(
+                        value_pct=float(pct),
+                        basis="Intact GM computed from hydrostatics (KB+BM) and KG (weight/lightship or estimate)",
+                        validity_envelope="Valid for initial stability (small angles). Accuracy depends on hydrostatics fidelity and KG quality.",
+                        novelty_impact=novelty_impact_from_state_resources(state_manager.get("resources", {})),
+                        details={"kg_source": kg_source},
+                    ),
+                    source,
+                )
+            except Exception:
+                # Non-breaking: uncertainty is best-effort only.
+                pass
 
             # Log KG source for traceability
             logger.info(f"GM calculated using KG from {kg_source}: {gm_results.kg_m:.3f}m")
@@ -182,7 +216,7 @@ class IntactGMValidator(ValidatorInterface):
                     finding_id=str(uuid.uuid4())[:8],
                     severity=ResultSeverity.WARNING,
                     message=f"GM ({gm_results.gm_m:.3f}m) below IMO minimum ({IMO_INTACT.gm_min_m}m)",
-                    parameter_path="stability.gm_transverse_m",
+                    parameter_path="stability.gm_corrected_m",
                     actual_value=gm_results.gm_m,
                     expected_value=f">= {IMO_INTACT.gm_min_m}m",
                 ))
@@ -241,9 +275,10 @@ class GZCurveValidator(ValidatorInterface):
         stability.gm_transverse_m, stability.bm_m (or hull.bm_m)
 
     Writes:
-        stability.gz_curve, stability.gz_max_m, stability.angle_of_max_gz_deg,
+        stability.gz_curve, stability.gz_max_m, stability.gz_30_m, stability.angle_gz_max_deg,
         stability.area_0_30_m_rad, stability.area_0_40_m_rad, stability.area_30_40_m_rad,
-        stability.angle_of_vanishing_stability_deg, stability.imo_intact_passed
+        stability.angle_vanishing_deg, stability.range_deg, stability.passes_gz_criteria,
+        (legacy aliases: stability.angle_of_max_gz_deg, stability.angle_of_vanishing_stability_deg, stability.imo_intact_passed)
     """
 
     def __init__(self, definition: Optional[ValidatorDefinition] = None):
@@ -264,9 +299,11 @@ class GZCurveValidator(ValidatorInterface):
 
         try:
             # Read GM
-            gm_m = state_manager.get("stability.gm_transverse_m")
+            gm_m = state_manager.get("stability.gm_corrected_m")
             if gm_m is None:
-                gm_m = state_manager.get("stability.gm_corrected_m")
+                gm_m = state_manager.get("stability.gm_m")
+            if gm_m is None:
+                gm_m = state_manager.get("stability.gm_transverse_m")
 
             # Read BM
             bm_m = state_manager.get("stability.bm_m")
@@ -304,15 +341,39 @@ class GZCurveValidator(ValidatorInterface):
             curve_data = [p.to_dict() for p in gz_results.curve]
             state_manager.set("stability.gz_curve", curve_data, source)
             state_manager.set("stability.gz_max_m", gz_results.gz_max_m, source)
-            state_manager.set("stability.angle_of_max_gz_deg", gz_results.angle_gz_max_deg, source)
+            state_manager.set("stability.gz_30_m", gz_results.gz_30_m, source)
+            state_manager.set("stability.angle_gz_max_deg", gz_results.angle_gz_max_deg, source)
+            state_manager.set("stability.angle_of_max_gz_deg", gz_results.angle_gz_max_deg, source)  # legacy alias
             state_manager.set("stability.area_0_30_m_rad", gz_results.area_0_30_m_rad, source)
             state_manager.set("stability.area_0_40_m_rad", gz_results.area_0_40_m_rad, source)
             state_manager.set("stability.area_30_40_m_rad", gz_results.area_30_40_m_rad, source)
-            state_manager.set("stability.angle_of_vanishing_stability_deg",
-                            gz_results.angle_of_vanishing_stability_deg, source)
-            state_manager.set("stability.dynamic_stability_m_rad",
-                            gz_results.dynamic_stability_m_rad, source)
+            state_manager.set("stability.angle_vanishing_deg", gz_results.angle_of_vanishing_stability_deg, source)
+            state_manager.set("stability.angle_of_vanishing_stability_deg", gz_results.angle_of_vanishing_stability_deg, source)  # legacy alias
+            state_manager.set("stability.range_deg", gz_results.range_of_stability_deg, source)
+            state_manager.set("stability.dynamic_stability_m_rad", gz_results.dynamic_stability_m_rad, source)
+            state_manager.set("stability.passes_gz_criteria", gz_results.passes_all_gz_criteria, source)
+            # Legacy gate/field still used by core phase gates
             state_manager.set("stability.imo_intact_passed", gz_results.passes_all_gz_criteria, source)
+
+            # Phase 4: Honest Output Contract (uncertainty block)
+            try:
+                from magnet.physics.uncertainty import make_uncertainty, novelty_impact_from_state_resources
+
+                confidence = float(getattr(gz_results, "stability_confidence", 1.0) or 1.0)
+                pct = max(10.0, 30.0 * (1.0 - confidence))
+                state_manager.set(
+                    "stability.gz_uncertainty",
+                    make_uncertainty(
+                        value_pct=float(pct),
+                        basis="GZ curve via wall-sided approximation (small/moderate heel validity)",
+                        validity_envelope="Approximate up to ~40° heel for conventional hulls; degrades for complex forms/large heel.",
+                        novelty_impact=novelty_impact_from_state_resources(state_manager.get("resources", {})),
+                        details={"stability_confidence": confidence},
+                    ),
+                    source,
+                )
+            except Exception:
+                pass
 
             # Add warnings from calculator
             state = ValidatorState.PASSED
@@ -382,7 +443,8 @@ class DamageStabilityValidator(ValidatorInterface):
         stability.gm_transverse_m, stability.gz_max_m, hull.displacement_mt
 
     Writes:
-        stability.damage_cases, stability.damage_gm_min_m, stability.imo_damage_passed
+        stability.damage_cases_evaluated, stability.damage_all_pass, stability.damage_worst_case, stability.damage_results
+        (legacy aliases: stability.damage_cases, stability.damage_gm_min_m, stability.damage_range_deg, stability.imo_damage_passed)
     """
 
     def __init__(self, definition: Optional[ValidatorDefinition] = None):
@@ -403,7 +465,11 @@ class DamageStabilityValidator(ValidatorInterface):
 
         try:
             # Read inputs
-            gm_m = state_manager.get("stability.gm_transverse_m")
+            gm_m = state_manager.get("stability.gm_corrected_m")
+            if gm_m is None:
+                gm_m = state_manager.get("stability.gm_m")
+            if gm_m is None:
+                gm_m = state_manager.get("stability.gm_transverse_m")
             gz_max_m = state_manager.get("stability.gz_max_m")
             displacement_mt = state_manager.get("hull.displacement_mt")
 
@@ -443,9 +509,39 @@ class DamageStabilityValidator(ValidatorInterface):
             # Write outputs
             source = "stability/damage"
             case_dicts = [c.to_dict() for c in damage_results.cases]
+            damage_dict = damage_results.to_dict()
+
+            # Canonical outputs (schema/builtin)
+            state_manager.set("stability.damage_cases_evaluated", damage_results.cases_evaluated, source)
+            state_manager.set("stability.damage_all_pass", damage_results.all_cases_pass, source)
+            state_manager.set("stability.damage_worst_case", damage_results.worst_case_id, source)
+            state_manager.set("stability.damage_results", damage_dict, source)
+
+            # Legacy aliases used by older UI/tests
             state_manager.set("stability.damage_cases", case_dicts, source)
             state_manager.set("stability.damage_gm_min_m", damage_results.worst_gm_m, source)
+            state_manager.set("stability.damage_range_deg", damage_results.worst_range_deg, source)
             state_manager.set("stability.imo_damage_passed", damage_results.all_cases_pass, source)
+
+            # Phase 4: Honest Output Contract (uncertainty block)
+            try:
+                from magnet.physics.uncertainty import make_uncertainty, novelty_impact_from_state_resources
+
+                # Damage stability here is simplified lost-buoyancy screening; treat as high uncertainty.
+                pct = 20.0
+                state_manager.set(
+                    "stability.damage_uncertainty",
+                    make_uncertainty(
+                        value_pct=pct,
+                        basis="Damage stability via simplified lost-buoyancy screening cases (heuristic)",
+                        validity_envelope="Screening-level only. Improve with compartment geometry, permeability, floodable length, and regulatory case set.",
+                        novelty_impact=novelty_impact_from_state_resources(state_manager.get("resources", {})),
+                        details={"cases_evaluated": int(damage_results.cases_evaluated or 0)},
+                    ),
+                    source,
+                )
+            except Exception:
+                pass
 
             # Add warnings
             state = ValidatorState.PASSED
@@ -517,7 +613,8 @@ class WeatherCriterionValidator(ValidatorInterface):
         stability.gm_transverse_m, stability.gz_curve, hull dimensions
 
     Writes:
-        stability.steady_wind_heel_deg, weather criterion pass/fail
+        stability.steady_wind_heel_deg, stability.weather_area_a_m_rad, stability.weather_area_b_m_rad,
+        stability.weather_ratio, stability.weather_passes
     """
 
     def __init__(self, definition: Optional[ValidatorDefinition] = None):
@@ -538,7 +635,11 @@ class WeatherCriterionValidator(ValidatorInterface):
 
         try:
             # Read inputs
-            gm_m = state_manager.get("stability.gm_transverse_m")
+            gm_m = state_manager.get("stability.gm_corrected_m")
+            if gm_m is None:
+                gm_m = state_manager.get("stability.gm_m")
+            if gm_m is None:
+                gm_m = state_manager.get("stability.gm_transverse_m")
             bm_m = state_manager.get("stability.bm_m")
             gz_curve_data = state_manager.get("stability.gz_curve")
             displacement_mt = state_manager.get("hull.displacement_mt")
@@ -606,8 +707,10 @@ class WeatherCriterionValidator(ValidatorInterface):
             # Write outputs
             source = "stability/weather_criterion"
             state_manager.set("stability.steady_wind_heel_deg", weather_results.steady_wind_heel_deg, source)
-            state_manager.set("stability.weather_criterion_ratio", weather_results.energy_ratio, source)
-            state_manager.set("stability.weather_criterion_passed", weather_results.passes_criterion, source)
+            state_manager.set("stability.weather_area_a_m_rad", weather_results.heeling_area_a_m_rad, source)
+            state_manager.set("stability.weather_area_b_m_rad", weather_results.righting_area_b_m_rad, source)
+            state_manager.set("stability.weather_ratio", weather_results.energy_ratio, source)
+            state_manager.set("stability.weather_passes", weather_results.passes_criterion, source)
 
             # Add warnings
             state = ValidatorState.PASSED
@@ -686,10 +789,16 @@ def get_intact_gm_definition() -> ValidatorDefinition:
         ],
         produces_parameters=[
             "stability.gm_transverse_m",
+            "stability.gm_m",
+            "stability.gm_solid_m",
             "stability.kg_m",
             "stability.kb_m",
             "stability.bm_m",
             "stability.gm_corrected_m",
+            "stability.km_m",
+            "stability.fsc_m",
+            "stability.has_fsc",
+            "stability.passes_gm_criterion",
         ],
         timeout_seconds=60,
         tags=["stability", "intact", "gm"],
@@ -713,12 +822,17 @@ def get_gz_curve_definition() -> ValidatorDefinition:
         produces_parameters=[
             "stability.gz_curve",
             "stability.gz_max_m",
-            "stability.angle_of_max_gz_deg",
+            "stability.gz_30_m",
+            "stability.angle_gz_max_deg",
+            "stability.angle_of_max_gz_deg",  # legacy alias
             "stability.area_0_30_m_rad",
             "stability.area_0_40_m_rad",
             "stability.area_30_40_m_rad",
-            "stability.angle_of_vanishing_stability_deg",
-            "stability.imo_intact_passed",
+            "stability.angle_vanishing_deg",
+            "stability.angle_of_vanishing_stability_deg",  # legacy alias
+            "stability.range_deg",
+            "stability.passes_gz_criteria",
+            "stability.imo_intact_passed",  # legacy alias used by phase gates
         ],
         timeout_seconds=120,
         resource_requirements=ResourceRequirements(cpu_cores=2, ram_gb=1.5),
@@ -742,8 +856,14 @@ def get_damage_stability_definition() -> ValidatorDefinition:
             "hull.displacement_mt",
         ],
         produces_parameters=[
+            "stability.damage_cases_evaluated",
+            "stability.damage_all_pass",
+            "stability.damage_worst_case",
+            "stability.damage_results",
+            # legacy aliases
             "stability.damage_cases",
             "stability.damage_gm_min_m",
+            "stability.damage_range_deg",
             "stability.imo_damage_passed",
         ],
         timeout_seconds=300,
@@ -770,6 +890,10 @@ def get_weather_criterion_definition() -> ValidatorDefinition:
         ],
         produces_parameters=[
             "stability.steady_wind_heel_deg",
+            "stability.weather_area_a_m_rad",
+            "stability.weather_area_b_m_rad",
+            "stability.weather_ratio",
+            "stability.weather_passes",
         ],
         timeout_seconds=60,
         tags=["stability", "imo", "weather"],

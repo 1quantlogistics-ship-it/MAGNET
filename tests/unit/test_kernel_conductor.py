@@ -200,7 +200,7 @@ class TestRunPhase:
         assert result.validators_passed == 1
 
     def test_run_phase_validator_fails(self):
-        """Test phase fails when validator fails."""
+        """Test phase does not fail when a non-gate validator fails (GATE_VS_GRADES)."""
         state = MockStateManager()
         registry = PhaseRegistry()
 
@@ -227,8 +227,10 @@ class TestRunPhase:
 
         result = conductor.run_phase("test_phase")
 
-        assert result.status == PhaseStatus.FAILED
+        # Non-gate validator failures are advisory warnings (only REQUIRED gates can fail a phase).
+        assert result.status == PhaseStatus.COMPLETED
         assert result.validators_failed == 1
+        assert any("Validation failed" in w for w in result.warnings)
 
     def test_run_phase_validator_exception(self):
         """Test phase handles validator exception."""
@@ -440,7 +442,7 @@ class TestRunAllPhases:
     """Tests for running all phases."""
 
     def test_run_all_stops_on_failure(self):
-        """Test run_all_phases stops on first failure."""
+        """Test run_all_phases does not stop on advisory validator failure (GATE_VS_GRADES)."""
         state = MockStateManager()
         registry = PhaseRegistry(load_defaults=False)
 
@@ -475,9 +477,9 @@ class TestRunAllPhases:
 
         results = conductor.run_all_phases()
 
-        # Should stop after first phase fails
-        assert len(results) == 1
-        assert results[0].status == PhaseStatus.FAILED
+        # Advisory failure does not fail the phase, so we proceed to the next phase.
+        assert len(results) == 2
+        assert results[0].status == PhaseStatus.COMPLETED
 
 
 class TestStateWriting:

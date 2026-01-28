@@ -63,10 +63,12 @@ class WeightItem:
     Individual weight item with position and metadata.
 
     All weights in kilograms, positions in meters.
-    Positions are from standard reference points:
-    - LCG: from forward perpendicular (FP), positive aft
+    Positions are from standard reference points (MAGNET Standard):
+    - LCG: from after perpendicular (AP), positive forward
     - VCG: from baseline (keel), positive up
-    - TCG: from centerline, positive to starboard
+    - TCG: from centerline, positive to port
+    
+    See docs/0-architecture/GEOMETRY_CONVENTIONS.md for full specification.
 
     Attributes:
         name: Descriptive name for the item

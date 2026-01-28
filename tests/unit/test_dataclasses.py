@@ -82,6 +82,7 @@ class TestMissionConfig:
             max_speed_kts=35.0,
             range_nm=400.0,
             passengers=12,
+            gm_required_m=0.5,
         )
         data = original.to_dict()
         restored = MissionConfig.from_dict(data)
@@ -89,6 +90,7 @@ class TestMissionConfig:
         assert restored.max_speed_kts == original.max_speed_kts
         assert restored.range_nm == original.range_nm
         assert restored.passengers == original.passengers
+        assert restored.gm_required_m == original.gm_required_m
 
 
 class TestHullState:

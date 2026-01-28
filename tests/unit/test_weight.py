@@ -353,11 +353,12 @@ class TestHullStructureEstimator:
         assert aluminum_weight < steel_weight
 
     def test_catamaran_heavier_than_monohull(self, sample_hull_params):
-        """Test catamaran produces heavier structure."""
+        """Test catamaran (multi-body) produces heavier structure."""
         estimator = HullStructureEstimator()
 
-        mono_items = estimator.estimate(**sample_hull_params, hull_type="monohull")
-        cat_items = estimator.estimate(**sample_hull_params, hull_type="catamaran")
+        # TASK-017: Use body_count instead of hull_type
+        mono_items = estimator.estimate(**sample_hull_params, body_count=1, froude_number=0.3)
+        cat_items = estimator.estimate(**sample_hull_params, body_count=2, froude_number=0.3)
 
         mono_weight = sum(item.weight_kg for item in mono_items)
         cat_weight = sum(item.weight_kg for item in cat_items)

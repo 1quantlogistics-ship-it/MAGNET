@@ -87,3 +87,6 @@ export {
   type RespondRequest,
   type AgentStats,
 } from './agents';
+
+// Intent API (Module 63.1)
+export { IntentAPIClient, intentAPI } from './intent';

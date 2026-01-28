@@ -95,15 +95,15 @@ class TestStabilityPipeline:
         damage_result = damage_validator.validate(state_manager, {})
 
         assert damage_result.passed
-        assert "stability.damage_cases" in state_manager._values
-        assert "stability.imo_damage_passed" in state_manager._values
+        assert "stability.damage_results" in state_manager._values
+        assert "stability.damage_all_pass" in state_manager._values
 
         # Execute weather criterion (depends on GZ curve)
         weather_validator = WeatherCriterionValidator()
         weather_result = weather_validator.validate(state_manager, {})
 
         assert weather_result.passed
-        assert "stability.weather_criterion_ratio" in state_manager._values
+        assert "stability.weather_ratio" in state_manager._values
 
     def test_execution_order_matters(self):
         """Test that execution order affects results."""
@@ -161,28 +161,32 @@ class TestStabilityPipeline:
         gz_outputs = [
             "stability.gz_curve",
             "stability.gz_max_m",
-            "stability.angle_of_max_gz_deg",
+            "stability.gz_30_m",
+            "stability.angle_gz_max_deg",
             "stability.area_0_30_m_rad",
             "stability.area_0_40_m_rad",
             "stability.area_30_40_m_rad",
-            "stability.imo_intact_passed",
+            "stability.passes_gz_criteria",
         ]
         for key in gz_outputs:
             assert key in state_manager._values, f"Missing GZ output: {key}"
 
         # Check damage outputs
         damage_outputs = [
-            "stability.damage_cases",
-            "stability.damage_gm_min_m",
-            "stability.imo_damage_passed",
+            "stability.damage_cases_evaluated",
+            "stability.damage_all_pass",
+            "stability.damage_worst_case",
+            "stability.damage_results",
         ]
         for key in damage_outputs:
             assert key in state_manager._values, f"Missing damage output: {key}"
 
         # Check weather outputs
         weather_outputs = [
-            "stability.weather_criterion_ratio",
-            "stability.weather_criterion_passed",
+            "stability.weather_area_a_m_rad",
+            "stability.weather_area_b_m_rad",
+            "stability.weather_ratio",
+            "stability.weather_passes",
         ]
         for key in weather_outputs:
             assert key in state_manager._values, f"Missing weather output: {key}"
@@ -286,11 +290,7 @@ class TestStabilityCalculatorConsistency:
 
     def test_gz_calculator_and_validator_match(self):
         """Test GZ calculator and validator produce same results."""
-        # Direct calculator
-        calc = GZCurveCalculator()
-        calc_result = calc.calculate(gm_m=1.2, bm_m=2.5)
-
-        # Via validator
+        # Via validator (GM may include FSC correction)
         state_manager = MockStateManager({
             "hull.kb_m": 1.5,
             "hull.bm_m": 2.5,
@@ -298,6 +298,11 @@ class TestStabilityCalculatorConsistency:
         })
         IntactGMValidator().validate(state_manager, {})
         GZCurveValidator().validate(state_manager, {})
+
+        # Direct calculator (use the same GM the validator used for the curve)
+        gm_used = state_manager._values.get("stability.gm_corrected_m") or state_manager._values["stability.gm_transverse_m"]
+        calc = GZCurveCalculator()
+        calc_result = calc.calculate(gm_m=gm_used, bm_m=2.5)
 
         # Compare results
         assert abs(calc_result.gz_max_m - state_manager._values["stability.gz_max_m"]) < 0.01
@@ -526,12 +531,13 @@ class TestDamageStabilityIntegration:
         DamageStabilityValidator().validate(state_manager, {})
 
         # Verify damage outputs
-        assert "stability.damage_cases" in state_manager._values
-        damage_cases = state_manager._values["stability.damage_cases"]
-        assert len(damage_cases) > 0
+        assert "stability.damage_results" in state_manager._values
+        damage_results = state_manager._values["stability.damage_results"]
+        assert isinstance(damage_results, dict)
+        assert len(damage_results.get("cases", [])) > 0
 
         # Verify worst case identified
-        assert state_manager._values["stability.damage_gm_min_m"] > 0
+        assert damage_results.get("worst_gm_m", 0) > 0
 
 
 class TestWeatherCriterionIntegration:
@@ -554,12 +560,12 @@ class TestWeatherCriterionIntegration:
         WeatherCriterionValidator().validate(state_manager, {})
 
         # Verify weather outputs
-        assert "stability.weather_criterion_ratio" in state_manager._values
-        ratio = state_manager._values["stability.weather_criterion_ratio"]
+        assert "stability.weather_ratio" in state_manager._values
+        ratio = state_manager._values["stability.weather_ratio"]
         assert ratio > 0
 
         # Good stability should pass weather criterion
-        assert state_manager._values["stability.weather_criterion_passed"] == True
+        assert state_manager._values["stability.weather_passes"] == True
 
 
 class TestGZCurveProperties:

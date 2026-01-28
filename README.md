@@ -373,7 +373,7 @@ result = validator.validate(plan, state_manager)
 # result.warnings contains clamping notices
 ```
 
-**See [docs/INTENT_ACTION_PROTOCOL.md](docs/INTENT_ACTION_PROTOCOL.md) for full architecture documentation.**
+**See [docs/2-protocols/INTENT_ACTION_PROTOCOL.md](docs/2-protocols/INTENT_ACTION_PROTOCOL.md) for full architecture documentation.**
 
 ---
 

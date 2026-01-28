@@ -197,8 +197,13 @@ class TestWeightStabilityValidator:
         assert "weight.estimated_gm_m" in state_manager._values
         assert abs(state_manager._values["weight.estimated_gm_m"] - 2.0) < 0.01
 
-    def test_negative_gm_warning(self):
-        """Test negative GM produces warning."""
+    def test_negative_gm_grade_v13(self):
+        """Test negative GM causes WARNING state (v1.3 grade with suggested fix).
+
+        v1.3 (North Star Alignment): Negative GM is a severe GRADE, not a gate.
+        North Star Law 6: "Hydrostatics is the only hard gate."
+        The system warns and suggests fixes; the human decides.
+        """
         state_manager = MockStateManager({
             "weight.lightship_vcg_m": 5.0,  # Very high KG
             "weight.lightship_mt": 100.0,
@@ -210,10 +215,14 @@ class TestWeightStabilityValidator:
         validator = WeightStabilityValidator()
         result = validator.validate(state_manager, {})
 
-        # Should warn about negative GM
+        # v1.3: Should WARN (severe grade), not FAIL
+        # North Star: "Everything else is a grade with threshold warnings"
         assert result.state == ValidatorState.WARNING
-        assert any("Negative GM" in f.message or "unstable" in f.message.lower()
+        assert any("SEVERE GRADE" in f.message or "Negative GM" in f.message
                   for f in result.findings)
+        # stability_ready should be False (not ready for downstream)
+        assert state_manager._values.get("weight.stability_ready") == False
+        # But the design can proceed if human overrides
 
     def test_low_gm_warning(self):
         """Test low GM produces warning."""

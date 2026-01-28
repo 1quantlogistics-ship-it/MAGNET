@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     'StateIntegrator',
+    'RoutingStateIntegrator',  # Alias for api.py compatibility
     'RoutingStateKeys',
 ]
 
@@ -470,3 +471,7 @@ class StateIntegrator:
                 logger.warning(f"Unknown state manager interface")
         except Exception as e:
             logger.error(f"Failed to set state value: {e}")
+
+
+# Alias for api.py compatibility
+RoutingStateIntegrator = StateIntegrator

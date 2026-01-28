@@ -233,3 +233,202 @@ class IntactGMCalculator:
         max_kg = km_m - gm_target - free_surface_correction_m
 
         return max_kg
+
+
+# =============================================================================
+# GEOMETRY-BASED GM CALCULATION
+# =============================================================================
+
+def compute_gm_from_geometry(
+    geometry: Any,
+    draft: float,
+    vcg: float,
+    free_surface_correction: float = 0.0,
+) -> Dict[str, Any]:
+    """
+    Compute GM from compiled HullGeometry.
+    
+    This is the bridge between the design language compiler output
+    and the stability calculations. Novel forms work without new code.
+    
+    For multi-body vessels, delegates to multi_body_hydrostatics.
+    For single hulls, computes KB and BM from geometry.
+    
+    Args:
+        geometry: HullGeometry from compiler
+        draft: Design draft in meters
+        vcg: Vertical center of gravity in meters
+        free_surface_correction: Free surface correction in meters
+    
+    Returns:
+        Dict with:
+            - gm_m: Metacentric height
+            - kb_m: Height of center of buoyancy
+            - bm_m: Metacentric radius
+            - kg_m: Center of gravity (same as vcg input)
+            - passes: True if GM >= GM_MIN
+            - method: Calculation method used
+    """
+    # Check for multi-body
+    bodies = getattr(geometry, 'bodies', None)
+    if bodies and len(bodies) > 1:
+        # Delegate to multi-body module
+        try:
+            from magnet.physics.multi_body_hydrostatics import compute_multi_body_gm
+            return compute_multi_body_gm(bodies, geometry, draft, vcg)
+        except ImportError:
+            logger.warning("Multi-body hydrostatics not available, using single-hull method")
+    
+    # Single hull calculation
+    kb = _compute_kb_from_geometry(geometry, draft)
+    bm = _compute_bm_from_geometry(geometry, draft)
+    
+    # GM = KB + BM - KG - FSC
+    km = kb + bm
+    gm_solid = km - vcg
+    gm = gm_solid - free_surface_correction
+    
+    # Check compliance
+    passes = gm >= GM_MIN
+    
+    return {
+        "gm_m": gm,
+        "gm_solid_m": gm_solid,
+        "km_m": km,
+        "kb_m": kb,
+        "bm_m": bm,
+        "kg_m": vcg,
+        "free_surface_correction_m": free_surface_correction,
+        "passes": passes,
+        "gm_margin_m": gm - GM_MIN,
+        "method": "geometry_derived",
+        "displacement_m3": abs(geometry.volume) if hasattr(geometry, 'volume') else 0,
+    }
+
+
+def _compute_kb_from_geometry(geometry: Any, draft: float) -> float:
+    """
+    Compute KB (center of buoyancy height) from geometry.
+    
+    Uses VCB if available, otherwise approximates from draft.
+    """
+    # Try to get VCB from geometry
+    if hasattr(geometry, 'vcb') and geometry.vcb is not None:
+        return abs(geometry.vcb)
+    
+    # Approximate: KB ≈ 0.53 * T for typical hull forms
+    # This is geometry-based, not form-type based
+    return draft * 0.53
+
+
+def _compute_bm_from_geometry(geometry: Any, draft: float) -> float:
+    """
+    Compute BM (metacentric radius) from geometry.
+    
+    BM = I_waterplane / V_displaced
+    
+    Computes waterplane inertia from actual section geometry.
+    """
+    volume = abs(geometry.volume) if hasattr(geometry, 'volume') else 0
+    
+    if volume <= 0:
+        return 0.0
+    
+    # Compute waterplane moment of inertia from sections
+    if hasattr(geometry, 'sections') and geometry.sections:
+        i_wp = _compute_waterplane_inertia(geometry.sections)
+    else:
+        # Fallback: estimate from beam
+        beam = _estimate_beam_from_geometry(geometry)
+        loa = _estimate_loa_from_geometry(geometry)
+        # For rectangular waterplane: I = (L * B³) / 12
+        i_wp = (loa * (beam ** 3)) / 12
+    
+    return i_wp / volume
+
+
+def _compute_waterplane_inertia(sections: List[Any]) -> float:
+    """
+    Compute waterplane moment of inertia from section geometry.
+    
+    Integrates half-beam cubed along length using trapezoidal rule.
+    """
+    if len(sections) < 2:
+        return 0.0
+    
+    # Sort sections by x position
+    sorted_sections = sorted(sections, key=lambda s: s.x_position)
+    
+    i_wp = 0.0
+    for i in range(len(sorted_sections) - 1):
+        s1 = sorted_sections[i]
+        s2 = sorted_sections[i + 1]
+        
+        dx = abs(s2.x_position - s1.x_position)
+        if dx <= 0:
+            continue
+        
+        # Get half-beam at waterline (y at z ≈ 0)
+        b1 = _section_half_beam_at_waterline(s1)
+        b2 = _section_half_beam_at_waterline(s2)
+        
+        # Transverse moment of inertia for strip
+        # I = (2/3) * y³ * dx  (for symmetric section)
+        i_strip = (2/3) * ((b1 ** 3 + b2 ** 3) / 2) * dx
+        i_wp += i_strip
+    
+    return i_wp
+
+
+def _section_half_beam_at_waterline(section: Any) -> float:
+    """Get half-beam at waterline from section geometry."""
+    if hasattr(section, 'half_beam') and section.half_beam:
+        return section.half_beam
+    
+    if not hasattr(section, 'points') or not section.points:
+        return 0.0
+    
+    # Find max Y at or near waterline (z ≈ 0)
+    max_y = 0.0
+    for pt in section.points:
+        z = pt.position.z if hasattr(pt, 'position') else pt[1]
+        y = pt.position.y if hasattr(pt, 'position') else pt[0]
+        
+        if abs(z) < 0.2:  # Near waterline
+            max_y = max(max_y, abs(y))
+    
+    # If no points near waterline, use max Y
+    if max_y == 0:
+        for pt in section.points:
+            y = pt.position.y if hasattr(pt, 'position') else pt[0]
+            max_y = max(max_y, abs(y))
+    
+    return max_y
+
+
+def _estimate_beam_from_geometry(geometry: Any) -> float:
+    """Estimate overall beam from geometry."""
+    if hasattr(geometry, 'beam') and geometry.beam:
+        return geometry.beam
+    
+    if hasattr(geometry, 'sections') and geometry.sections:
+        max_beam = 0.0
+        for section in geometry.sections:
+            half_beam = _section_half_beam_at_waterline(section)
+            max_beam = max(max_beam, half_beam * 2)
+        return max_beam if max_beam > 0 else 4.0
+    
+    return 4.0  # Default assumption
+
+
+def _estimate_loa_from_geometry(geometry: Any) -> float:
+    """Estimate LOA from geometry."""
+    if hasattr(geometry, 'loa') and geometry.loa:
+        return geometry.loa
+    
+    if hasattr(geometry, 'sections') and geometry.sections:
+        x_positions = [s.x_position for s in geometry.sections]
+        if x_positions:
+            return max(x_positions) - min(x_positions)
+    
+    return 25.0  # Default assumption

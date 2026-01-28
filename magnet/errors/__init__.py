@@ -32,6 +32,12 @@ from .aggregator import (
     ErrorAggregator,
 )
 
+from .propagation import (
+    PropagatedError,
+    ErrorPropagator,
+    DefaultErrorPropagator,
+)
+
 __all__ = [
     # Taxonomy
     "ErrorSeverity",
@@ -51,4 +57,8 @@ __all__ = [
     # Aggregator
     "ErrorReport",
     "ErrorAggregator",
+    # Propagation
+    "PropagatedError",
+    "ErrorPropagator",
+    "DefaultErrorPropagator",
 ]

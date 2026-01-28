@@ -182,6 +182,17 @@ class DesignOptimizer:
                 # Fallback for testing with mock
                 state = self.base_state
 
+            # Refinable-path enforcement: optimization writes to refinable paths (e.g. hull.*),
+            # so evaluation must occur inside a transaction. This is a sandboxed "what-if"
+            # transaction on the cloned state; we always roll it back at the end.
+            opened_txn = False
+            try:
+                if hasattr(state, "begin_transaction") and getattr(state, "_current_txn", None) is None:
+                    state.begin_transaction()
+                    opened_txn = True
+            except Exception:
+                opened_txn = False
+
             # Apply design variables - Hole #7 Fix: Use .set() with proper source
             source = "optimization/optimizer"
             for i, var in enumerate(self.problem.variables):
@@ -220,6 +231,13 @@ class DesignOptimizer:
             solution.objectives = [1e10] * self.problem.n_obj
             solution.constraint_violation = 1e10
             solution.is_feasible = False
+        finally:
+            if "opened_txn" in locals() and opened_txn:
+                try:
+                    if hasattr(state, "rollback"):
+                        state.rollback()
+                except Exception:
+                    pass
 
     def _create_offspring(self, population: List[Solution]) -> List[Solution]:
         """Create offspring through crossover and mutation."""

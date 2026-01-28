@@ -1,9 +1,18 @@
 """
 MAGNET Weight Validators
 
-Module 07 v1.1 - Production-Ready
+Module 07 v1.3 - Production-Ready
 
 Implements ValidatorInterface for weight estimation.
+
+v1.3 Changes (North Star Alignment):
+- GM < 0 returns WARNING (grade with suggested fix), not FAILED
+- North Star Law 6: "Hydrostatics is the only hard gate. Everything else is a grade."
+- Human decides whether to accept/override stability warnings
+
+v1.2 Changes (Silence #1 CUT):
+- [REVERTED in v1.3] GM < 0 returned FAILED state - violated North Star
+- Removed "Still proceed" comment - low GM is warning, negative GM is warning
 
 v1.1 Changes:
 - FIX #2: Propulsion field fallbacks (installed_power_kw or total_installed_power_kw)
@@ -42,6 +51,7 @@ from .estimators import (
     AuxiliarySystemsEstimator,
     OutfitFurnishingsEstimator,
 )
+from magnet.core.constants import GRAVITY_M_S2, KNOTS_TO_MS
 
 if TYPE_CHECKING:
     from magnet.core.state_manager import StateManager
@@ -180,7 +190,21 @@ class WeightEstimationValidator(ValidatorInterface):
 
             # Read hull material
             hull_material = state_manager.get("hull.material", "aluminum_5083")
-            hull_type = state_manager.get("hull.hull_type", "monohull")
+            # TASK-017: derive body_count from geometry, not hull_type
+            body_count = state_manager.get("hull.body_count") or state_manager.get("hull.num_hulls") or 1
+            try:
+                body_count = int(body_count)
+            except Exception:
+                body_count = 1
+            body_count = max(1, body_count)
+
+            # Froude number from mission speed + length (continuous; advisory only)
+            speed_kts = float(state_manager.get("mission.max_speed_kts") or 0.0)
+            lwl_for_fn = float(lwl or 0.0)
+            froude_number = 0.0
+            if lwl_for_fn > 0:
+                speed_ms = speed_kts * KNOTS_TO_MS
+                froude_number = speed_ms / (GRAVITY_M_S2 * lwl_for_fn) ** 0.5
 
             # Get displacement for auxiliary sizing
             displacement_mt = state_manager.get("hull.displacement_mt")
@@ -198,7 +222,8 @@ class WeightEstimationValidator(ValidatorInterface):
                 depth=depth,
                 cb=cb,
                 material=hull_material,
-                hull_type=hull_type,
+                body_count=body_count,
+                froude_number=froude_number,
                 service_type=vessel_type,
             )
             aggregator.add_items(hull_items)
@@ -255,17 +280,116 @@ class WeightEstimationValidator(ValidatorInterface):
             # Calculate lightship
             summary = aggregator.calculate_lightship()
 
+            # -----------------------------------------------------------------
+            # Phase 3C: Universal primitives influence weight (explicit-only)
+            #
+            # Principles:
+            # - Never hallucinate: only apply effects when explicit mass_kg is provided.
+            # - Keep it deterministic and traceable.
+            #
+            # Supported semantics:
+            # - geometry.attachment / geometry.flow_path / geometry.opening: mass_kg (+ optional mass_center/cg)
+            # -----------------------------------------------------------------
+            primitive_mass_kg = 0.0
+            primitive_mass_breakdown: List[Dict[str, Any]] = []
+            primitive_mx = primitive_my = primitive_mz = 0.0
+            try:
+                resources = state_manager.get("resources", {}) or {}
+                if isinstance(resources, dict):
+                    for rid, r in resources.items():
+                        if not isinstance(r, dict) or r.get("_deleted"):
+                            continue
+                        rtype = r.get("_type")
+                        if rtype not in ("geometry.attachment", "geometry.flow_path", "geometry.opening"):
+                            continue
+                        m = r.get("mass_kg")
+                        if m is None:
+                            continue
+                        try:
+                            m_kg = float(m)
+                        except Exception:
+                            continue
+                        if m_kg <= 0:
+                            continue
+
+                        # Determine CG (best-effort): mass_center > buoyancy_center > position > offsets > inlet_point
+                        cg = r.get("mass_center") or r.get("cg") or r.get("buoyancy_center") or r.get("position")
+                        if cg is None and rtype == "geometry.flow_path":
+                            cg = r.get("inlet_point")
+
+                        x = y = z = None
+                        if isinstance(cg, dict) and ("x" in cg and "y" in cg and "z" in cg):
+                            try:
+                                x, y, z = float(cg.get("x")), float(cg.get("y")), float(cg.get("z"))
+                            except Exception:
+                                x = y = z = None
+                        elif isinstance(cg, list) and len(cg) >= 3:
+                            try:
+                                x, y, z = float(cg[0]), float(cg[1]), float(cg[2])
+                            except Exception:
+                                x = y = z = None
+                        if x is None or y is None or z is None:
+                            # Fall back to offsets for attachments, or "unknown" (co-located with existing CG)
+                            try:
+                                x = float(r.get("offset_x_m") or 0.0)
+                                y = float(r.get("offset_y_m") or 0.0)
+                                z = float(r.get("offset_z_m") or 0.0)
+                            except Exception:
+                                x, y, z = None, None, None
+
+                        primitive_mass_kg += m_kg
+                        primitive_mass_breakdown.append(
+                            {
+                                "resource_id": r.get("_id") or rid,
+                                "resource_type": rtype,
+                                "mass_kg": m_kg,
+                                "mass_center": [x, y, z] if (x is not None and y is not None and z is not None) else None,
+                            }
+                        )
+
+                        # Only apply moments if we have a usable center
+                        if x is not None and y is not None and z is not None:
+                            primitive_mx += m_kg * x
+                            primitive_my += m_kg * y
+                            primitive_mz += m_kg * z
+            except Exception:
+                primitive_mass_kg = 0.0
+                primitive_mass_breakdown = []
+                primitive_mx = primitive_my = primitive_mz = 0.0
+
+            # Apply mass adjustment to lightship and CGs (best-effort).
+            lightship_weight_mt_out = float(summary.lightship_weight_mt)
+            lightship_lcg_m_out = float(summary.lightship_lcg_m)
+            lightship_tcg_m_out = float(summary.lightship_tcg_m)
+            lightship_vcg_m_out = float(summary.lightship_vcg_m)
+
+            if primitive_mass_kg > 0:
+                base_mass_kg = max(0.0, float(summary.lightship_weight_mt) * 1000.0)
+                new_mass_kg = base_mass_kg + float(primitive_mass_kg)
+                lightship_weight_mt_out = new_mass_kg / 1000.0
+
+                # If we have primitive moments, update CGs; otherwise keep original CG.
+                if new_mass_kg > 0 and (primitive_mx != 0.0 or primitive_my != 0.0 or primitive_mz != 0.0):
+                    base_mx = base_mass_kg * float(summary.lightship_lcg_m)
+                    base_my = base_mass_kg * float(summary.lightship_tcg_m)
+                    base_mz = base_mass_kg * float(summary.lightship_vcg_m)
+                    lightship_lcg_m_out = (base_mx + primitive_mx) / new_mass_kg
+                    lightship_tcg_m_out = (base_my + primitive_my) / new_mass_kg
+                    lightship_vcg_m_out = (base_mz + primitive_mz) / new_mass_kg
+
             # Write results to state
             source = "weight/estimation"
             # Canonical paths (contracts/tests expect these names)
-            state_manager.set("weight.lightship_weight_mt", summary.lightship_weight_mt, source)
-            state_manager.set("weight.lightship_vcg_m", summary.lightship_vcg_m, source)
-            state_manager.set("weight.lightship_lcg_m", summary.lightship_lcg_m, source)
-            state_manager.set("weight.lightship_tcg_m", summary.lightship_tcg_m, source)
+            state_manager.set("weight.lightship_weight_mt", lightship_weight_mt_out, source)
+            state_manager.set("weight.lightship_vcg_m", lightship_vcg_m_out, source)
+            state_manager.set("weight.lightship_lcg_m", lightship_lcg_m_out, source)
+            state_manager.set("weight.lightship_tcg_m", lightship_tcg_m_out, source)
             # Legacy alias (backward compatibility)
-            state_manager.set("weight.lightship_mt", summary.lightship_weight_mt, source)
+            state_manager.set("weight.lightship_mt", lightship_weight_mt_out, source)
             state_manager.set("weight.margin_mt", summary.margin_weight_mt, source)
             state_manager.set("weight.average_confidence", summary.average_confidence, source)
+            state_manager.set("weight.primitive_mass_kg", float(primitive_mass_kg), source)
+            state_manager.set("weight.primitive_mass_breakdown", list(primitive_mass_breakdown), source)
 
             # Write group weights
             for group in SWBSGroup:
@@ -276,16 +400,37 @@ class WeightEstimationValidator(ValidatorInterface):
             # Write summary data (FIX #6: determinized for hash stability)
             state_manager.set("weight.summary_data", summary.to_dict(), source)
 
+            # Phase 4: Honest Output Contract (uncertainty block)
+            try:
+                from magnet.physics.uncertainty import make_uncertainty, novelty_impact_from_state_resources
+                # Heuristic: weight is largely empirical; confidence already computed.
+                # Map confidence -> uncertainty pct.
+                avg_conf = float(summary.average_confidence or 0.0)
+                pct = float(max(5.0, min(30.0, (1.0 - avg_conf) * 25.0 + 5.0)))
+                state_manager.set(
+                    "weight.uncertainty",
+                    make_uncertainty(
+                        value_pct=pct,
+                        basis="Weight estimated from SWBS heuristics + mission/hull scaling; depends on defaults and assumed equipment",
+                        validity_envelope="Early-stage estimating. Improve with vendor quotes, detailed scantlings, and equipment selections.",
+                        novelty_impact=novelty_impact_from_state_resources(state_manager.get("resources", {})),
+                        details={"average_confidence": avg_conf},
+                    ),
+                    source,
+                )
+            except Exception:
+                pass
+
             # Check for weight concerns
             state = ValidatorState.PASSED
 
             # Check if lightship exceeds displacement
-            if summary.lightship_weight_mt > displacement_mt:
-                ratio = summary.lightship_weight_mt / displacement_mt
+            if lightship_weight_mt_out > displacement_mt:
+                ratio = lightship_weight_mt_out / displacement_mt
                 findings.append(ValidationFinding(
                     finding_id=str(uuid.uuid4())[:8],
                     severity=ResultSeverity.WARNING,
-                    message=f"Lightship ({summary.lightship_weight_mt:.1f} MT) exceeds displacement ({displacement_mt:.1f} MT). Ratio: {ratio:.2f}",
+                    message=f"Lightship ({lightship_weight_mt_out:.1f} MT) exceeds displacement ({displacement_mt:.1f} MT). Ratio: {ratio:.2f}",
                     suggestion="Reduce structural weight or increase hull size",
                 ))
                 state = ValidatorState.WARNING
@@ -300,8 +445,8 @@ class WeightEstimationValidator(ValidatorInterface):
                 ))
 
             logger.info(
-                f"Weight estimation complete: {summary.lightship_weight_mt:.2f} MT "
-                f"(VCG={summary.lightship_vcg_m:.2f}m)"
+                f"Weight estimation complete: {lightship_weight_mt_out:.2f} MT "
+                f"(VCG={lightship_vcg_m_out:.2f}m)"
             )
 
             # Create success result
@@ -429,20 +574,27 @@ class WeightStabilityValidator(ValidatorInterface):
             state_manager.set("weight.estimated_gm_m", estimated_gm_m, source)
 
             # Check GM criterion (IMO minimum 0.15m for vessels < 100m)
+            # v1.3 (North Star Alignment): GM < 0 is a GRADE with suggested fix
+            # North Star Law 6: "Hydrostatics is the only hard gate."
+            # Human decides whether to accept, modify, override, or ignore.
             state = ValidatorState.PASSED
 
             if estimated_gm_m < 0:
+                # GRADE: Negative GM is a severe warning with suggested fix
+                # The system grades, warns, and suggests. The human decides.
                 findings.append(ValidationFinding(
                     finding_id=str(uuid.uuid4())[:8],
-                    severity=ResultSeverity.ERROR,
-                    message=f"Negative GM: {estimated_gm_m:.3f}m. Vessel is unstable!",
+                    severity=ResultSeverity.ERROR,  # Severity remains ERROR (severe grade)
+                    message=f"SEVERE GRADE: Negative GM ({estimated_gm_m:.3f}m). Vessel is capsized/unstable.",
                     parameter_path="weight.estimated_gm_m",
                     actual_value=estimated_gm_m,
                     suggestion="Lower KG by moving weight down or increase BM by widening beam",
+                    # The suggested_fix field enables human decision loop
                 ))
-                state = ValidatorState.WARNING
-                state_manager.set("weight.stability_ready", False, source)
+                state = ValidatorState.WARNING  # v1.3: WARNING not FAILED (grade, not gate)
+                state_manager.set("weight.stability_ready", False, source)  # Still not ready for downstream
             elif estimated_gm_m < 0.15:
+                # WARNING: Low GM requires attention but can proceed with caution
                 findings.append(ValidationFinding(
                     finding_id=str(uuid.uuid4())[:8],
                     severity=ResultSeverity.WARNING,
@@ -453,7 +605,7 @@ class WeightStabilityValidator(ValidatorInterface):
                     suggestion="Lower KG by moving weight down",
                 ))
                 state = ValidatorState.WARNING
-                state_manager.set("weight.stability_ready", True, source)  # Still proceed
+                state_manager.set("weight.stability_ready", True, source)  # Can proceed with warning
             else:
                 state_manager.set("weight.stability_ready", True, source)
                 findings.append(ValidationFinding(
