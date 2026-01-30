@@ -57,6 +57,41 @@ Traditional marine design workflows require:
 
 ### V1.5 — CLI v1 Infrastructure (Current)
 
+### Gate 1 — Indexing & Insight (“Cursor for CAD”)
+
+MAGNET’s “cursor for CAD” capability is powered by an indexing layer that turns geometry into **addressable entities** and **traceable relationships**, so you can ask questions like:
+
+- “What breaks if I add 12 tons at frame 45?”
+- “Show me everything connected to this compartment / system / frame range.”
+
+At a high level, Gate 1 works like this:
+
+- **Extract**: CAD import paths produce compact geometry contexts (e.g. STEP/IFC extraction → bbox/centroid/adjacency summaries).
+- **Register**: contexts become **Entities** with stable IDs and provenance in the `EntityRegistry` (`magnet/core/entity_registry.py`).
+- **Relate**: a `RelationshipGraph` stores traceable edges (supports/contains/connected-to, etc.).
+- **Index**:
+  - `EntityIndexService` provides a search surface over entities (`magnet/indices/entity_index.py`), with a deterministic fallback and an optional vector backend.
+  - `magnet/indices/` contains the broader index stack (spatial/connectivity/semantic) designed to be syncable with canonical state.
+
+Minimal demo (also covered by `tests/semantic/test_gate1_demo_question.py`):
+
+```python
+from magnet.core.entity_registry import EntityRegistry
+from magnet.indices.relationship_graph import RelationshipGraph
+from magnet.indices.query_service import QueryService
+
+registry = EntityRegistry()
+graph = RelationshipGraph()
+svc = QueryService(registry=registry, graph=graph)
+
+ans = svc.what_breaks_if_add_weight("What breaks if I add 12 tons at frame 45?")
+print(ans.success, ans.data.get("summary"), ans.error)
+```
+
+Notes:
+- The optional on-disk index path defaults to `./.lancedb_entity_index` when vector indexing is enabled.
+- Optional indexing dependencies are declared in `pyproject.toml` (see the `semantic` extras).
+
 | Capability | Status |
 |------------|--------|
 | Mission interpretation & requirements capture | Complete |
