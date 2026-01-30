@@ -46,6 +46,8 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 pytest_cache/
+.pytest_artifacts/
+.lancedb_entity_index/
 
 # Translations
 *.mo
@@ -75,4 +77,6 @@ venv.bak/
 # Project specific
 storage/cache/
 storage/designs/
+storage/exports/*
+!storage/exports/.gitkeep
 *.log
