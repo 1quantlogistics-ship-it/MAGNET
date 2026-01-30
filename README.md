@@ -1,19 +1,14 @@
-# MAGNET — Multi-Agent Naval Engineering Toolkit
+# MAGNET — Naval Engineering Toolkit
 
 <div align="center">
 
-**A next-generation spatial intelligence system for vessel design, analysis, and iteration.**
-
-[![Tests](https://img.shields.io/badge/tests-2355%20passing-brightgreen)]()
-[![Modules](https://img.shields.io/badge/modules-40%20complete-purple)]()
-[![LOC](https://img.shields.io/badge/lines%20of%20code-105k+-red)]()
-[![Physics Engines](https://img.shields.io/badge/physics%20engines-12-blue)]()
+**A parametric system for vessel design, analysis, and iteration.**
 
 </div>
 
 ---
 
-MAGNET is a **parametric naval architecture engine**, powered by a multi-agent reasoning stack, deterministic physics modules, and a VisionOS-style 3D spatial interface. It transforms high-level intent (*"Design a 32 ft patrol cat"*) into validated hulls, layouts, systems plans, routing logic, and engineering reports — **all in minutes, not months**.
+MAGNET is a **parametric naval architecture engine** with deterministic physics modules and a 3D interface. It transforms high-level requirements into validated geometry, layout, routing, and reports.
 
 This repository contains the full implementation of MAGNET V1.5, including:
 
@@ -28,7 +23,7 @@ This repository contains the full implementation of MAGNET V1.5, including:
 - **Validator Graph + Rule Engine** — Classification society compliance
 - **Export Pipeline** — glTF, GLB, STL, OBJ, STEP-ready geometry
 
-**MAGNET is not CAD with AI sprinkled on top.**
+**MAGNET is not CAD with automation sprinkled on top.**
 **It is a design operating system.**
 
 ---
@@ -44,16 +39,15 @@ Traditional marine design workflows require:
 | **Heavy manual labor** | Copy-paste values between tools, pray nothing breaks |
 | **Duplicate data entry** | Enter LOA in 5 different places, hope they match |
 | **No central "truth"** | Which file is current? Nobody knows |
-| **Zero conversational intelligence** | Tools don't understand intent, only button clicks |
+| **No intent-level tooling** | Tools don't understand requirements, only button clicks |
 
 **MAGNET replaces all of that with:**
 
-- ✅ **One unified design state** — Single source of truth
-- ✅ **A reasoning-capable agent cluster** — Understands what you're trying to achieve
-- ✅ **Deterministic physics + constraint solvers** — Real engineering, not approximations
-- ✅ **A live 3D parametric model** — What you see is what the math calculates
-- ✅ **Automatic validation and correction** — Catches errors before they compound
-- ✅ **Streaming updates as the design evolves** — Change propagates everywhere, instantly
+- **One unified design state** — Single source of truth
+- **Deterministic physics + constraint solvers** — Engineering checks with explicit gates
+- **A live 3D parametric model** — What you see matches what the math calculates
+- **Automatic validation and correction** — Catches errors before they compound
+- **Streaming updates as the design evolves** — Change propagates through the system
 
 **Users describe what they want → MAGNET figures out how to build it.**
 
@@ -65,48 +59,47 @@ Traditional marine design workflows require:
 
 | Capability | Status |
 |------------|--------|
-| Mission interpretation & requirements capture | ✅ Complete |
-| Hull synthesis from mission parameters | ✅ Complete |
-| Coefficient coupling (Cb = Cp × Cm enforcement) | ✅ Complete |
-| Mutation escalation for local optima escape | ✅ Complete |
-| Per-iteration bounds clamping with ratio preservation | ✅ Complete |
-| Family-specific priors (patrol, workboat, ferry, planing, catamaran) | ✅ Complete |
-| Parametric hull generation (GRM + NURBS) | ✅ Complete |
-| Full hydrostatics suite (displacement, LCB, BMt, KMt...) | ✅ Complete |
-| Intact & damage stability (GZ curves, AVS) | ✅ Complete |
-| Structural scantlings (frames, stringers, plating) | ✅ Complete |
-| Weight & CG modeling (LCG, VCG, TCG) | ✅ Complete |
-| Propulsion sizing (Holtrop-Mennen, Savitsky) | ✅ Complete |
-| Arrangement & compartment layout | ✅ Complete |
-| Kernel phase orchestration with gates | ✅ Complete |
-| Classification rule checking (Lloyd's, ABS, DNV-GL, BV) | ✅ Complete |
-| PREFERENCE severity for "could be better" guidance | ✅ Complete |
-| Proportional harmony validator | ✅ Complete |
-| Real-time WebGL 3D visualization | ✅ Complete |
-| Multi-format geometry export | ✅ Complete |
-| Engineering packet generation | ✅ Complete |
-| **CLI v1: Kernel-owned parameter bounds** | ✅ Complete |
-| **CLI v1: Conductor.apply_refinement() with invalidation** | ✅ Complete |
-| **CLI v1: run_default_pipeline() safe subset** | ✅ Complete |
-| **CLI v1: DesignExporter.export_with_phase_report()** | ✅ Complete |
-| **CLI v1: ClarificationManager ACK lifecycle** | ✅ Complete |
-| **CLI v1: PhaseMachine internal wiring** | ✅ Complete |
-| **Intent→Action Protocol foundation** | ✅ Complete |
-| **ActionPlanValidator (LLM firewall)** | ✅ Complete |
-| **REFINABLE_SCHEMA (20+ refinable paths)** | ✅ Complete |
-| **UnitConverter (44+ conversion pairs)** | ✅ Complete |
-| **design_version tracking (stale plan detection)** | ✅ Complete |
-| **Parameter locks (ephemeral mutation prevention)** | ✅ Complete |
-| **EventDispatcher (20+ typed kernel events)** | ✅ Complete |
-| **ActionExecutor (transactional execution)** | ✅ Complete |
-| **POST /actions endpoint (LLM refinement API)** | ✅ Complete |
-| **Geometry router wiring + hull_hash** | ✅ Complete |
-| **set_phase_status() deprecation with PhaseMachine wrapper** | ✅ Complete |
-| **Kill list cleanup (removed phase append hacks)** | ✅ Complete |
+| Mission interpretation & requirements capture | Complete |
+| Hull synthesis from mission parameters | Complete |
+| Coefficient coupling (Cb = Cp × Cm enforcement) | Complete |
+| Mutation escalation for local optima escape | Complete |
+| Per-iteration bounds clamping with ratio preservation | Complete |
+| Parametric hull generation (GRM + NURBS) | Complete |
+| Full hydrostatics suite (displacement, LCB, BMt, KMt...) | Complete |
+| Intact & damage stability (GZ curves, AVS) | Complete |
+| Structural scantlings (frames, stringers, plating) | Complete |
+| Weight & CG modeling (LCG, VCG, TCG) | Complete |
+| Propulsion sizing (Holtrop-Mennen, Savitsky) | Complete |
+| Arrangement & compartment layout | Complete |
+| Kernel phase orchestration with gates | Complete |
+| Classification rule checking (Lloyd's, ABS, DNV-GL, BV) | Complete |
+| PREFERENCE severity for "could be better" guidance | Complete |
+| Proportional harmony validator | Complete |
+| Real-time WebGL 3D visualization | Complete |
+| Multi-format geometry export | Complete |
+| Engineering packet generation | Complete |
+| **CLI v1: Kernel-owned parameter bounds** | Complete |
+| **CLI v1: Conductor.apply_refinement() with invalidation** | Complete |
+| **CLI v1: run_default_pipeline() safe subset** | Complete |
+| **CLI v1: DesignExporter.export_with_phase_report()** | Complete |
+| **CLI v1: ClarificationManager ACK lifecycle** | Complete |
+| **CLI v1: PhaseMachine internal wiring** | Complete |
+| **Intent→Action Protocol foundation** | Complete |
+| **ActionPlanValidator (safety firewall)** | Complete |
+| **REFINABLE_SCHEMA (20+ refinable paths)** | Complete |
+| **UnitConverter (44+ conversion pairs)** | Complete |
+| **design_version tracking (stale plan detection)** | Complete |
+| **Parameter locks (ephemeral mutation prevention)** | Complete |
+| **EventDispatcher (20+ typed kernel events)** | Complete |
+| **ActionExecutor (transactional execution)** | Complete |
+| **POST /actions endpoint (refinement API)** | Complete |
+| **Geometry router wiring + hull_hash** | Complete |
+| **set_phase_status() deprecation with PhaseMachine wrapper** | Complete |
+| **Kill list cleanup (removed phase append hacks)** | Complete |
 
 ### V2 — Concept-to-Preliminary Designer (Roadmap)
 
-All roadmap items below are **future improvements**; see `NEXT BIG THING/MAGNET_UNIFIED_LIBRARY_INTEGRATION_PLAN.md` for sequencing.
+All roadmap items below are **future improvements**; see the docs guides for sequencing.
 
 - Multi-candidate exploration with determinism & cost semantics
 - Bounded Cp movement for shape character exploration
@@ -118,8 +111,7 @@ All roadmap items below are **future improvements**; see `NEXT BIG THING/MAGNET_
 
 ### Future Improvements (Phase 4+)
 
-The remaining roadmap items (e.g., xeokit-sdk visualization, FreeCAD Ship interop, GenCAD firewall) are **future enhancements**.  
-See the implementation guide for sequencing and constraints: `NEXT BIG THING/MAGNET_UNIFIED_LIBRARY_INTEGRATION_PLAN.md`.
+The remaining roadmap items (e.g., xeokit-sdk visualization, FreeCAD Ship interop, GenCAD firewall) are **future enhancements**.
 
 ### V3 — Interior + Systems Intelligence (Roadmap)
 
@@ -151,17 +143,17 @@ See the implementation guide for sequencing and constraints: `NEXT BIG THING/MAG
 
 ## How MAGNET Works
 
-MAGNET uses a **multi-agent architecture** where each agent is responsible for a domain:
+MAGNET uses a **modular architecture** where each component is responsible for a domain:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           AGENT CLUSTER                                      │
+│                           COMPONENT CLUSTER                                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐ │
 │   │  DIRECTOR   │    │    NAVAL    │    │ STRUCTURAL  │    │   SYSTEMS   │ │
-│   │   AGENT     │    │  ARCHITECT  │    │  ENGINEER   │    │    AGENT    │ │
-│   │             │    │    AGENT    │    │    AGENT    │    │             │ │
+│   │  MODULE     │    │  ARCHITECT  │    │  ENGINEER   │    │  MODULE     │ │
+│   │             │    │  MODULE     │    │  MODULE     │    │             │ │
 │   │ Interprets  │    │ Hull form   │    │ Scantlings  │    │ Propulsion  │ │
 │   │ user intent │    │ Coefficients│    │ Loads       │    │ Electrical  │ │
 │   └──────┬──────┘    └──────┬──────┘    └──────┬──────┘    └──────┬──────┘ │
@@ -178,8 +170,8 @@ MAGNET uses a **multi-agent architecture** where each agent is responsible for a
 │          ▼                  ▼              ▼                  ▼            │
 │   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐ │
 │   │  INTERIOR   │    │  STABILITY  │    │ COMPLIANCE  │    │ SUPERVISOR  │ │
-│   │   AGENT     │    │   /WEIGHT   │    │    AGENT    │    │    AGENT    │ │
-│   │             │    │    AGENT    │    │             │    │             │ │
+│   │  MODULE     │    │   /WEIGHT   │    │  MODULE     │    │  MODULE     │ │
+│   │             │    │   MODULE    │    │             │    │             │ │
 │   │ Spatial     │    │ Hydrostatics│    │ Rule book   │    │ Arbitration │ │
 │   │ layout      │    │ Balance     │    │ logic       │    │ Tradeoffs   │ │
 │   └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘ │
@@ -187,7 +179,7 @@ MAGNET uses a **multi-agent architecture** where each agent is responsible for a
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-All agents read from and write to the **Unified Design State**, ensuring the entire system is deterministic and self-consistent.
+All components read from and write to the **Unified Design State**, ensuring the entire system is deterministic and self-consistent.
 
 **Validators enforce physical realism at every step.**
 
@@ -200,12 +192,12 @@ magnet/
 ├── bootstrap/          # Application wiring and dependency injection
 ├── core/               # Unified Design State, Serializer, Phase Machine
 │   ├── parameter_bounds.py  # CLI v1: Kernel-owned bounds for refinement
-│   ├── refinable_schema.py  # REFINABLE_SCHEMA whitelist for LLM actions
+│   ├── refinable_schema.py  # REFINABLE_SCHEMA whitelist for intent actions
 │   └── unit_converter.py    # Deterministic unit conversion (44+ pairs)
 ├── kernel/             # Conductor, phase registry, hull synthesis engine
 │   ├── conductor.py    # Phase orchestration + apply_refinement() + run_default_pipeline()
 │   ├── intent_protocol.py  # Intent→Action Protocol types (Intent, Action, ActionPlan)
-│   ├── action_validator.py # ActionPlanValidator — firewall between LLM and kernel
+│   ├── action_validator.py # ActionPlanValidator — firewall between proposals and kernel
 │   ├── registry.py     # Phase definitions and dependencies
 │   ├── synthesis.py    # Hull synthesis with coefficient coupling & escalation
 │   └── priors/         # Hull family priors with bounds & constraints
@@ -302,14 +294,14 @@ Each phase has:
 
 ## Intent→Action Protocol
 
-MAGNET uses a typed **Intent→Action Protocol** as the firewall between LLM proposals and kernel state mutations:
+MAGNET uses a typed **Intent→Action Protocol** as a firewall between user input and kernel state mutations:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                       INTENT → ACTION FLOW                                   │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│   User Input         LLM                    Validator              Kernel   │
+│   User Input         Interpreter            Validator              Kernel   │
 │   "Make it faster"   Proposes ActionPlan    Validates/Clamps       Executes │
 │         │                   │                      │                  │     │
 │         ▼                   ▼                      ▼                  ▼     │
@@ -332,14 +324,14 @@ MAGNET uses a typed **Intent→Action Protocol** as the firewall between LLM pro
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Core invariant: LLM never directly drives state.**
+**Core invariant: proposals never directly drive state.**
 
 ### Key Components
 
 | Component | Purpose |
 |-----------|---------|
 | **Intent** | Structured representation of user's raw input |
-| **ActionPlan** | LLM's proposed list of Actions with `design_version_before` |
+| **ActionPlan** | Proposed list of Actions with `design_version_before` |
 | **ActionPlanValidator** | Validates against REFINABLE_SCHEMA, converts units, clamps bounds, checks locks |
 | **REFINABLE_SCHEMA** | Whitelist of 20+ state paths that can be modified via actions |
 | **UnitConverter** | Deterministic conversion (44+ pairs: MW→kW, ft→m, kts→m/s, etc.) |
@@ -352,7 +344,7 @@ MAGNET uses a typed **Intent→Action Protocol** as the firewall between LLM pro
 from magnet.kernel.intent_protocol import Action, ActionPlan, ActionType
 from magnet.kernel.action_validator import ActionPlanValidator
 
-# LLM proposes increasing power
+# Proposal suggests increasing power
 plan = ActionPlan(
     plan_id="plan_001",
     intent_id="intent_001",
@@ -505,18 +497,12 @@ pytest --cov=magnet --cov-report=html
 
 ## Studio v7 UI (HTML)
 
-The conversational design interface is in `magnet/ui_v2/`.
+The design interface is in `magnet/ui_v2/` and is served by the backend at `/ui/v2/`.
 
 ### Quick Start
 ```bash
-# Terminal 1: Backend
-python -m magnet.bootstrap.entrypoints api
-
-# Terminal 2: UI
-cd magnet/ui_v2 && python3 -m http.server 3000
-
-# Browser
-open http://localhost:3000
+python3 -m magnet.bootstrap.entrypoints api
+open http://localhost:8000/ui/v2/
 ```
 
 ### Golden Loop
@@ -530,18 +516,16 @@ See [UI Runbook](magnet/ui_v2/docs/UI_V2_RUNBOOK.md) for details.
 
 ## Where MAGNET Is Going
 
-MAGNET aims to become the **first AI-native engineering design OS**, capable of:
+MAGNET aims to become an engineering design OS capable of:
 
-- 📝 Reading sketches, images, mission briefs
-- 📦 Producing full design packets
-- 🚶 Walking users through the vessel
-- 💬 Explaining every decision
-- 🔄 Updating geometry live
-- 🎛️ Generating variants at will
-- 📤 Exporting to professional CAD tools
-- 🌐 Scaling to architecture, aerospace, defense, and MEP design
-
-**No company — not Autodesk, not Dassault, not NAPA — has an agent-based engineering environment like this.**
+- Reading mission briefs and constraints
+- Producing design packets
+- Walking users through the vessel
+- Explaining decisions with evidence
+- Updating geometry live
+- Generating variants and comparisons
+- Exporting to professional CAD tools
+- Extending beyond marine workflows
 
 ---
 
@@ -549,17 +533,17 @@ MAGNET aims to become the **first AI-native engineering design OS**, capable of:
 
 MAGNET began as a challenge:
 
-> *Could one system unify the entire naval design spiral — mission, hull, physics, structure, systems, interior, routing, compliance — into a single reasoning engine?*
+> *Could one system unify the entire naval design spiral — mission, hull, physics, structure, systems, interior, routing, compliance — into a single engine?*
 
 **The answer is yes.**
 **And this repository is proof.**
 
 MAGNET is not a plugin.
-It's not "AI for CAD."
-It's a new category: **an AI-powered engineering operating system.**
+It's not a thin wrapper over existing tools.
+It's a new category: **an engineering operating system.**
 
 The long-term vision is larger than naval architecture.
-MAGNET is the foundation for AI-driven design across **ships, buildings, aircraft, and beyond.**
+MAGNET is a foundation for design workflows across **ships, buildings, aircraft, and beyond.**
 
 **This is only the beginning.**
 
